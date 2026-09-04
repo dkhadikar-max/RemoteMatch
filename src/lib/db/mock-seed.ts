@@ -19,6 +19,9 @@ export const DEFAULT_DEMO_PROFILE: PersonProfile = {
   profileStrength: 78,
   planTier: 'free',
   dailyEvaluationsCount: 3,
+  dailyRightSwipesCount: 0,
+  dailyProposalsCount: 0,
+  usageDate: new Date().toISOString().slice(0, 10),
   lastEvaluationResetAt: new Date().toISOString(),
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -149,10 +152,71 @@ class LocalRepository {
     }
   }
 
+  private checkAndResetDailyUsage() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (!this.profile.usageDate) {
+      this.profile.usageDate = today;
+      this.profile.dailyRightSwipesCount = this.profile.dailyRightSwipesCount || 0;
+      this.profile.dailyProposalsCount = this.profile.dailyProposalsCount || 0;
+      this.syncToStorage();
+    } else if (this.profile.usageDate !== today) {
+      this.profile.usageDate = today;
+      this.profile.dailyRightSwipesCount = 0;
+      this.profile.dailyProposalsCount = 0;
+      this.profile.dailyEvaluationsCount = 0;
+      this.profile.lastEvaluationResetAt = new Date().toISOString();
+      this.syncToStorage();
+    }
+  }
+
+  canRightSwipe(): boolean {
+    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
+      this.loadFromStorage();
+    }
+    this.checkAndResetDailyUsage();
+    return this.profile.planTier === 'pro' || (this.profile.dailyRightSwipesCount || 0) < 15;
+  }
+
+  canRewind(): boolean {
+    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
+      this.loadFromStorage();
+    }
+    return this.profile.planTier === 'pro';
+  }
+
+  canGenerateProposal(): boolean {
+    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
+      this.loadFromStorage();
+    }
+    this.checkAndResetDailyUsage();
+    return this.profile.planTier === 'pro' || (this.profile.dailyProposalsCount || 0) < 5;
+  }
+
+  canApplyAdvancedFilters(): boolean {
+    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
+      this.loadFromStorage();
+    }
+    return this.profile.planTier === 'pro';
+  }
+
+  incrementProposalsCount(): boolean {
+    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
+      this.loadFromStorage();
+    }
+    this.checkAndResetDailyUsage();
+    if (!this.canGenerateProposal()) {
+      return false;
+    }
+    this.profile.dailyProposalsCount = (this.profile.dailyProposalsCount || 0) + 1;
+    this.syncToStorage();
+    return true;
+  }
+
   getProfile(): PersonProfile {
     if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
       this.loadFromStorage();
     }
+    this.checkAndResetDailyUsage();
     return this.profile;
   }
 
@@ -173,14 +237,24 @@ class LocalRepository {
     return this.opportunities.find((o) => o.id === id);
   }
 
-  recordSwipe(opportunityId: string, action: 'interested' | 'passed') {
+  recordSwipe(opportunityId: string, action: 'interested' | 'passed'): boolean {
     if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
       this.loadFromStorage();
     }
+    this.checkAndResetDailyUsage();
+
+    if (action === 'interested') {
+      if (this.profile.planTier === 'free' && (this.profile.dailyRightSwipesCount || 0) >= 15) {
+        return false;
+      }
+      this.profile.dailyRightSwipesCount = (this.profile.dailyRightSwipesCount || 0) + 1;
+    }
+
     this.swipes = this.swipes.filter((s) => s.opportunityId !== opportunityId);
     this.swipes.push({ opportunityId, action, date: new Date().toISOString() });
     this.profile.dailyEvaluationsCount = (this.profile.dailyEvaluationsCount || 0) + 1;
     this.syncToStorage();
+    return true;
   }
 
   rewindLastSwipe(): string | null {
@@ -193,6 +267,7 @@ class LocalRepository {
       this.profile.dailyEvaluationsCount = Math.max((this.profile.dailyEvaluationsCount || 1) - 1, 0);
       if (last.action === 'interested') {
         this.applications.delete(last.opportunityId);
+        this.profile.dailyRightSwipesCount = Math.max((this.profile.dailyRightSwipesCount || 1) - 1, 0);
       }
       this.syncToStorage();
       return last.opportunityId;

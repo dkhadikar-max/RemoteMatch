@@ -12,11 +12,14 @@ export const stripe = isStripeConfigured
 
 export async function createCheckoutSession(params: {
   userId: string;
-  userEmail: string;
+  userEmail?: string | null;
   returnUrl: string;
 }): Promise<{ url: string | null; isMock?: boolean }> {
   if (!stripe) {
-    // If Stripe is not configured yet, return a mock success redirect
+    // If Stripe is not configured yet, return a mock success redirect.
+    // The verify route only ever honors this for the SAME authenticated
+    // user and only while Stripe remains unconfigured — see
+    // src/app/api/stripe/verify/route.ts.
     return {
       url: `${params.returnUrl}?session_id=mock_session_success&tier=pro`,
       isMock: true,
@@ -28,7 +31,13 @@ export async function createCheckoutSession(params: {
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
     mode: 'subscription',
-    customer_email: params.userEmail,
+    // Anonymous-auth users have no email yet; Stripe will collect one at
+    // checkout instead of us passing an invalid/empty value.
+    ...(params.userEmail ? { customer_email: params.userEmail } : {}),
+    // The canonical Stripe-native binding of a session to our own user id —
+    // read back and verified server-side in /api/stripe/verify and the
+    // webhook so a session can never be redeemed for a different user.
+    client_reference_id: params.userId,
     line_items: priceId
       ? [{ price: priceId, quantity: 1 }]
       : [

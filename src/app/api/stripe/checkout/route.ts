@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/stripe';
-import { localStore } from '@/lib/db/mock-seed';
+import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
+import { authErrorResponse } from '@/lib/auth/api-error';
 
 export async function POST(req: NextRequest) {
+  let auth;
   try {
-    const profile = localStore.getProfile();
+    auth = await getAuthenticatedUser(req);
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const { user } = auth;
+
+  try {
     const origin = req.headers.get('origin') || 'http://localhost:3000';
 
     const session = await createCheckoutSession({
-      userId: profile.id,
-      userEmail: profile.email,
+      userId: user.id,
+      userEmail: user.email,
       returnUrl: `${origin}/settings`,
     });
 

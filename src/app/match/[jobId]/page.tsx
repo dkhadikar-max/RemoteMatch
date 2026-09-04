@@ -7,7 +7,9 @@ import { localStore } from '@/lib/db/mock-seed';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { generateJobSpecificResumeAnalysis } from '@/lib/ai/resume-intelligence';
+import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { MatchAnalysisView } from '@/components/match/match-analysis-view';
+import { UpgradeModal } from '@/components/premium/upgrade-modal';
 
 export default function MatchDetailPage() {
   const params = useParams();
@@ -20,41 +22,99 @@ export default function MatchDetailPage() {
   const [resumeTweaks, setResumeTweaks] = useState<TailoredResumeSuggestions | null>(null);
   const [coverLetter, setCoverLetter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
 
-    const userProfile = localStore.getProfile();
     const opp = localStore.getOpportunityById(jobId);
 
     if (!opp) {
       router.push('/feed');
       return;
     }
-
-    setProfile(userProfile);
     setOpportunity(opp);
 
-    // Compute or retrieve match
-    const matchRes = generateRuleBasedMatchAnalysis(userProfile, opp);
+    (async () => {
+      // Profile CONTENT (skills/experience) stays on the local fixture;
+      // planTier/dailyProposalsCount are overlaid from the server and are
+      // the only fields this page ever gates on.
+      const localProfile = localStore.getProfile();
+      const entitlement = await fetchServerEntitlement();
+      const userProfile: PersonProfile = entitlement
+        ? {
+            ...localProfile,
+            planTier: entitlement.planTier,
+            dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
+            dailyProposalsCount: entitlement.dailyProposalsCount,
+            usageDate: entitlement.usageDate,
+          }
+        : localProfile;
+      setProfile(userProfile);
 
-    // Attach job-specific resume improvements
-    matchRes.jobSpecificResumeImprovements = generateJobSpecificResumeAnalysis(userProfile, opp);
-    setMatch(matchRes);
+      // Compute or retrieve match
+      const matchRes = generateRuleBasedMatchAnalysis(userProfile, opp);
 
-    // Generate initial kit
-    generateApplicationKit(userProfile, opp, matchRes, 'confident').then((kit) => {
+      // Attach job-specific resume improvements
+      matchRes.jobSpecificResumeImprovements = generateJobSpecificResumeAnalysis(userProfile, opp);
+      setMatch(matchRes);
+
+      // Initial kit loaded for viewing without consuming daily proposal generation quota
+      const kit = await generateApplicationKit(userProfile, opp, matchRes, 'confident');
       setResumeTweaks(kit.resumeTweaks);
       setCoverLetter(kit.coverLetter);
       setIsLoading(false);
-    });
+    })();
   }, [jobId, router]);
 
   const handleToneChange = async (tone: MaterialTone): Promise<string> => {
     if (!profile || !opportunity || !match) return '';
-    const kit = await generateApplicationKit(profile, opportunity, match, tone);
-    setCoverLetter(kit.coverLetter);
-    return kit.coverLetter;
+
+    // The server is the only entitlement authority here: it atomically
+    // reserves one proposal-generation unit BEFORE calling the AI, and
+    // rolls the reservation back if generation fails (see
+    // src/app/api/ai/match-analysis/route.ts). There is deliberately no
+    // client-side pre-check and no local-generation fallback on failure —
+    // both were exploitable bypasses of the 5/day limit (a pre-check reads
+    // client state, and a "fallback" on a failed/blocked fetch generated
+    // full content without ever consulting the server).
+    let res: Response;
+    try {
+      res = await fetch('/api/ai/match-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: opportunity.id, tone }),
+      });
+    } catch {
+      throw new Error('network_error');
+    }
+
+    if (res.status === 403) {
+      setIsUpgradeModalOpen(true);
+      throw new Error('limit_reached');
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.coverLetter) {
+      throw new Error(data.error || 'generation_failed');
+    }
+
+    setCoverLetter(data.coverLetter);
+    const entitlement = await fetchServerEntitlement();
+    if (entitlement) {
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              planTier: entitlement.planTier,
+              dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
+              dailyProposalsCount: entitlement.dailyProposalsCount,
+              usageDate: entitlement.usageDate,
+            }
+          : prev
+      );
+    }
+    return data.coverLetter;
   };
 
   const handleRecordFeedback = (didApply: any, notes?: string) => {
@@ -63,13 +123,13 @@ export default function MatchDetailPage() {
     }
   };
 
-  if (isLoading || !opportunity || !match || !resumeTweaks) {
+  if (isLoading || !opportunity || !match || !resumeTweaks || !profile) {
     return (
       <div className="flex-1 flex items-center justify-center p-12">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-xs text-muted-foreground font-medium">
-            Generating deep match analysis and tailored proposal...
+          <div className="size-6 animate-spin rounded-full border-2 border-[var(--red)] border-t-transparent" />
+          <span className="text-xs text-[var(--muted)] font-medium">
+            Loading your match details...
           </span>
         </div>
       </div>
@@ -77,13 +137,30 @@ export default function MatchDetailPage() {
   }
 
   return (
-    <MatchAnalysisView
-      opportunity={opportunity}
-      match={match}
-      initialResumeTweaks={resumeTweaks}
-      initialCoverLetter={coverLetter}
-      onToneChange={handleToneChange}
-      onRecordFeedback={handleRecordFeedback}
-    />
+    <>
+      <MatchAnalysisView
+        opportunity={opportunity}
+        match={match}
+        initialResumeTweaks={resumeTweaks}
+        initialCoverLetter={coverLetter}
+        onToneChange={handleToneChange}
+        onRecordFeedback={handleRecordFeedback}
+        planTier={profile.planTier}
+        dailyProposalsCount={profile.dailyProposalsCount || 0}
+        onRequireUpgrade={() => setIsUpgradeModalOpen(true)}
+      />
+
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
+        reason="proposals"
+        onUpgraded={async () => {
+          const entitlement = await fetchServerEntitlement();
+          if (entitlement) {
+            setProfile((prev) => (prev ? { ...prev, ...entitlement } : prev));
+          }
+        }}
+      />
+    </>
   );
 }

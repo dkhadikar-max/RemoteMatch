@@ -49,6 +49,9 @@ export interface PersonProfile {
   planTier: 'free' | 'pro';
   dailyEvaluationsCount: number;
   lastEvaluationResetAt: string;
+  dailyRightSwipesCount?: number;
+  dailyProposalsCount?: number;
+  usageDate?: string; // YYYY-MM-DD (UTC)
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   createdAt: string;
@@ -288,4 +291,13 @@ export interface ApplicationEvent {
     | 'note_added';
   eventPayload: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface OpportunityFilters {
+  targetRole?: string;
+  remoteType?: string;
+  seniority?: string;
+  specificLocation?: string;
+  minSalary?: number;
+  strictTimezone?: string;
 }

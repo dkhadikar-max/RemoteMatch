@@ -117,7 +117,7 @@ export async function generateApplicationKit(
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `
-You are an expert career strategist for RemoteMatch (BYN architecture).
+You are an expert career strategist for RemoteMatch.
 Generate a tailored Application Kit for this candidate applying to this specific remote opportunity.
 
 CRITICAL INVARIANT: The model may transform evidence, but may NOT manufacture evidence.

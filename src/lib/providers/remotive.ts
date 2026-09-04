@@ -12,7 +12,7 @@ export class RemotiveProvider implements JobProvider {
       const res = await fetch('https://remotive.com/api/remote-jobs?limit=25', {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'RemoteMatch-BYN/1.0',
+          'User-Agent': 'RemoteMatch/1.0',
         },
       });
       clearTimeout(timeoutId);

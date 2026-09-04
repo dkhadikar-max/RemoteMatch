@@ -21,6 +21,10 @@ export interface RawJobPayload {
   tags?: string[];
   publicationDate: string;
   experienceLevel?: string;
+  status?: 'ACTIVE' | 'UPDATED' | 'EXPIRED';
+  updatedAt?: string;
+  closedAt?: string;
+  isPermanentlyRemoved?: boolean;
 }
 
 export interface JobProvider {

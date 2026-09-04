@@ -6,7 +6,7 @@ import { CanonicalOpportunity } from '@/types/byn';
 import { JobCard } from './job-card';
 import { SwipeControls } from './swipe-controls';
 import { JobDetailsModal } from './job-details-modal';
-import { Sparkles, Check, X, RotateCcw, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Check, X, RotateCcw, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 interface SwipeDeckProps {
@@ -14,6 +14,9 @@ interface SwipeDeckProps {
   onSwipe: (opportunityId: string, action: 'interested' | 'passed') => void;
   onRewind: () => Promise<string | null>;
   canRewind: boolean;
+  planTier?: 'free' | 'pro';
+  dailyRightSwipesCount?: number;
+  onRequireUpgrade?: (reason: 'rewind' | 'swipes') => void;
 }
 
 export function SwipeDeck({
@@ -21,6 +24,9 @@ export function SwipeDeck({
   onSwipe,
   onRewind,
   canRewind,
+  planTier = 'free',
+  dailyRightSwipesCount = 0,
+  onRequireUpgrade,
 }: SwipeDeckProps) {
   const [deck, setDeck] = useState<CanonicalOpportunity[]>(opportunities);
   const [selectedOpp, setSelectedOpp] = useState<CanonicalOpportunity | null>(null);
@@ -47,6 +53,11 @@ export function SwipeDeck({
       const swiped = currentOpp;
 
       if (action === 'interested') {
+        if (planTier === 'free' && dailyRightSwipesCount >= 15) {
+          x.set(0);
+          onRequireUpgrade?.('swipes');
+          return;
+        }
         setLastInterestedOpp(swiped);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 6000);
@@ -56,10 +67,14 @@ export function SwipeDeck({
       setDeck((prev) => prev.slice(1));
       x.set(0);
     },
-    [currentOpp, onSwipe, x]
+    [currentOpp, onSwipe, x, planTier, dailyRightSwipesCount, onRequireUpgrade]
   );
 
   const handleRewind = useCallback(async () => {
+    if (planTier === 'free') {
+      onRequireUpgrade?.('rewind');
+      return;
+    }
     const rewoundId = await onRewind();
     if (rewoundId) {
       const rewoundOpp = opportunities.find((o) => o.id === rewoundId);
@@ -67,7 +82,7 @@ export function SwipeDeck({
         setDeck((prev) => [rewoundOpp, ...prev.filter((o) => o.id !== rewoundId)]);
       }
     }
-  }, [onRewind, opportunities]);
+  }, [onRewind, opportunities, planTier, onRequireUpgrade]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -92,32 +107,32 @@ export function SwipeDeck({
 
   if (!currentOpp) {
     return (
-      <div className="flex flex-col items-center justify-center h-[520px] w-full max-w-[420px] rounded-2xl border border-border bg-card p-8 text-center shadow-xl">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-4">
-          <Sparkles className="h-8 w-8" />
+      <div className="soft-card flex flex-col items-center justify-center h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-8 text-center space-y-4 rounded-3xl border border-[#F3E8E2]">
+        <div className="grid size-12 place-items-center rounded-2xl bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
+          <CheckCircle2 size={24} />
         </div>
-        <h3 className="text-xl font-bold text-foreground mb-2">
-          You're All Caught Up!
+        <h3 className="text-xl font-bold text-[var(--ink)]">
+          Queue Cleared
         </h3>
-        <p className="text-sm text-muted-foreground mb-6 leading-relaxed">
-          You have evaluated all verified remote opportunities matching your intent. Check back later or review your saved matches in the tracker.
+        <p className="text-xs text-[var(--muted)] leading-relaxed max-w-sm">
+          All opportunities matching your criteria have been evaluated. Review your saved matches in the outcome tracker or adjust your filters.
         </p>
-        <div className="flex flex-col sm:flex-row gap-3 w-full">
+        <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
           {canRewind && (
             <button
               onClick={handleRewind}
-              className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-secondary/80 transition-colors"
+              className="soft-button secondary flex-1 flex items-center justify-center gap-2 text-xs border-[#F3E8E2]"
             >
-              <RotateCcw className="h-4 w-4" />
+              <RotateCcw size={14} />
               <span>Rewind</span>
             </button>
           )}
           <Link
             href="/tracker"
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-colors"
+            className="soft-button primary flex-1 flex items-center justify-center gap-2 text-xs"
           >
-            <span>Go to Tracker</span>
-            <ArrowRight className="h-4 w-4" />
+            <span>Outcome Tracker</span>
+            <ArrowRight size={14} />
           </Link>
         </div>
       </div>
@@ -125,7 +140,7 @@ export function SwipeDeck({
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-center w-full max-w-[440px]">
+    <div className="relative flex flex-col items-center justify-center w-full max-w-[440px] md:max-w-[560px]">
       {/* Toast Notification upon Right-Swipe */}
       <AnimatePresence>
         {showToast && lastInterestedOpp && (
@@ -133,30 +148,30 @@ export function SwipeDeck({
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="absolute -top-16 z-50 flex items-center justify-between gap-3 w-full rounded-xl border border-emerald-500/40 bg-emerald-950/90 backdrop-blur-md px-4 py-2.5 shadow-2xl text-xs"
+            className="absolute -top-16 z-50 flex items-center justify-between gap-3 w-full rounded-2xl border border-[#F3E8E2] bg-white px-4 py-3 shadow-[0_4px_20px_rgba(76,44,30,0.06)] text-xs"
           >
-            <div className="flex items-center gap-2 text-emerald-300">
-              <Check className="h-4 w-4 text-emerald-400" />
+            <div className="flex items-center gap-2 text-[var(--ink)]">
+              <Check size={15} className="text-[#059669]" />
               <span className="font-semibold line-clamp-1">
                 Saved & Analyzed: {lastInterestedOpp.company}
               </span>
             </div>
             <Link
               href={`/match/${lastInterestedOpp.id}`}
-              className="flex items-center gap-1 font-bold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg px-2.5 py-1 transition-colors"
+              className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white font-semibold px-3 py-1.5 text-xs transition-colors shrink-0 flex items-center gap-1 min-h-[36px]"
             >
               <span>View Match</span>
-              <ArrowRight className="h-3 w-3" />
+              <ArrowRight size={12} />
             </Link>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Card Stack Area */}
-      <div className="relative h-[520px] w-full flex items-center justify-center">
+      <div className="relative h-[480px] sm:h-[510px] md:h-[530px] w-full flex items-center justify-center">
         {/* Background Card Peek */}
         {nextOpp && (
-          <div className="absolute top-3 scale-[0.96] opacity-60 pointer-events-none w-full max-w-[420px]">
+          <div className="absolute top-2.5 scale-[0.97] opacity-60 pointer-events-none w-full max-w-[440px] md:max-w-[560px]">
             <JobCard opportunity={nextOpp} isFrontCard={false} />
           </div>
         )}
@@ -175,23 +190,23 @@ export function SwipeDeck({
               handleSwipe('passed');
             }
           }}
-          className="absolute cursor-grab active:cursor-grabbing w-full max-w-[420px] touch-none"
+          className="absolute cursor-grab active:cursor-grabbing w-full max-w-[440px] md:max-w-[560px] touch-none"
         >
           {/* Visual Stamp: INTERESTED */}
           <motion.div
             style={{ opacity: interestedOpacity }}
-            className="pointer-events-none absolute top-8 left-8 z-30 flex items-center gap-1 rounded-xl border-2 border-emerald-400 bg-emerald-500/20 px-4 py-1.5 text-lg font-black tracking-wider text-emerald-400 -rotate-12 shadow-lg backdrop-blur-sm"
+            className="pointer-events-none absolute top-8 left-8 z-30 flex items-center gap-1.5 rounded-2xl border-2 border-[#059669] bg-[#ecfdf5] px-4 py-2 text-sm font-bold tracking-wider text-[#059669] -rotate-12 shadow-md"
           >
-            <Check className="h-6 w-6 stroke-[3]" />
+            <Check className="size-5 stroke-[3]" />
             <span>INTERESTED</span>
           </motion.div>
 
           {/* Visual Stamp: PASS */}
           <motion.div
             style={{ opacity: passOpacity }}
-            className="pointer-events-none absolute top-8 right-8 z-30 flex items-center gap-1 rounded-xl border-2 border-rose-500 bg-rose-500/20 px-4 py-1.5 text-lg font-black tracking-wider text-rose-400 rotate-12 shadow-lg backdrop-blur-sm"
+            className="pointer-events-none absolute top-8 right-8 z-30 flex items-center gap-1.5 rounded-2xl border-2 border-[var(--danger)] bg-[#fdf2f2] px-4 py-2 text-sm font-bold tracking-wider text-[var(--danger)] rotate-12 shadow-md"
           >
-            <X className="h-6 w-6 stroke-[3]" />
+            <X className="size-5 stroke-[3]" />
             <span>PASS</span>
           </motion.div>
 
@@ -215,6 +230,8 @@ export function SwipeDeck({
           setIsDetailsOpen(true);
         }}
         canRewind={canRewind}
+        planTier={planTier}
+        onRequireUpgrade={onRequireUpgrade}
       />
 
       {/* Full Details Modal */}

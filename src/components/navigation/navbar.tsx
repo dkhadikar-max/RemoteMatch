@@ -1,130 +1,189 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Compass,
-  Briefcase,
-  User,
-  Sparkles,
-  Sun,
-  Moon,
-  Layers,
-  ArrowUpRight,
+  BriefcaseBusiness,
+  UserRound,
   Activity,
+  ArrowUpRight,
 } from 'lucide-react';
 
 export function Navbar() {
   const pathname = usePathname();
-  const [isDark, setIsDark] = useState(true);
-  const [evaluationCount, setEvaluationCount] = useState(3);
-  const maxFree = 20;
-
-  useEffect(() => {
-    // Check initial theme
-    if (typeof window !== 'undefined') {
-      const isLightTheme = document.documentElement.classList.contains('light');
-      setIsDark(!isLightTheme);
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    if (typeof window !== 'undefined') {
-      if (isDark) {
-        document.documentElement.classList.add('light');
-        setIsDark(false);
-      } else {
-        document.documentElement.classList.remove('light');
-        setIsDark(true);
-      }
-    }
-  };
-
-  const navItems = [
-    { label: 'Feed', href: '/feed', icon: Compass },
-    { label: 'Tracker', href: '/tracker', icon: Briefcase },
-    { label: 'Profile', href: '/settings', icon: User },
-    { label: 'Control Room', href: '/staging', icon: Activity },
-  ];
+  const [evaluationCount] = useState(3);
+  const maxFreeSaves = 15;
+  const savesRemaining = Math.max(maxFreeSaves - evaluationCount, 0);
+  const isLanding = pathname === '/';
+  const isPro = false; // localStore can supply or default to false
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        {/* Brand */}
-        <div className="flex items-center gap-3">
-          <Link href="/feed" className="flex items-center gap-2 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-indigo-500 shadow-md shadow-emerald-500/10 group-hover:scale-105 transition-transform">
-              <Layers className="h-5 w-5 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-base tracking-tight text-foreground">
-                  RemoteMatch
-                </span>
-                <span className="rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-400 border border-indigo-500/20">
-                  BYN
-                </span>
-              </div>
-              <span className="text-[10px] text-muted-foreground hidden sm:block">
-                High-Signal Remote Matching
-              </span>
-            </div>
-          </Link>
-        </div>
-
-        {/* Center Nav */}
-        <nav className="flex items-center gap-1 sm:gap-2">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-secondary text-foreground font-semibold'
-                    : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                }`}
-              >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : ''}`} />
-                <span className="hidden sm:inline">{item.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Right Controls: Daily limit quota + Pro Upgrade + Theme */}
-        <div className="flex items-center gap-2.5">
-          {/* Daily Evaluation Counter */}
-          <div className="hidden md:flex items-center gap-1.5 rounded-full border border-border bg-secondary/60 px-3 py-1 text-xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-muted-foreground">Evaluations:</span>
-            <span className="font-semibold text-foreground">
-              {maxFree - evaluationCount} / {maxFree}
+    <>
+      {/* Desktop & Tablet Top Navigation */}
+      <header className="sticky top-0 z-30 border-b border-[#F3E8E2] bg-[#FFF7F2]/90 backdrop-blur-md">
+        <div className="container flex h-[68px] items-center justify-between gap-6">
+          {/* Brand Logo */}
+          <Link href="/" className="flex items-center gap-2.5 tracking-tight group">
+            <span className="grid size-8 place-items-center rounded-full bg-[var(--red)] text-white shadow-sm transition-transform duration-150 group-hover:scale-105">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 17L17 7" />
+                <path d="M7 7h10v10" />
+              </svg>
             </span>
-          </div>
-
-          {/* Pro Badge / Upgrade */}
-          <Link
-            href="/settings?tab=billing"
-            className="flex items-center gap-1 rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Pro $12</span>
+            <span className="text-lg font-bold tracking-tight text-[var(--ink)]">RemoteMatch</span>
           </Link>
 
-          {/* Theme Switcher */}
-          <button
-            onClick={toggleTheme}
-            aria-label="Toggle Theme"
-            className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+          {/* Center Navigation Links */}
+          <nav className="hidden items-center gap-1 md:flex">
+            {isLanding ? (
+              <>
+                <Link
+                  href="/feed"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                >
+                  Jobs
+                </Link>
+                <Link
+                  href="/remote-jobs"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                >
+                  Directory
+                </Link>
+                <a
+                  href="#how-it-works"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                >
+                  How It Works
+                </a>
+                <Link
+                  href="/guide"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                >
+                  Guides
+                </Link>
+                <Link
+                  href="/settings?tab=billing"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                >
+                  Pricing
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/feed"
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                    pathname === '/feed' || pathname.startsWith('/match')
+                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
+                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Jobs
+                </Link>
+                <Link
+                  href="/tracker"
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                    pathname === '/tracker'
+                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
+                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Applications
+                </Link>
+                <Link
+                  href="/settings"
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                    pathname === '/settings'
+                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
+                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Profile
+                </Link>
+              </>
+            )}
+          </nav>
+
+          {/* Right Controls */}
+          <div className="flex items-center gap-3">
+            {isLanding ? (
+              <>
+                <Link
+                  href="/feed"
+                  className="rounded-xl border border-[#F3E8E2] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors shadow-sm"
+                >
+                  Browse jobs
+                </Link>
+                <Link
+                  href="/onboarding"
+                  className="soft-button primary text-xs !py-2 !px-4"
+                >
+                  Find your matches →
+                </Link>
+              </>
+            ) : (
+              <>
+                {isPro ? (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] shadow-sm">
+                    Pro
+                  </span>
+                ) : (
+                  <div className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[var(--muted)] bg-white border border-[#F3E8E2] rounded-full px-3 py-1 shadow-sm">
+                    <span className="size-1.5 rounded-full bg-[var(--red)]" />
+                    <span>{savesRemaining} saves left today</span>
+                  </div>
+                )}
+
+                <Link
+                  href="/settings"
+                  className="grid size-9 place-items-center rounded-full bg-[#fde8eb] text-xs font-bold text-[var(--red)] border border-[#fcd5dc] shadow-sm hover:bg-[#fcd5dc] transition-colors"
+                >
+                  A
+                </Link>
+              </>
+            )}
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+
+      {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) */}
+      <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[#F3E8E2] bg-white/95 p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
+        <Link
+          href="/feed"
+          className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
+            pathname === '/feed' || pathname.startsWith('/match')
+              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              : 'text-[var(--muted)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <Compass size={19} />
+          <span className="mt-0.5">Jobs</span>
+        </Link>
+        <Link
+          href="/tracker"
+          className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
+            pathname === '/tracker'
+              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              : 'text-[var(--muted)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <BriefcaseBusiness size={19} />
+          <span className="mt-0.5">Applications</span>
+        </Link>
+        <Link
+          href="/settings"
+          className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
+            pathname === '/settings'
+              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              : 'text-[var(--muted)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <UserRound size={19} />
+          <span className="mt-0.5">Profile</span>
+        </Link>
+      </nav>
+    </>
   );
 }

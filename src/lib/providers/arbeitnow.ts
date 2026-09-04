@@ -12,7 +12,7 @@ export class ArbeitnowProvider implements JobProvider {
       const res = await fetch('https://www.arbeitnow.com/api/job-board-api', {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'RemoteMatch-BYN/1.0',
+          'User-Agent': 'RemoteMatch/1.0',
         },
       });
       clearTimeout(timeoutId);

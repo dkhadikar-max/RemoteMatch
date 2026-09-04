@@ -148,7 +148,7 @@ export async function analyzeResumeWithAI(
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `
-You are the Chief Resume Intelligence Officer for RemoteMatch (BYN Architecture).
+You are the Chief Resume Intelligence Officer for RemoteMatch.
 Analyze this candidate's resume text against their onboarding intent.
 
 Candidate Claimed Intent:

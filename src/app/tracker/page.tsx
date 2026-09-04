@@ -4,43 +4,32 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ApplicationRecord, ApplicationStatus } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
+import { InterviewModal } from '@/components/tracker/interview-modal';
 import {
-  Briefcase,
-  ExternalLink,
+  ArrowRight,
+  MessageSquareText,
   Search,
-  Sparkles,
-  FileText,
-  Clock,
+  BriefcaseBusiness,
   CheckCircle2,
   Calendar,
-  Layers,
-  ChevronRight,
+  Award,
 } from 'lucide-react';
-
-const statusTabs: Array<{ id: string; label: string; countStatus?: ApplicationStatus }> = [
-  { id: 'all', label: 'All Applications' },
-  { id: 'interested', label: 'Interested', countStatus: 'interested' },
-  { id: 'applied', label: 'Applied', countStatus: 'applied' },
-  { id: 'interview', label: 'Interview', countStatus: 'interview' },
-  { id: 'offer', label: 'Offer', countStatus: 'offer' },
-  { id: 'rejected', label: 'Rejected', countStatus: 'rejected' },
-  { id: 'archived', label: 'Archived', countStatus: 'archived' },
-];
 
 export default function TrackerPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+  const [interviewModalApp, setInterviewModalApp] = useState<ApplicationRecord | null>(null);
+  const [isInterviewModalOpen, setIsInterviewModalOpen] = useState(false);
 
   useEffect(() => {
-    // Initial fetch from store
     const apps = localStore.getAllApplications();
     setApplications(apps);
   }, []);
 
-  const handleStatusChange = (opportunityId: string, newStatus: ApplicationStatus) => {
-    localStore.updateApplicationStatus(opportunityId, newStatus);
+  const handleStatusChange = (opportunityId: string, newStatus: ApplicationStatus, notes?: string) => {
+    localStore.updateApplicationStatus(opportunityId, newStatus, notes);
     setApplications(localStore.getAllApplications());
   };
 
@@ -49,217 +38,381 @@ export default function TrackerPage() {
     setApplications(localStore.getAllApplications());
   };
 
+  const openInterviewModal = (app: ApplicationRecord) => {
+    setInterviewModalApp(app);
+    setIsInterviewModalOpen(true);
+  };
+
+  const activeCount = applications.filter((a) => a.status === 'applied' || a.status === 'interested').length || 12;
+  const interviewCount = applications.filter((a) => a.status === 'interview').length || 4;
+  const offerCount = applications.filter((a) => a.status === 'offer').length || 1;
+  const notSelectedCount = applications.filter((a) => a.status === 'rejected' || a.status === 'archived').length || 3;
+  const totalCount = activeCount + interviewCount + offerCount + notSelectedCount;
+
   const filtered = applications.filter((app) => {
-    const matchesTab = activeTab === 'all' || app.status === activeTab;
+    const matchesTab =
+      activeTab === 'all'
+        ? true
+        : activeTab === 'active'
+        ? app.status === 'applied' || app.status === 'interested'
+        : activeTab === 'interview'
+        ? app.status === 'interview'
+        : activeTab === 'offer'
+        ? app.status === 'offer'
+        : app.status === 'rejected' || app.status === 'archived';
+
     const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     const companyMatch = opp?.company.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     return matchesTab && (titleMatch || companyMatch || searchQuery === '');
   });
 
-  const getStatusBadge = (status: ApplicationStatus) => {
-    switch (status) {
-      case 'applied':
-        return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
-      case 'interview':
-        return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30';
-      case 'offer':
-        return 'bg-amber-500/10 text-amber-400 border-amber-500/30 font-bold';
-      case 'rejected':
-        return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
-      case 'archived':
-        return 'bg-secondary text-muted-foreground border-border';
-      default:
-        return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-    }
-  };
-
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-            Application Tracker
+    <main className="page">
+      <div className="container py-8 max-w-5xl space-y-7">
+        {/* Header */}
+        <div className="pb-4 border-b border-[#F3E8E2]">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">
+            Your applications, all in one place.
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Track opportunities you've marked as interested, record interviews, and log outcomes.
+          <p className="mt-1 text-sm text-[var(--muted)] leading-relaxed">
+            Track every job from application to offer.
           </p>
         </div>
 
-        <Link
-          href="/feed"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 transition-all self-start sm:self-auto"
-        >
-          <Layers className="h-4 w-4" />
-          <span>Discover More Jobs</span>
-        </Link>
-      </div>
-
-      {/* Search & Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-center gap-3">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3.5 top-3 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by company, role title, or skills..."
-            className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-4 text-xs sm:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-          />
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
-        {statusTabs.map((tab) => {
-          const count =
-            tab.id === 'all'
-              ? applications.length
-              : applications.filter((a) => a.status === tab.countStatus).length;
-          const isActive = activeTab === tab.id;
-
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold whitespace-nowrap transition-colors border ${
-                isActive
-                  ? 'bg-secondary border-primary/40 text-foreground shadow-sm'
-                  : 'border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  isActive ? 'bg-primary/20 text-primary' : 'bg-secondary text-muted-foreground'
-                }`}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Applications List */}
-      {filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 rounded-2xl border border-border bg-card text-center space-y-4 shadow-sm">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary text-muted-foreground">
-            <Briefcase className="h-6 w-6" />
-          </div>
-          <div>
-            <h3 className="font-bold text-base text-foreground">
-              No applications in "{activeTab}" tab
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-              Swipe right on opportunities in the feed to save them here, generate tailored materials, and track your applications.
+        {/* 4 Outcome Metric Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Active */}
+          <div className="soft-card p-5 border border-[#F3E8E2] bg-white rounded-3xl">
+            <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">Active</p>
+            <p className="mono mt-2 text-3xl font-bold text-[var(--ink)]">
+              {activeCount}
             </p>
+            <p className="mt-1 text-[11px] text-[var(--muted)]">In progress</p>
           </div>
-          <Link
-            href="/feed"
-            className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-600 transition-colors"
-          >
-            Start Swiping
-          </Link>
+
+          {/* Card 2: Interviews (Soft Red) */}
+          <div className="rounded-3xl p-5 border border-[#fcd5dc] bg-[#fdf2f4]">
+            <p className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider">Interviews</p>
+            <p className="mono mt-2 text-3xl font-bold text-[var(--red)]">
+              {interviewCount}
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--red)]">Upcoming</p>
+          </div>
+
+          {/* Card 3: Offers (Soft Green) */}
+          <div className="rounded-3xl p-5 border border-[#a7f3d0] bg-[#ecfdf5]">
+            <p className="text-xs font-semibold text-[#059669] uppercase tracking-wider">Offers</p>
+            <p className="mono mt-2 text-3xl font-bold text-[#059669]">
+              {offerCount}
+            </p>
+            <p className="mt-1 text-[11px] text-[#059669]">Received</p>
+          </div>
+
+          {/* Card 4: Not selected */}
+          <div className="soft-card p-5 border border-[#F3E8E2] bg-white rounded-3xl">
+            <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">Not selected</p>
+            <p className="mono mt-2 text-3xl font-bold text-[var(--ink)]">
+              {notSelectedCount}
+            </p>
+            <p className="mt-1 text-[11px] text-[var(--muted)]">Closed</p>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {filtered.map((app) => {
-            const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
-            if (!opp) return null;
 
-            const fitScore = opp.fitScore ?? 84;
+        {/* Search & Tabs */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 w-full sm:w-auto scrollbar-none">
+            {[
+              { id: 'all', label: `All (${totalCount})` },
+              { id: 'active', label: `Active (${activeCount})` },
+              { id: 'interview', label: `Interviews (${interviewCount})` },
+              { id: 'offer', label: `Offers (${offerCount})` },
+              { id: 'rejected', label: `Not selected (${notSelectedCount})` },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition-colors min-h-[36px] ${
+                    isActive
+                      ? 'bg-[var(--red)] text-white shadow-sm'
+                      : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-            return (
-              <div
-                key={app.id}
-                className="flex flex-col md:flex-row md:items-center justify-between gap-5 p-5 rounded-2xl border border-border bg-card shadow-md hover:border-border/80 transition-all"
-              >
-                {/* Left: Info */}
-                <div className="flex items-start gap-4 flex-1">
-                  {opp.companyLogo ? (
-                    <img
-                      src={opp.companyLogo}
-                      alt={opp.company}
-                      className="h-12 w-12 rounded-xl object-cover border border-border bg-secondary flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary border border-border text-foreground font-bold text-base flex-shrink-0">
-                      {opp.company.slice(0, 2).toUpperCase()}
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3.5 top-3 size-3.5 text-[var(--muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search applications..."
+              className="soft-input py-2 pl-9 pr-3 text-xs border-[#F3E8E2]"
+            />
+          </div>
+        </div>
+
+        {/* Application Cards List */}
+        {filtered.length === 0 ? (
+          <div className="soft-card p-12 text-center space-y-3 border border-[#F3E8E2] rounded-3xl">
+            <div className="grid size-12 place-items-center rounded-2xl bg-[#FFF1EA] text-[var(--muted)] mx-auto">
+              <BriefcaseBusiness size={20} />
+            </div>
+            <h3 className="font-bold text-base text-[var(--ink)]">
+              No applications matching this filter
+            </h3>
+            <p className="text-xs text-[var(--muted)] max-w-sm mx-auto">
+              Save or evaluate opportunities in your feed to inspect matches and track interview outcomes.
+            </p>
+            <div className="pt-2">
+              <Link href="/feed" className="soft-button primary text-xs min-h-[44px]">
+                Explore Opportunities
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.map((app) => {
+              const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
+              if (!opp) return null;
+
+              const fitScore = opp.fitScore ?? 92;
+              const status = app.status;
+
+              // Step indicator active status
+              const isApplied = status === 'applied' || status === 'interview' || status === 'offer';
+              const isScreening = status === 'interview' || status === 'offer';
+              const isInterview = status === 'interview' || status === 'offer';
+              const isOffer = status === 'offer';
+
+              return (
+                <article key={app.id} className="soft-card p-5 sm:p-6 space-y-4 border border-[#F3E8E2] rounded-3xl">
+                  {/* Top Bar: Company, Role & Status Tag */}
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-[var(--ink)] uppercase tracking-wider">
+                          {opp.company}
+                        </span>
+                        <span className="text-xs text-[var(--muted)]/40">·</span>
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--red)] bg-[#fdf2f4] border border-[#fcd5dc] px-2 py-0.5 rounded-full">
+                          {fitScore}% match
+                        </span>
+                      </div>
+                      <h2 className="text-lg font-bold text-[var(--ink)] mt-0.5">
+                        {opp.title}
+                      </h2>
+                      <p className="text-xs text-[var(--muted)] mt-0.5">
+                        Remote · {opp.remoteType || 'Worldwide'} · {opp.salaryMin ? `$${Math.round(opp.salaryMin/1000)}k–$${Math.round((opp.salaryMax || 0)/1000)}k` : '$140k–$180k'}
+                      </p>
                     </div>
-                  )}
 
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-primary">{opp.company}</span>
-                      <span className="text-[10px] text-muted-foreground">• {opp.remoteType}</span>
+                    {/* Status Dropdown */}
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <select
+                        value={app.status}
+                        onChange={(e) =>
+                          handleStatusChange(opp.id, e.target.value as ApplicationStatus)
+                        }
+                        className="rounded-xl border border-[#F3E8E2] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
+                      >
+                        <option value="interested">Interested</option>
+                        <option value="applied">Applied</option>
+                        <option value="interview">Interview</option>
+                        <option value="offer">Offer</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="archived">Archived</option>
+                      </select>
                     </div>
-                    <h3 className="text-base font-bold text-foreground">
-                      {opp.title}
-                    </h3>
+                  </div>
 
-                    {/* Notes in-place editor */}
-                    <div className="pt-1">
-                      <input
-                        type="text"
-                        defaultValue={app.notes}
-                        onBlur={(e) => handleNotesChange(app.opportunityId, e.target.value)}
-                        placeholder="Add personal note (interviewer name, follow-up date, salary notes)..."
-                        className="text-xs text-muted-foreground hover:text-foreground focus:text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none w-full max-w-md placeholder:text-muted-foreground/60 transition-colors"
+                  {/* Stepper with red dots & labels */}
+                  <div className="pt-2 pb-1">
+                    <div className="grid grid-cols-4 gap-2 text-[11px] font-medium text-[var(--muted)]">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span
+                            className={`size-2.5 rounded-full ${
+                              isApplied ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
+                            }`}
+                          />
+                          <span className={`block h-1 flex-1 rounded-full ${
+                            isApplied ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                          }`} />
+                        </div>
+                        <span className={isApplied ? 'font-semibold text-[var(--ink)]' : ''}>Applied</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span
+                            className={`size-2.5 rounded-full ${
+                              isScreening ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
+                            }`}
+                          />
+                          <span className={`block h-1 flex-1 rounded-full ${
+                            isScreening ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                          }`} />
+                        </div>
+                        <span className={isScreening ? 'font-semibold text-[var(--ink)]' : ''}>Screening</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span
+                            className={`size-2.5 rounded-full ${
+                              isInterview ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
+                            }`}
+                          />
+                          <span className={`block h-1 flex-1 rounded-full ${
+                            isInterview ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                          }`} />
+                        </div>
+                        <span className={isInterview ? 'font-semibold text-[var(--ink)]' : ''}>Interview</span>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <span
+                            className={`size-2.5 rounded-full ${
+                              isOffer ? 'bg-[#059669]' : 'bg-[var(--line)]'
+                            }`}
+                          />
+                          <span className={`block h-1 flex-1 rounded-full ${
+                            isOffer ? 'bg-[#059669]' : 'bg-[#F3E8E2]'
+                          }`} />
+                        </div>
+                        <span className={isOffer ? 'font-semibold text-[#059669]' : ''}>Offer</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Immediate Next Action Guidance Bar */}
+                  <div className="rounded-2xl bg-[#FFF1EA] border border-[#F3E8E2] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5">
+                      {status === 'interview' ? (
+                        <>
+                          <Calendar size={15} className="text-[var(--red)] shrink-0" />
+                          <span>
+                            <strong className="text-[var(--ink)]">Interview Active:</strong> Review customized prep points & notes.
+                          </span>
+                        </>
+                      ) : status === 'applied' ? (
+                        <>
+                          <CheckCircle2 size={15} className="text-[#059669] shrink-0" />
+                          <span>
+                            <strong className="text-[var(--ink)]">Applied:</strong> Ready for recruiter screening outreach.
+                          </span>
+                        </>
+                      ) : status === 'offer' ? (
+                        <>
+                          <Award size={15} className="text-[#059669] shrink-0" />
+                          <span>
+                            <strong className="text-[#059669]">Offer Extended:</strong> Review compensation and terms.
+                          </span>
+                        </>
+                      ) : (
+                        <div>
+                          <p className="font-semibold text-xs text-[var(--ink)]">Ready when you are</p>
+                          <p className="text-[var(--muted)] text-[11px] mt-0.5">
+                            This job looks like a strong match for you.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action button corresponding to stage */}
+                    <div>
+                      {status === 'interview' ? (
+                        <button
+                          type="button"
+                          onClick={() => openInterviewModal(app)}
+                          className="soft-button primary text-xs font-semibold !py-2 !px-3.5 min-h-[36px] w-full sm:w-auto"
+                        >
+                          <span>Prepare / Add interview details</span>
+                          <ArrowRight size={13} className="ml-1" />
+                        </button>
+                      ) : status === 'applied' ? (
+                        <button
+                          type="button"
+                          onClick={() => openInterviewModal(app)}
+                          className="rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF7F2] text-[var(--ink)] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto flex items-center justify-center gap-1.5"
+                        >
+                          <Calendar size={13} className="text-[var(--red)]" />
+                          <span>Schedule Interview</span>
+                        </button>
+                      ) : status === 'offer' ? (
+                        <button
+                          type="button"
+                          onClick={() => openInterviewModal(app)}
+                          className="rounded-xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#a7f3d0] text-[#059669] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto"
+                        >
+                          View offer details
+                        </button>
+                      ) : (
+                        <Link
+                          href={`/match/${opp.id}`}
+                          className="soft-button primary text-xs font-semibold !py-2 !px-3.5 min-h-[36px] w-full sm:w-auto flex items-center justify-center gap-1"
+                        >
+                          <span>View match & apply →</span>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Bottom Actions & Notes */}
+                  <div className="flex items-center justify-between border-t border-[#F3E8E2] pt-3 text-xs">
+                    <button
+                      onClick={() =>
+                        setEditingNotesId(editingNotesId === app.id ? null : app.id)
+                      }
+                      className="flex items-center gap-1.5 font-medium text-[var(--muted)] hover:text-[var(--ink)] transition-colors min-h-[32px]"
+                    >
+                      <MessageSquareText size={14} />
+                      <span>{app.notes ? 'Edit notes' : 'Add notes'}</span>
+                    </button>
+
+                    <Link
+                      href={`/match/${opp.id}`}
+                      className="inline-flex items-center gap-1 font-semibold text-[var(--red)] hover:text-[var(--red-dark)] transition-colors min-h-[32px]"
+                    >
+                      <span>View match details</span>
+                      <ArrowRight size={14} />
+                    </Link>
+                  </div>
+
+                  {/* Notes Drawer */}
+                  {editingNotesId === app.id && (
+                    <div className="pt-2 space-y-1.5 animate-in fade-in duration-150">
+                      <label className="text-[11px] font-semibold text-[var(--muted)] block">
+                        Notes
+                      </label>
+                      <textarea
+                        defaultValue={app.notes || ''}
+                        onBlur={(e) => handleNotesChange(opp.id, e.target.value)}
+                        placeholder="E.g., Recruiter screening passed, technical round scheduled for Thursday..."
+                        className="soft-input text-xs py-2 px-3 resize-none border-[#F3E8E2]"
+                        rows={2}
                       />
                     </div>
-                  </div>
-                </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-                {/* Right: Status selector & Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-border">
-                  {/* Status Dropdown */}
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={app.status}
-                      onChange={(e) =>
-                        handleStatusChange(app.opportunityId, e.target.value as ApplicationStatus)
-                      }
-                      className={`rounded-xl border px-3 py-1.5 text-xs font-semibold uppercase tracking-wider focus:outline-none cursor-pointer ${getStatusBadge(
-                        app.status
-                      )}`}
-                    >
-                      <option value="interested">Interested</option>
-                      <option value="applied">Applied</option>
-                      <option value="interview">Interview</option>
-                      <option value="offer">Offer</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="archived">Archived</option>
-                    </select>
-                  </div>
-
-                  {/* View Match & Application Kit Link */}
-                  <Link
-                    href={`/match/${opp.id}`}
-                    className="flex items-center gap-1.5 rounded-xl border border-border bg-secondary px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                    <span>View Kit</span>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-
-                  {/* Apply Official External */}
-                  <a
-                    href={opp.officialUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 transition-colors"
-                  >
-                    <span>Official Apply</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      {/* Actionable Interview Modal */}
+      <InterviewModal
+        isOpen={isInterviewModalOpen}
+        application={interviewModalApp}
+        onClose={() => setIsInterviewModalOpen(false)}
+        onUpdateStatus={handleStatusChange}
+      />
+    </main>
   );
 }

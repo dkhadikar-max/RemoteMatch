@@ -2,356 +2,543 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import {
-  Compass,
-  Sparkles,
-  ShieldCheck,
-  FileCheck,
-  CheckCircle2,
   ArrowRight,
-  Zap,
-  Globe,
-  DollarSign,
-  Heart,
-  X,
-  Layers,
+  Check,
+  CircleCheck,
+  MapPin,
 } from 'lucide-react';
-import { CanonicalOpportunity } from '@/types/byn';
 
-// 3 Interactive Demo Opportunities for instant preview
-const DEMO_PREVIEW_JOBS: CanonicalOpportunity[] = [
+const PREVIEW_JOBS = [
   {
-    id: 'demo-p-1',
-    type: 'job',
-    title: 'Senior Full Stack Engineer',
-    company: 'Automattic',
-    companyLogo: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&h=100&fit=crop&crop=faces',
-    description: 'Build globally scalable web architectures across WordPress.com and Tumblr with React, TypeScript, and distributed databases.',
-    source: 'curated',
-    sourceId: 'demo-1',
-    officialUrl: 'https://automattic.com/work-with-us',
-    canonicalUrlHash: 'h1',
-    contentHash: 'c1',
-    employmentType: 'Full-time',
-    remoteType: 'Worldwide',
-    eligibleCountries: [],
-    excludedCountries: [],
-    timezoneRequirements: [],
-    salaryMin: 120000,
-    salaryMax: 160000,
-    requiredSkills: ['React', 'TypeScript', 'Node.js', 'PostgreSQL'],
-    preferredSkills: [],
-    qualityScore: 95,
-    status: 'active',
-    postedAt: new Date().toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    fitScore: 88,
-    fitBadge: 'Strong Fit',
+    id: 'opp_curated_1',
+    company: 'Acme',
+    badge: 'A',
+    badgeBg: 'bg-[#5e6ad2] text-white',
+    title: 'Senior Product Manager',
+    location: 'Remote',
+    salary: '$150k–$180k',
+    score: 84,
+    fitLabel: 'Strong match',
+    whyMatches: 'Your product leadership and SaaS experience line up well with this role.',
+    missingItem: 'The role asks for experience with enterprise procurement.',
   },
   {
-    id: 'demo-p-2',
-    type: 'job',
-    title: 'Staff Product Designer',
-    company: 'GitLab',
-    companyLogo: 'https://images.unsplash.com/photo-1572044162444-ad60f128bdea?w=100&h=100&fit=crop&crop=faces',
-    description: 'Lead design systems, developer workflows, and end-to-end Figma UI components across our global asynchronous remote organization.',
-    source: 'curated',
-    sourceId: 'demo-2',
-    officialUrl: 'https://about.gitlab.com/jobs/apply',
-    canonicalUrlHash: 'h2',
-    contentHash: 'c2',
-    employmentType: 'Full-time',
-    remoteType: 'Worldwide',
-    eligibleCountries: [],
-    excludedCountries: [],
-    timezoneRequirements: [],
-    salaryMin: 140000,
-    salaryMax: 185000,
-    requiredSkills: ['Figma', 'Product Design', 'Design Systems', 'SaaS'],
-    preferredSkills: [],
-    qualityScore: 92,
-    status: 'active',
-    postedAt: new Date().toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    fitScore: 84,
-    fitBadge: 'Strong Fit',
+    id: 'opp_curated_2',
+    company: 'Stripe',
+    badge: 'S',
+    badgeBg: 'bg-[#635bff] text-white',
+    title: 'Senior Software Engineer',
+    location: 'Remote · Worldwide',
+    salary: '$150k–$190k',
+    score: 96,
+    fitLabel: 'Strong match',
+    whyMatches: 'Your full stack architecture and distributed systems experience match this role directly.',
+    missingItem: 'Production-scale payments experience is not clear from your profile.',
   },
   {
-    id: 'demo-p-3',
-    type: 'job',
-    title: 'Freelance AI/ML Engineer',
-    company: 'HyperScale AI Lab',
-    companyLogo: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=100&h=100&fit=crop&crop=faces',
-    description: 'Design retrieval-augmented generation (RAG) pipelines, evaluate embeddings, and optimize open models with PyTorch and Python.',
-    source: 'curated',
-    sourceId: 'demo-3',
-    officialUrl: 'https://hyperscale.ai/contracts',
-    canonicalUrlHash: 'h3',
-    contentHash: 'c3',
-    employmentType: 'Contract',
-    remoteType: 'Worldwide',
-    eligibleCountries: [],
-    excludedCountries: [],
-    timezoneRequirements: [],
-    salaryMin: 70,
-    salaryMax: 110,
-    requiredSkills: ['Python', 'PyTorch', 'LLMs', 'RAG', 'Vector DBs'],
-    preferredSkills: [],
-    qualityScore: 90,
-    status: 'active',
-    postedAt: new Date().toISOString(),
-    lastVerifiedAt: new Date().toISOString(),
-    fitScore: 79,
-    fitBadge: 'Good Fit',
+    id: 'opp_curated_3',
+    company: 'Mercury',
+    badge: 'M',
+    badgeBg: 'bg-[#111827] text-white',
+    title: 'Staff Backend Engineer',
+    location: 'Remote · Americas / Europe',
+    salary: '$160k–$210k',
+    score: 88,
+    fitLabel: 'Good match',
+    whyMatches: 'Your deep PostgreSQL and high availability systems background align with the team roadmap.',
+    missingItem: 'Haskell and Nix production usage are not highlighted in your profile.',
   },
 ];
 
 export default function LandingPage() {
-  const [demoDeck, setDemoDeck] = useState(DEMO_PREVIEW_JOBS);
-  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
-  const [interestedJob, setInterestedJob] = useState<CanonicalOpportunity | null>(null);
-
-  const currentJob = demoDeck[0];
-
-  const handleDemoAction = (action: 'pass' | 'interested') => {
-    if (!currentJob) return;
-    if (action === 'interested') {
-      setInterestedJob(currentJob);
-      setShowSignupPrompt(true);
-    }
-    setDemoDeck((prev) => prev.slice(1));
-  };
+  const [activeIdx, setActiveIdx] = useState(0);
+  const current = PREVIEW_JOBS[activeIdx];
 
   return (
-    <div className="flex flex-col items-center w-full min-h-[calc(100vh-4rem)]">
-      {/* Hero Section */}
-      <section className="relative w-full max-w-6xl px-4 pt-12 pb-16 sm:px-6 sm:pt-20 text-center flex flex-col items-center">
-        {/* Glow backdrop */}
-        <div className="pointer-events-none absolute top-10 left-1/2 -translate-x-1/2 h-72 w-96 rounded-full bg-emerald-500/10 blur-[120px]" />
-        <div className="pointer-events-none absolute top-20 left-1/3 -translate-x-1/2 h-64 w-80 rounded-full bg-indigo-500/10 blur-[100px]" />
-
-        {/* Pill Tag */}
-        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-400 mb-6 shadow-sm">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>BYN Architecture: Know your chances before you apply</span>
-        </div>
-
-        {/* Headline */}
-        <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-foreground max-w-4xl leading-[1.12]">
-          Know your chances{' '}
-          <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
-            before you apply.
+    <main className="page">
+      {/* 1. Hero Section */}
+      <section className="container grid items-center gap-12 py-14 lg:grid-cols-[1.1fr_480px] lg:py-20">
+        <div>
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)] animate-pulse" />
+            Less searching. Better matches.
           </span>
-        </h1>
+          <h1 className="mt-6 max-w-2xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl lg:text-6xl text-[var(--ink)] leading-[1.1]">
+            Find remote jobs <span className="text-[var(--red)]">worth applying to.</span>
+          </h1>
+          <p className="mt-5 max-w-xl text-lg leading-8 text-[var(--muted)]">
+            See remote jobs that fit your experience, understand why they match, and apply with more confidence.
+          </p>
 
-        {/* Subtitle */}
-        <p className="mt-5 text-base sm:text-lg text-muted-foreground max-w-2xl leading-relaxed">
-          Upload your resume. Tell us what you're looking for. Swipe through remote opportunities. See exactly why you're a match, what's missing, and how to strengthen your application before you apply on the official website.
-        </p>
-
-        {/* CTAs */}
-        <div className="mt-8 flex flex-col sm:flex-row items-center gap-4">
-          <Link
-            href="/onboarding"
-            className="flex items-center justify-center gap-2 rounded-xl bg-primary px-7 py-3.5 text-sm font-bold text-white shadow-xl shadow-emerald-500/25 hover:bg-emerald-600 transition-all hover:scale-[1.02] active:scale-[0.98]"
-          >
-            <span>Set Intent & Upload Resume</span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <Link
-            href="/feed"
-            className="flex items-center justify-center gap-2 rounded-xl border border-border bg-secondary/80 px-6 py-3.5 text-sm font-semibold text-foreground hover:bg-secondary transition-all"
-          >
-            <span>Jump to Live Feed</span>
-          </Link>
-        </div>
-
-        {/* Interactive 3-Card Preview Demo */}
-        <div className="mt-16 w-full max-w-md flex flex-col items-center">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-            <Zap className="h-3.5 w-3.5 text-amber-400" />
-            <span>Interactive Demo: Try Swiping Below</span>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/onboarding"
+              className="soft-button primary inline-flex items-center justify-center gap-2 text-sm"
+            >
+              <span>Find your matches →</span>
+              <ArrowRight size={17} />
+            </Link>
+            <Link
+              href="/feed"
+              className="soft-button secondary inline-flex items-center justify-center text-sm"
+            >
+              <span>Browse remote jobs</span>
+            </Link>
           </div>
 
-          {currentJob ? (
-            <div className="relative w-full rounded-2xl border border-border bg-card p-6 shadow-2xl text-left space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={currentJob.companyLogo}
-                    alt={currentJob.company}
-                    className="h-11 w-11 rounded-xl object-cover border border-border bg-secondary"
-                  />
-                  <div>
-                    <h3 className="font-bold text-sm text-foreground">
-                      {currentJob.company}
-                    </h3>
-                    <span className="text-[11px] text-muted-foreground">
-                      {currentJob.remoteType}
-                    </span>
-                  </div>
-                </div>
+          <div className="mt-8 flex flex-wrap gap-5 text-xs text-[var(--muted)]">
+            <span className="flex items-center gap-1.5 font-medium">
+              <CircleCheck size={16} className="text-[#059669]" />
+              <span>Know your chances before you apply</span>
+            </span>
+            <span className="flex items-center gap-1.5 font-medium">
+              <CircleCheck size={16} className="text-[#059669]" />
+              <span>Eligibility verified</span>
+            </span>
+            <span className="flex items-center gap-1.5 font-medium">
+              <CircleCheck size={16} className="text-[#059669]" />
+              <span>Track every application</span>
+            </span>
+          </div>
+        </div>
 
-                {/* Fit Score Badge */}
-                <div className="flex flex-col items-end rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-emerald-400">
-                  <span className="text-xs font-bold">FIT {currentJob.fitScore}%</span>
-                  <span className="text-[9px] font-medium">{currentJob.fitBadge}</span>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-base font-bold text-foreground">
-                  {currentJob.title}
-                </h4>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                  {currentJob.description}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {currentJob.requiredSkills.map((sk, i) => (
-                  <span
-                    key={i}
-                    className="rounded-md bg-secondary px-2 py-0.5 text-[11px] font-medium text-foreground border border-border"
-                  >
-                    {sk}
-                  </span>
-                ))}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => handleDemoAction('pass')}
-                  className="flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs font-bold text-rose-400 hover:bg-rose-500/20 transition-all"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  <span>Pass</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoAction('interested')}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
-                >
-                  <Heart className="h-3.5 w-3.5 fill-white" />
-                  <span>Interested</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="w-full p-8 rounded-2xl border border-border bg-card text-center space-y-3">
-              <CheckCircle2 className="h-10 w-10 text-emerald-400 mx-auto" />
-              <h4 className="font-bold text-base text-foreground">Demo Deck Completed</h4>
-              <p className="text-xs text-muted-foreground">
-                Set up your profile to swipe all verified remote opportunities tailored to your exact skills.
+        {/* 2. Product Preview Card */}
+        <div className="soft-card p-6 border border-[#F3E8E2] rounded-3xl shadow-sm">
+          {/* Card Header & Preview Switcher */}
+          <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F3E8E2]">
+            <div>
+              <h3 className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
+                Jobs picked for you
+              </h3>
+              <p className="text-[11px] text-[var(--muted)] mt-0.5">
+                A focused list of remote opportunities matched to your experience.
               </p>
-              <Link
-                href="/onboarding"
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white hover:bg-emerald-600 transition-colors"
-              >
-                <span>Get Started (60 seconds)</span>
-              </Link>
             </div>
-          )}
+            <div className="flex items-center gap-1">
+              {PREVIEW_JOBS.map((job, idx) => (
+                <button
+                  key={job.company}
+                  onClick={() => setActiveIdx(idx)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors min-h-[36px] ${
+                    activeIdx === idx
+                      ? 'bg-[var(--red)] text-white font-semibold shadow-sm'
+                      : 'bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  {job.company}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Job Overview & Score Dial */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className={`grid size-11 place-items-center rounded-2xl font-bold text-sm shadow-sm ${current.badgeBg}`}>
+                {current.badge}
+              </div>
+              <p className="mt-3 text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
+                {current.company}
+              </p>
+              <h2 className="text-xl font-bold text-[var(--ink)] mt-0.5">
+                {current.title}
+              </h2>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+                <span className="flex items-center gap-1">
+                  <MapPin size={13} className="text-[var(--red)]" />
+                  {current.location}
+                </span>
+                <span>·</span>
+                <span className="font-mono">{current.salary}</span>
+              </div>
+            </div>
+
+            {/* Coral-Red Score Box */}
+            <div className="rounded-2xl bg-[#fdf2f4] border border-[#fcd5dc] px-4 py-3 text-center min-w-[95px] shrink-0">
+              <div className="mono text-3xl font-bold text-[var(--red)]">
+                {current.score}%
+              </div>
+              <div className="text-[11px] font-semibold text-[var(--red)] mt-0.5 uppercase tracking-wider">
+                match
+              </div>
+            </div>
+          </div>
+
+          {/* Why it matches */}
+          <div className="mt-5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-4 text-xs">
+            <p className="font-semibold text-[#059669] flex items-center gap-1.5">
+              <Check size={14} className="stroke-[3]" />
+              <span>Why it matches</span>
+            </p>
+            <p className="mt-1 text-[#065f46] leading-relaxed">
+              {current.whyMatches}
+            </p>
+          </div>
+
+          {/* What may be missing */}
+          <div className="mt-3 rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-4 text-xs">
+            <p className="font-semibold text-[#b45309]">What may be missing</p>
+            <p className="mt-1 text-[#92400e] leading-relaxed">
+              {current.missingItem}
+            </p>
+          </div>
+
+          {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
+          <div className="mt-4 flex items-center gap-3 pt-2">
+            <Link
+              href={`/match/${current.id}`}
+              className="flex-1 rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--ink)] text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
+            >
+              See why it matches
+            </Link>
+            <Link
+              href="/feed"
+              className="flex-1 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center gap-1.5"
+            >
+              <span>Apply →</span>
+            </Link>
+          </div>
         </div>
       </section>
 
-      {/* Feature Pillar Grid */}
-      <section className="w-full max-w-6xl px-4 py-16 sm:px-6 border-t border-border">
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
-            The Moat is High-Signal Intelligence
+      {/* 3. What is RemoteMatch? */}
+      <section className="border-t border-[#F3E8E2] bg-white py-14 sm:py-16">
+        <div className="container max-w-4xl text-center space-y-4">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
+            Product Overview
+          </span>
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--ink)]">
+            A better way to search for remote jobs.
           </h2>
-          <p className="text-sm text-muted-foreground mt-2">
-            The swipe UI is just the interface. Our 3-layer matching engine does the heavy lifting so you only apply where you have a genuine advantage.
+          <p className="text-base sm:text-lg text-[var(--muted)] leading-relaxed max-w-2xl mx-auto">
+            RemoteMatch helps professionals find remote jobs that fit their experience and preferences. See why a job matches your background, understand what may be missing, and keep your applications organized in one place.
           </p>
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Card 1 */}
-          <div className="p-6 rounded-2xl border border-border bg-card shadow-sm space-y-3">
-            <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <h3 className="text-lg font-bold text-foreground">
-              Hard Eligibility Gating
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              We never show you a 92% match for a job restricted to another country. Work scope, timezones, and employment types are verified before computing fit.
+      {/* 4. How it works */}
+      <section id="how-it-works" className="border-t border-[#F3E8E2] bg-[#FFF7F2] py-16 sm:py-20">
+        <div className="container">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
+              Workflow
+            </span>
+            <h2 className="mt-2 text-3xl font-bold text-[var(--ink)]">
+              Find. Understand. Apply.
+            </h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Four simple steps from first search to signing an offer.
             </p>
           </div>
 
-          {/* Card 2 */}
-          <div className="p-6 rounded-2xl border border-border bg-card shadow-sm space-y-3">
-            <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <h3 className="text-lg font-bold text-foreground">
-              Explainable Match Analysis
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Never guess why a job appeared. Get clear "Why You're Seeing This" explanations, granular strengths vs gaps, and requirement checklists.
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="p-6 rounded-2xl border border-border bg-card shadow-sm space-y-3">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center">
-              <FileCheck className="h-5 w-5" />
-            </div>
-            <h3 className="text-lg font-bold text-foreground">
-              Instant Application Kit
-            </h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Get recommended resume bullet rewrites and a concise cover letter tailored to your chosen tone (confident, conversational, formal).
-            </p>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              {
+                num: '01',
+                title: "Tell us what you're looking for",
+                desc: 'Set your role, location, and work preferences.',
+              },
+              {
+                num: '02',
+                title: 'See jobs that fit',
+                desc: 'Discover remote opportunities relevant to your experience.',
+              },
+              {
+                num: '03',
+                title: 'Know what to check',
+                desc: 'See what matches your background and what may need attention.',
+              },
+              {
+                num: '04',
+                title: 'Apply and keep track',
+                desc: 'Apply through the employer and track applications, interviews, and offers in one place.',
+              },
+            ].map((step) => (
+              <div
+                key={step.num}
+                className="rounded-3xl bg-white border border-[#F3E8E2] p-6 shadow-sm hover:border-[#fcd5dc] transition-colors"
+              >
+                <span className="mono text-xs font-bold text-[var(--red)]">
+                  {step.num}
+                </span>
+                <h3 className="mt-4 font-bold text-base text-[var(--ink)] leading-snug">
+                  {step.title}
+                </h3>
+                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                  {step.desc}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* Demo Sign-up Prompt Modal */}
-      {showSignupPrompt && interestedJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="relative flex flex-col w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                <Sparkles className="h-5 w-5" />
-              </div>
+      {/* 5. Free vs Pro Pricing Section */}
+      <section id="pricing" className="border-t border-[#F3E8E2] bg-white py-16 sm:py-20">
+        <div className="container max-w-4xl">
+          <div className="text-center max-w-xl mx-auto mb-12">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
+              Plans & Access
+            </span>
+            <h2 className="mt-2 text-3xl font-bold text-[var(--ink)]">
+              Simple, transparent pricing.
+            </h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Get started for free or unlock unlimited saves and advanced filters with Pro.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Free Tier */}
+            <div className="soft-card p-7 sm:p-8 rounded-3xl border border-[#F3E8E2] bg-white space-y-6">
               <div>
-                <h3 className="font-bold text-base text-foreground">
-                  Personalize Your Match Analysis
-                </h3>
-                <span className="text-xs text-muted-foreground">
-                  Ready to unlock your tailored materials for {interestedJob.company}?
-                </span>
+                <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Free</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">Get started for free.</p>
+                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">$0</div>
               </div>
+
+              <ul className="space-y-3 text-xs text-[var(--muted)]">
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>15 saves per day</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>5 proposal generations per day</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Basic role & remote filters</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Application tracker</span>
+                </li>
+              </ul>
+
+              <Link
+                href="/feed"
+                className="block w-full text-center rounded-xl border border-[#F3E8E2] bg-[#FFF1EA] hover:bg-white text-xs font-semibold text-[var(--ink)] py-3 transition-colors shadow-sm min-h-[44px]"
+              >
+                Start finding jobs →
+              </Link>
             </div>
 
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Complete your quick 60-second onboarding to upload your resume. RemoteMatch will extract your skills, compute your exact Fit Score, and generate your custom cover letter.
-            </p>
+            {/* Pro Tier */}
+            <div className="soft-card p-7 sm:p-8 rounded-3xl border-2 border-[var(--red)] bg-white space-y-6 relative shadow-md">
+              <div className="absolute top-4 right-4 rounded-full bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                Recommended
+              </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowSignupPrompt(false)}
-                className="flex-1 rounded-xl border border-border bg-secondary px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors"
-              >
-                Keep Exploring
-              </button>
+              <div>
+                <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Pro</h3>
+                <p className="mt-1 text-xs text-[var(--muted)]">More ways to find the right job.</p>
+                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">
+                  $12 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                </div>
+              </div>
+
+              <ul className="space-y-3 text-xs text-[var(--ink)] font-medium">
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Unlimited saves</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Unlimited proposal materials</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Rewind accidental passes</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <span>Advanced salary, timezone & seniority filters</span>
+                </li>
+              </ul>
+
               <Link
-                href="/onboarding"
-                className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 transition-colors"
+                href="/settings?tab=billing"
+                className="block w-full text-center rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-3 transition-colors shadow-sm min-h-[44px]"
               >
-                <span>Continue to Onboarding</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                Upgrade to Pro →
               </Link>
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </section>
+
+      {/* 6. AEO / Direct-Answer FAQ Section */}
+      <section className="border-t border-[#F3E8E2] bg-[#FFF7F2] py-16 sm:py-20">
+        <div className="container max-w-3xl">
+          <div className="text-center mb-10">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
+              Frequently Asked Questions
+            </span>
+            <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-[var(--ink)]">
+              Common Questions About RemoteMatch
+            </h2>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                What is RemoteMatch?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                We evaluate why an opportunity fits your background, identify requirements that may need attention, and help you track every application through to an offer.
+              </p>
+              <div>
+                <Link href="/remote-jobs" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>Browse the remote jobs directory</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                How does RemoteMatch work?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                You tell us your role, seniority, and preferences, and we compare each remote job against your verified experience.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                Every opportunity displays a clear fit score, lists matching capabilities, and highlights potential gaps before you invest time applying.
+              </p>
+              <div>
+                <Link href="/guide/how-remote-matching-works" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>Read our guide on how remote matching works</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                How do I find remote jobs that match my experience?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                You can browse curated categories in our public directory or create a profile to unlock personalized recommendations.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                Our match analysis examines technical frameworks, team scope, and timezone overlap rather than relying on automated keyword counting.
+              </p>
+              <div>
+                <Link href="/onboarding" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>Find your matches now</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                Can I see why a remote job matches me?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                Yes. Every match view outlines why the role fits and what prerequisites might need attention.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                This insight gives you the exact context needed to highlight relevant achievements or tailor your application proposal.
+              </p>
+              <div>
+                <Link href="/feed" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>Explore the live match feed</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                Can I track remote job applications?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                Yes. The built-in Application Tracker monitors every role through Applied, Screening, Interview, and Offer stages.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                You can save interview notes, log recruiter contacts, and keep your entire remote search organized in one dashboard.
+              </p>
+              <div>
+                <Link href="/tracker" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>View the Application Tracker</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                Are all jobs on RemoteMatch 100% remote?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                Yes. RemoteMatch excludes hybrid roles requiring in-office attendance.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                Each listing clearly states geographic eligibility — whether it is Worldwide, US/Canada only, or European timezones.
+              </p>
+              <div>
+                <Link href="/remote-jobs/worldwide" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>See worldwide remote roles</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+              <h3 className="font-bold text-sm text-[var(--ink)]">
+                How often are job listings updated?
+              </h3>
+              <p className="font-medium text-[var(--ink)] leading-relaxed">
+                Listings are validated daily. Confirmed closed positions are removed from the active directory and sitemap.
+              </p>
+              <p className="text-[var(--muted)] leading-relaxed">
+                This guarantees you never spend time applying to expired openings that are no longer accepting applicants.
+              </p>
+              <div>
+                <Link href="/remote-jobs" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                  <span>Explore active remote positions</span>
+                  <ArrowRight size={12} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. Footer */}
+      <footer className="border-t border-[#F3E8E2] py-10 bg-[#FFF1EA]">
+        <div className="container flex flex-col gap-6 text-xs text-[var(--muted)]">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <span className="font-bold text-base text-[var(--ink)]">RemoteMatch</span>
+              <p className="text-[11px] text-[var(--muted)] max-w-xl leading-relaxed">
+                RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences, understand why a job fits, identify what may be missing, and track applications from application to offer.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold shrink-0">
+              <Link href="/remote-jobs" className="hover:text-[var(--ink)]">Directory</Link>
+              <Link href="/guide" className="hover:text-[var(--ink)]">Guides</Link>
+              <Link href="/feed" className="hover:text-[var(--ink)]">Jobs</Link>
+              <Link href="/tracker" className="hover:text-[var(--ink)]">Applications</Link>
+              <Link href="/settings" className="hover:text-[var(--ink)]">Profile</Link>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[#F3E8E2]/80 pt-4 text-[11px]">
+            <span className="font-semibold text-[var(--ink)]">
+              Know your chances before you apply.
+            </span>
+            <span>© {new Date().getFullYear()} RemoteMatch. All rights reserved.</span>
+          </div>
+        </div>
+      </footer>
+    </main>
   );
 }

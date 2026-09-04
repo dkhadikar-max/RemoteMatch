@@ -12,7 +12,7 @@ export class JobicyProvider implements JobProvider {
       const res = await fetch('https://jobicy.com/api/v2/remote-jobs?count=25', {
         signal: controller.signal,
         headers: {
-          'User-Agent': 'RemoteMatch-BYN/1.0',
+          'User-Agent': 'RemoteMatch/1.0',
         },
       });
       clearTimeout(timeoutId);

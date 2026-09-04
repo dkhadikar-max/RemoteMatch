@@ -1,13 +1,78 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { CanonicalOpportunity, PersonProfile } from '@/types/byn';
+import React, { useState, useEffect, useMemo } from 'react';
+import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
-import { computeScreeningFit, generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
-import { generateApplicationKit } from '@/lib/ai/materials';
+import { computeScreeningFit } from '@/lib/matching/engine';
+import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
-import { Sparkles, SlidersHorizontal, AlertCircle } from 'lucide-react';
-import Link from 'next/link';
+import { FilterModal } from '@/components/feed/filter-modal';
+import { UpgradeModal, UpgradeReason } from '@/components/premium/upgrade-modal';
+import { SlidersHorizontal, Check } from 'lucide-react';
+
+function applyFilters(opps: CanonicalOpportunity[], filters: OpportunityFilters): CanonicalOpportunity[] {
+  return opps.filter((opp) => {
+    if (filters.targetRole) {
+      const target = filters.targetRole.toLowerCase();
+      const title = opp.title.toLowerCase();
+      if (!title.includes(target)) {
+        if (target.includes('frontend') && !title.includes('frontend')) return false;
+        if (target.includes('full stack') && !title.includes('full stack') && !title.includes('fullstack')) return false;
+        if (target.includes('backend') && !title.includes('backend')) return false;
+        if (target.includes('devops') && !title.includes('devops') && !title.includes('infrastructure') && !title.includes('cloud')) return false;
+        if (target.includes('staff') && !title.includes('staff') && !title.includes('principal')) return false;
+      }
+    }
+
+    if (filters.remoteType) {
+      if (filters.remoteType === 'Worldwide' && opp.remoteType !== 'Worldwide') return false;
+      if (filters.remoteType === 'US' && !opp.remoteType.includes('US') && opp.remoteType !== 'Worldwide') return false;
+      if (filters.remoteType === 'EU/EEA' && !opp.remoteType.includes('EU') && !opp.remoteType.includes('EEA') && opp.remoteType !== 'Worldwide') return false;
+    }
+
+    // Seniority (Free)
+    if (filters.seniority) {
+      const title = opp.title.toLowerCase();
+      const exp = opp.experienceRequirement || '';
+      if (filters.seniority.includes('Entry') && !title.includes('junior') && !title.includes('jr') && !title.includes('associate') && exp !== '0-1') return false;
+      if (filters.seniority.includes('Senior') && !title.includes('senior') && !title.includes('sr') && !title.includes('lead') && !title.includes('staff') && exp !== '7-10' && exp !== '10+') return false;
+      if (filters.seniority.includes('Staff') && !title.includes('staff') && !title.includes('lead') && !title.includes('principal')) return false;
+      if (filters.seniority.includes('Principal') && !title.includes('principal') && !title.includes('distinguished')) return false;
+    }
+
+    // Specific Location (Pro Precision Targeting)
+    if (filters.specificLocation) {
+      const loc = filters.specificLocation.toLowerCase();
+      const oppLoc = `${opp.remoteType} ${opp.eligibleCountries.join(' ')} ${opp.description}`.toLowerCase();
+      if (loc.includes('us only') || loc.includes('united states')) {
+        if (opp.remoteType !== 'US' && !opp.eligibleCountries.includes('US') && !opp.eligibleCountries.includes('USA')) return false;
+      } else if (loc.includes('united kingdom') || loc.includes('uk')) {
+        if (!oppLoc.includes('uk') && !oppLoc.includes('united kingdom') && opp.remoteType !== 'Worldwide') return false;
+      } else if (loc.includes('germany')) {
+        if (!oppLoc.includes('germany') && opp.remoteType !== 'Worldwide') return false;
+      } else if (loc.includes('canada')) {
+        if (!oppLoc.includes('canada') && opp.remoteType !== 'Worldwide') return false;
+      } else if (loc.includes('eu/eea') || loc.includes('european union')) {
+        if (opp.remoteType !== 'EU/EEA' && !oppLoc.includes('europe') && opp.remoteType !== 'Worldwide') return false;
+      }
+    }
+
+    // Minimum Salary (Pro)
+    if (filters.minSalary && filters.minSalary > 0) {
+      const maxSal = opp.salaryMax || opp.salaryMin || 0;
+      if (maxSal < filters.minSalary) return false;
+    }
+
+    // Strict Timezone (Pro)
+    if (filters.strictTimezone) {
+      if (filters.strictTimezone.includes('UTC') && !opp.remoteType.toLowerCase().includes('utc') && opp.remoteType !== 'Worldwide') return false;
+      if (filters.strictTimezone.includes('Americas') && !opp.remoteType.toLowerCase().includes('us') && opp.remoteType !== 'Worldwide') return false;
+      if (filters.strictTimezone.includes('APAC') && !opp.remoteType.toLowerCase().includes('apac') && opp.remoteType !== 'Worldwide') return false;
+    }
+
+    return true;
+  });
+}
 
 export default function FeedPage() {
   const [opportunities, setOpportunities] = useState<CanonicalOpportunity[]>([]);
@@ -15,17 +80,42 @@ export default function FeedPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [swipedCount, setSwipedCount] = useState(0);
 
-  useEffect(() => {
-    // Load profile and opportunities
-    const userProfile = localStore.getProfile();
-    setProfile(userProfile);
+  // Gating & Filter state
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [upgradeReason, setUpgradeReason] = useState<UpgradeReason>('rewind');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<OpportunityFilters>({});
 
-    const allOpps = localStore.getOpportunities();
+  // Merges the local, non-authoritative profile CONTENT fixture (skills,
+  // intent, etc. — out of scope for this security pass) with the
+  // server-authoritative entitlement fields (planTier/quota — never trusted
+  // from localStorage). `setProfile` elsewhere in this file must always
+  // preserve that merge; never overwrite entitlement fields from
+  // `localStore` again.
+  const loadProfile = async (): Promise<PersonProfile> => {
+    const localProfile = localStore.getProfile();
+    const entitlement = await fetchServerEntitlement();
+    const merged: PersonProfile = entitlement
+      ? {
+          ...localProfile,
+          planTier: entitlement.planTier,
+          dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
+          dailyProposalsCount: entitlement.dailyProposalsCount,
+          usageDate: entitlement.usageDate,
+        }
+      : localProfile;
+    setProfile(merged);
+    return merged;
+  };
+
+  const refreshOpportunities = async () => {
+    const userProfile = await loadProfile();
+
+    const pool = localStore.getOpportunities();
     const swipes = localStore.getSwipes();
     const swipedIds = new Set(swipes.map((s) => s.opportunityId));
 
-    // Filter unswiped and compute Screening Fit Scores
-    const unswiped = allOpps.filter((o) => !swipedIds.has(o.id));
+    const unswiped = pool.filter((opp) => !swipedIds.has(opp.id));
 
     const scored = unswiped.map((opp) => {
       const fit = computeScreeningFit(userProfile, opp);
@@ -36,32 +126,65 @@ export default function FeedPage() {
       };
     });
 
-    // Sort by Fit Score descending (highest fit opportunities first)
     scored.sort((a, b) => (b.fitScore || 0) - (a.fitScore || 0));
 
     setOpportunities(scored);
     setSwipedCount(swipes.length);
     setIsLoading(false);
+  };
+
+  useEffect(() => {
+    refreshOpportunities();
   }, []);
 
+  const filteredOpportunities = useMemo(() => {
+    return applyFilters(opportunities, activeFilters);
+  }, [opportunities, activeFilters]);
+
+  const handleRequireUpgrade = (reason: UpgradeReason) => {
+    setUpgradeReason(reason);
+    setIsUpgradeModalOpen(true);
+  };
+
   const handleSwipe = async (opportunityId: string, action: 'interested' | 'passed') => {
+    // The server is the ONLY authority on whether this swipe is allowed —
+    // it checks/reserves quota, runs the (frozen) matching engine, and
+    // persists the decision atomically. Nothing here can grant a save.
+    let res: Response;
+    try {
+      res = await fetch('/api/opportunities/swipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId, action }),
+      });
+    } catch {
+      // Network failure: fail closed. Do not touch local state as if the
+      // swipe succeeded.
+      return;
+    }
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      if (data.error === 'limit_reached') {
+        handleRequireUpgrade('swipes');
+      }
+      return;
+    }
+
+    // Local bookkeeping only — keeps this opportunity out of the deck on
+    // reload and drives the opportunity pool's local match-score display.
+    // It is never consulted for quota/entitlement decisions.
     localStore.recordSwipe(opportunityId, action);
-    setSwipedCount((prev) => prev + 1);
-
-    if (action === 'interested' && profile) {
+    if (action === 'interested') {
       const opp = localStore.getOpportunityById(opportunityId);
-      if (opp) {
-        // Run deep match analysis & background kit generation
-        const matchResult = generateRuleBasedMatchAnalysis(profile, opp);
-        const appKit = await generateApplicationKit(profile, opp, matchResult, 'confident');
-
-        // Save to applications table in store
+      if (opp && data.match) {
         localStore.saveApplication({
           id: `app-${Date.now()}`,
-          profileId: profile.id,
+          profileId: profile?.id || 'demo-user-1',
           opportunityId: opp.id,
           opportunity: opp,
-          match: matchResult,
+          match: data.match,
           status: 'interested',
           notes: '',
           createdAt: new Date().toISOString(),
@@ -69,75 +192,176 @@ export default function FeedPage() {
         });
       }
     }
+
+    setSwipedCount((prev) => prev + 1);
+    setProfile((prev) => {
+      if (!prev) return prev;
+      if (action !== 'interested') return prev;
+      return {
+        ...prev,
+        planTier: data.planTier ?? prev.planTier,
+        dailyRightSwipesCount:
+          typeof data.remaining === 'number' ? data.limit - data.remaining : prev.dailyRightSwipesCount,
+      };
+    });
   };
 
   const handleRewind = async (): Promise<string | null> => {
-    const rewoundId = localStore.rewindLastSwipe();
-    if (rewoundId) {
-      setSwipedCount((prev) => Math.max(prev - 1, 0));
+    if (profile?.planTier === 'free') {
+      handleRequireUpgrade('rewind');
+      return null;
     }
-    return rewoundId;
+
+    let res: Response;
+    try {
+      res = await fetch('/api/opportunities/rewind', { method: 'POST' });
+    } catch {
+      return null;
+    }
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      if (data.error === 'pro_required') handleRequireUpgrade('rewind');
+      return null;
+    }
+    if (!data.success || !data.rewoundOpportunityId) {
+      return null;
+    }
+
+    localStore.rewindLastSwipe();
+    setSwipedCount((prev) => Math.max(prev - 1, 0));
+    await loadProfile();
+    return data.rewoundOpportunityId as string;
   };
 
   if (isLoading || !profile) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <span className="text-xs text-muted-foreground font-medium">
-            Computing Fit Scores across remote opportunities...
+      <div className="flex-1 flex items-center justify-center p-12">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <div className="size-6 animate-spin rounded-full border-2 border-[var(--red)] border-t-transparent" />
+          <span className="text-xs text-[var(--muted)] font-medium">
+            Loading your match details...
           </span>
         </div>
       </div>
     );
   }
 
-  const remainingEvaluations = Math.max(20 - (profile.dailyEvaluationsCount || 0), 0);
+  const isFree = profile.planTier === 'free';
+  const rightSwipesCount = profile.dailyRightSwipesCount || 0;
+  const savesRemaining = Math.max(15 - rightSwipesCount, 0);
+  const hasActiveFilters = Object.keys(activeFilters).length > 0;
 
   return (
-    <div className="flex-1 flex flex-col items-center px-4 py-6 sm:px-6">
-      {/* Subheader: Profile Filter Summary & Remaining Quota */}
-      <div className="w-full max-w-[440px] flex items-center justify-between mb-4 text-xs text-muted-foreground">
+    <div className="flex-1 flex flex-col items-center px-3 sm:px-4 py-3 sm:py-6 md:py-8 max-w-5xl mx-auto w-full">
+      {/* Desktop Context Rail */}
+      <div className="hidden md:flex items-center justify-between w-full max-w-[560px] mb-3 text-xs text-[var(--muted)] px-1">
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-foreground">
-            {profile.intent?.targetRoles[0] || 'Software Roles'}
-          </span>
-          <span>•</span>
-          <span className="text-emerald-400 font-medium">{profile.location?.workPreference || 'Worldwide'}</span>
+          <span className="font-semibold text-[var(--ink)]">Your preferences:</span>
+          <span>Remote · Full-time · {profile.intent?.targetRoles[0] || 'Engineering'}</span>
         </div>
-
-        <Link
-          href="/onboarding"
-          className="flex items-center gap-1 hover:text-foreground transition-colors"
-        >
-          <SlidersHorizontal className="h-3 w-3" />
-          <span>Filters</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          {isFree ? (
+            <span className="font-medium text-[var(--muted)]">
+              {savesRemaining} saves left today
+            </span>
+          ) : (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+              Pro
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Daily Quota Alert if low */}
-      {remainingEvaluations <= 3 && remainingEvaluations > 0 && (
-        <div className="w-full max-w-[440px] mb-4 flex items-center justify-between gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-amber-400" />
-            <span>Only {remainingEvaluations} free evaluations left today.</span>
+      {/* Top Context & Controls Bar */}
+      <div className="w-full max-w-[440px] md:max-w-[560px] flex items-center justify-between pb-3 mb-4 border-b border-[#F3E8E2]">
+        <div>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)]" />
+            Jobs picked for you
+          </span>
+          <p className="text-[11px] text-[var(--muted)] mt-0.5 hidden sm:block">
+            A focused list of remote opportunities matched to your experience.
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <h1 className="text-sm font-bold text-[var(--ink)]">
+              {activeFilters.targetRole || profile.intent?.targetRoles[0] || 'Full Stack Engineer'}
+            </h1>
+            <span className="text-xs text-[var(--muted)]/40">·</span>
+            <span className="text-xs text-[var(--muted)]">
+              {activeFilters.remoteType || 'Remote'}
+            </span>
           </div>
-          <Link
-            href="/settings?tab=billing"
-            className="font-bold underline hover:text-white"
-          >
-            Upgrade
-          </Link>
         </div>
-      )}
 
-      {/* Swipe Deck */}
-      <SwipeDeck
-        opportunities={opportunities}
-        onSwipe={handleSwipe}
-        onRewind={handleRewind}
-        canRewind={swipedCount > 0}
+        {/* Filter Button opening FilterModal */}
+        <button
+          type="button"
+          onClick={() => setIsFilterModalOpen(true)}
+          className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm min-h-[36px] ${
+            hasActiveFilters
+              ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
+              : 'border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA]'
+          }`}
+        >
+          <SlidersHorizontal size={13} />
+          <span>Filter</span>
+          {hasActiveFilters && (
+            <span className="size-1.5 rounded-full bg-[var(--red)]" />
+          )}
+        </button>
+      </div>
+
+      {/* Primary Swipe Deck Container (Uncompromised Core Experience) */}
+      <div className="w-full flex flex-col items-center">
+        <SwipeDeck
+          opportunities={filteredOpportunities}
+          onSwipe={handleSwipe}
+          onRewind={handleRewind}
+          canRewind={swipedCount > 0}
+          planTier={profile.planTier}
+          dailyRightSwipesCount={profile.dailyRightSwipesCount || 0}
+          onRequireUpgrade={handleRequireUpgrade}
+        />
+      </div>
+
+      {/* Bottom Trust Indicators: Remote · Eligible */}
+      <div className="mt-6 sm:mt-8 flex items-center justify-center gap-4 text-xs text-[var(--muted)] select-none">
+        <span className="flex items-center gap-1.5 font-medium text-[#059669]">
+          <Check size={14} className="stroke-[3]" />
+          <span>Remote</span>
+        </span>
+        <span className="text-[var(--muted)]/40">·</span>
+        <span className="flex items-center gap-1.5 font-medium text-[#059669]">
+          <Check size={14} className="stroke-[3]" />
+          <span>Eligible</span>
+        </span>
+      </div>
+
+      {/* Filter Modal */}
+      <FilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        filters={activeFilters}
+        onApplyFilters={(newFilters) => setActiveFilters(newFilters)}
+        planTier={profile.planTier}
+        onRequireUpgrade={handleRequireUpgrade}
+      />
+
+      {/* Soft Peach Upgrade Modal */}
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
+        reason={upgradeReason}
+        onUpgraded={() => {
+          // Re-fetch from the server rather than trusting whatever the
+          // client thinks just happened — Stripe verification is what
+          // actually grants planTier, server-side.
+          loadProfile();
+        }}
       />
     </div>
   );
 }
+

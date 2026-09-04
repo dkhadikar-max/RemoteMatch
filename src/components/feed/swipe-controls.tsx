@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X, Heart, RotateCcw, Info } from 'lucide-react';
+import { X, Check, RotateCcw, FileText } from 'lucide-react';
 
 interface SwipeControlsProps {
   onPass: () => void;
@@ -10,6 +10,8 @@ interface SwipeControlsProps {
   onOpenDetails: () => void;
   canRewind: boolean;
   disabled?: boolean;
+  planTier?: 'free' | 'pro';
+  onRequireUpgrade?: (reason: 'rewind') => void;
 }
 
 export function SwipeControls({
@@ -19,76 +21,80 @@ export function SwipeControls({
   onOpenDetails,
   canRewind,
   disabled = false,
+  planTier = 'free',
+  onRequireUpgrade,
 }: SwipeControlsProps) {
+  const isFree = planTier === 'free';
+
+  const handleRewindClick = () => {
+    if (isFree) {
+      onRequireUpgrade?.('rewind');
+      return;
+    }
+    if (canRewind && !disabled) {
+      onRewind();
+    }
+  };
+
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-[420px] mt-4">
-      {/* Action Buttons */}
-      <div className="flex items-center justify-center gap-5 w-full">
-        {/* Pass Button */}
+    <div className="flex flex-col items-center gap-3 w-full max-w-[440px] md:max-w-[560px] mt-4">
+      {/* Soft Action Controls (Minimum 44px+ touch targets) */}
+      <div className="flex items-center justify-between w-full gap-2.5">
         <button
           type="button"
           onClick={onPass}
           disabled={disabled}
           title="Pass (Left Arrow)"
-          className="flex h-14 w-14 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-400 shadow-lg shadow-rose-500/5 hover:scale-110 hover:bg-rose-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:hover:scale-100"
+          className="flex-1 min-h-[48px] rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] py-2.5 px-4 text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-30 active:scale-[0.98]"
         >
-          <X className="h-7 w-7" />
+          <X size={17} className="text-[var(--muted)]" />
+          <span>Pass</span>
         </button>
 
-        {/* Rewind Button */}
         <button
           type="button"
-          onClick={onRewind}
-          disabled={!canRewind || disabled}
-          title="Rewind Last Swipe"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground shadow-md hover:scale-105 hover:text-foreground active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100"
+          onClick={handleRewindClick}
+          disabled={(!isFree && !canRewind) || disabled}
+          title={isFree ? 'Rewind (Pro feature)' : 'Rewind Last Swipe'}
+          className="relative size-12 place-items-center rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
         >
-          <RotateCcw className="h-5 w-5" />
+          <RotateCcw size={17} />
+          {isFree && (
+            <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] px-1 rounded-full leading-tight">
+              PRO
+            </span>
+          )}
         </button>
 
-        {/* Details Button */}
         <button
           type="button"
           onClick={onOpenDetails}
           disabled={disabled}
-          title="Full Job Details (Space)"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-secondary text-muted-foreground shadow-md hover:scale-105 hover:text-foreground active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100"
+          title="Job Details (Space)"
+          className="size-12 place-items-center rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
         >
-          <Info className="h-5 w-5" />
+          <FileText size={17} />
         </button>
 
-        {/* Interested Button */}
         <button
           type="button"
           onClick={onInterested}
           disabled={disabled}
-          title="Interested (Right Arrow)"
-          className="flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 shadow-lg shadow-emerald-500/5 hover:scale-110 hover:bg-emerald-500/20 active:scale-95 transition-all disabled:opacity-40 disabled:hover:scale-100"
+          title="Save & Interested (Right Arrow)"
+          className="flex-1 min-h-[48px] rounded-2xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white py-2.5 px-4 text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-40 active:scale-[0.98]"
         >
-          <Heart className="h-7 w-7 fill-emerald-400/20" />
+          <Check size={17} strokeWidth={2.5} />
+          <span>Interested</span>
         </button>
       </div>
 
       {/* Keyboard Shortcuts Hint */}
-      <div className="hidden sm:flex items-center gap-4 text-[11px] text-muted-foreground select-none">
-        <span className="flex items-center gap-1">
-          <kbd className="rounded bg-secondary px-1.5 py-0.5 border border-border font-mono text-[10px]">
-            ←
-          </kbd>
-          Pass
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="rounded bg-secondary px-1.5 py-0.5 border border-border font-mono text-[10px]">
-            Space
-          </kbd>
-          Details
-        </span>
-        <span className="flex items-center gap-1">
-          <kbd className="rounded bg-secondary px-1.5 py-0.5 border border-border font-mono text-[10px]">
-            →
-          </kbd>
-          Interested
-        </span>
+      <div className="hidden sm:flex items-center gap-3 text-xs text-[var(--muted)] select-none">
+        <span>← Pass</span>
+        <span className="text-[var(--muted)]/40">·</span>
+        <span>Space Details</span>
+        <span className="text-[var(--muted)]/40">·</span>
+        <span>→ Interested</span>
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { FeedbackOutcome } from '@/types/byn';
-import { CheckCircle2, XCircle, AlertCircle, Clock, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertCircle, Clock, X, ArrowRight } from 'lucide-react';
 
 interface DidYouApplyModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export function DidYouApplyModal({
   onClose,
   onSubmitFeedback,
 }: DidYouApplyModalProps) {
+  const router = useRouter();
   const [selectedOutcome, setSelectedOutcome] = useState<FeedbackOutcome>('applied');
   const [notes, setNotes] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -28,151 +30,187 @@ export function DidYouApplyModal({
     label: string;
     description: string;
     icon: React.ElementType;
-    color: string;
   }> = [
     {
       id: 'applied',
-      label: 'Yes, I Submitted My Application',
-      description: 'Mark status as Applied in your tracker & log event.',
+      label: 'Submitted Application',
+      description: 'Mark status as Applied in your applications tracker.',
       icon: CheckCircle2,
-      color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
     },
     {
       id: 'did_not_apply',
-      label: "Didn't Apply Yet (Saved for Later)",
+      label: 'Saved for Later Review',
       description: 'Keep in Interested list to review materials later.',
       icon: Clock,
-      color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
     },
     {
       id: 'not_eligible',
       label: 'Not Eligible Upon Review',
-      description: 'Found location, visa, or citizenship restriction on their site.',
+      description: 'Found unlisted location, visa, or citizenship restriction.',
       icon: AlertCircle,
-      color: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
     },
     {
       id: 'expired',
-      label: 'Position Already Closed / Expired',
+      label: 'Position Closed or Inactive',
       description: 'The vacancy was marked filled or 404.',
       icon: XCircle,
-      color: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
     },
     {
       id: 'changed_mind',
-      label: 'Changed My Mind',
-      description: 'Role details differed from expectations.',
+      label: 'Passed / Changed Mind',
+      description: 'Requirements or team scope differed from expectation.',
       icon: X,
-      color: 'text-muted-foreground bg-secondary border-border',
     },
   ];
 
   const handleSubmit = () => {
     onSubmitFeedback(selectedOutcome, notes);
     setIsSubmitted(true);
-    setTimeout(() => {
-      setIsSubmitted(false);
-      onClose();
-    }, 1200);
+
+    if (selectedOutcome === 'applied') {
+      setTimeout(() => {
+        router.push('/tracker');
+        onClose();
+      }, 1600);
+    } else {
+      setTimeout(() => {
+        setIsSubmitted(false);
+        onClose();
+      }, 1000);
+    }
+  };
+
+  const handleTrackDirectly = () => {
+    router.push('/tracker');
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm animate-in fade-in duration-150"
+      onClick={onClose}
+    >
       <div
-        className="relative flex flex-col w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in zoom-in-95 duration-200 space-y-5"
+        className="relative flex flex-col w-full max-w-md rounded-3xl border border-[#F3E8E2] bg-white p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <Sparkles className="h-5 w-5" />
+        {isSubmitted && selectedOutcome === 'applied' ? (
+          /* Success Confirmation & Obvious Next Step */
+          <div className="py-6 flex flex-col items-center text-center space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="grid size-14 place-items-center rounded-2xl bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
+              <CheckCircle2 size={30} />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-foreground">
-                Did You Apply?
+              <h3 className="text-xl font-bold text-[var(--ink)]">
+                Application Recorded
               </h3>
-              <p className="text-xs text-muted-foreground">
-                {companyName} Application Feedback
+              <p className="text-xs text-[var(--muted)] mt-1 max-w-xs">
+                {companyName} is now tracked in your pipeline. Taking you to your Applications Tracker...
               </p>
             </div>
+            <button
+              type="button"
+              onClick={handleTrackDirectly}
+              className="soft-button primary w-full text-xs font-semibold py-3 flex items-center justify-center gap-1.5 min-h-[44px]"
+            >
+              <span>Track application</span>
+              <ArrowRight size={14} />
+            </button>
           </div>
+        ) : (
+          <>
+            {/* Header */}
+            <div className="flex items-start justify-between pb-3.5 border-b border-[#F3E8E2]">
+              <div>
+                <span className="status good text-[11px] py-0.5 px-2.5">Outcome Record</span>
+                <h3 className="text-lg font-bold text-[var(--ink)] mt-1.5">
+                  Did you submit your application?
+                </h3>
+                <p className="text-xs text-[var(--muted)] mt-0.5">
+                  {companyName} · Decision verification
+                </p>
+              </div>
 
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Question Prompt */}
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          Closing the feedback loop trains the BYN matching engine to surface higher-probability remote opportunities.
-        </p>
-
-        {/* Options List */}
-        <div className="space-y-2">
-          {options.map((opt) => {
-            const Icon = opt.icon;
-            const isSelected = selectedOutcome === opt.id;
-            return (
-              <label
-                key={opt.id}
-                onClick={() => setSelectedOutcome(opt.id)}
-                className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                  isSelected
-                    ? 'border-emerald-500 bg-emerald-500/10 shadow-sm'
-                    : 'border-border bg-secondary/30 hover:bg-secondary/60'
-                }`}
+              <button
+                onClick={onClose}
+                className="grid size-8 place-items-center rounded-xl border border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
               >
-                <div className={`mt-0.5 rounded-lg p-1 border ${opt.color}`}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="space-y-0.5">
-                  <div className="font-semibold text-xs text-foreground">
-                    {opt.label}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {opt.description}
-                  </div>
-                </div>
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Question Prompt */}
+            <p className="text-xs text-[var(--muted)] leading-relaxed">
+              Recording the actual outcome ties the decision-time fit prediction to empirical ground truth.
+            </p>
+
+            {/* Options List */}
+            <div className="space-y-2">
+              {options.map((opt) => {
+                const Icon = opt.icon;
+                const isSelected = selectedOutcome === opt.id;
+                return (
+                  <label
+                    key={opt.id}
+                    onClick={() => setSelectedOutcome(opt.id)}
+                    className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-[var(--red)] bg-[#fdf2f4]'
+                        : 'border-[#F3E8E2] bg-white hover:bg-[#FFF1EA]'
+                    }`}
+                  >
+                    <div className="mt-0.5">
+                      <Icon
+                        size={16}
+                        className={isSelected ? 'text-[var(--red)]' : 'text-[var(--muted)]'}
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="font-semibold text-xs text-[var(--ink)]">
+                        {opt.label}
+                      </div>
+                      <div className="text-[11px] text-[var(--muted)] leading-snug">
+                        {opt.description}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Optional Notes */}
+            <div>
+              <label className="text-xs font-semibold text-[var(--muted)] block mb-1">
+                Optional Notes
               </label>
-            );
-          })}
-        </div>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Applied via official portal, compensation discussed..."
+                className="soft-input py-2.5 px-3 text-xs"
+              />
+            </div>
 
-        {/* Optional Notes */}
-        <div>
-          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">
-            Optional Notes
-          </label>
-          <input
-            type="text"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="e.g. Applied via Lever, recruiter name, compensation discussed..."
-            className="w-full rounded-xl border border-border bg-secondary/40 px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-xl border border-border bg-secondary px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors"
-          >
-            Ask Me Later
-          </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
-          >
-            {isSubmitted ? 'Saved!' : 'Confirm'}
-          </button>
-        </div>
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="soft-button secondary flex-1 text-xs font-semibold py-2.5 border-[#F3E8E2] min-h-[44px]"
+              >
+                Decide Later
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                className="soft-button primary flex-1 text-xs font-semibold py-2.5 min-h-[44px]"
+              >
+                Confirm Outcome
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
