@@ -22,6 +22,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import ws from 'ws';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -50,6 +51,9 @@ async function newAnonymousSession(): Promise<{ token: string; userId: string } 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Node 20 has no native WebSocket; this test never uses Supabase
+    // Realtime, but the client constructor initializes it unconditionally.
+    realtime: { transport: ws as unknown as WebSocket },
   });
   const { data, error } = await client.auth.signInAnonymously();
   if (error || !data.session) {
@@ -218,22 +222,33 @@ async function run() {
   // ----------------------------------------------------------------------
   console.log('\nPROPOSAL');
 
+  // A real curated opportunity id is required — /api/ai/match-analysis 404s
+  // on an unknown id BEFORE ever touching the quota RPC, so a placeholder
+  // id would make every request 404 instead of exercising the quota gate
+  // at all (this bit us once: see the remediation conversation history).
+  // normalizeOpportunity() (src/lib/ingestion/pipeline.ts) builds the
+  // canonical id as `opp-${source}-${sourceId}`, not the bare sourceId.
+  const REAL_OPPORTUNITY_ID = 'opp-curated-curated-001';
+
   const proposer = await newAnonymousSession();
   if (proposer) {
     for (let i = 1; i <= 5; i++) {
       const res = await authedFetch(proposer.token, '/api/ai/match-analysis', {
         method: 'POST',
-        body: JSON.stringify({ opportunityId: 'job-1', tone: 'confident' }),
+        body: JSON.stringify({ opportunityId: REAL_OPPORTUNITY_ID, tone: 'confident' }),
       });
-      assert(res.ok || res.status === 404, `Proposal generation #${i}/5 is allowed through the quota gate`);
+      assert(res.ok, `Proposal generation #${i}/5 is allowed through the quota gate (status ${res.status})`);
     }
 
     const sixth = await authedFetch(proposer.token, '/api/ai/match-analysis', {
       method: 'POST',
-      body: JSON.stringify({ opportunityId: 'job-1', tone: 'confident' }),
+      body: JSON.stringify({ opportunityId: REAL_OPPORTUNITY_ID, tone: 'confident' }),
     });
     const sixthBody = await sixth.json();
-    assert(sixth.status === 403 && sixthBody.error === 'limit_reached', 'Proposal generation #6/5 is rejected (403 limit_reached)');
+    assert(
+      sixth.status === 403 && sixthBody.error === 'limit_reached',
+      `Proposal generation #6/5 is rejected (403 limit_reached) — got ${sixth.status} ${JSON.stringify(sixthBody)}`
+    );
   } else {
     skip('PROPOSAL group — could not create a session');
   }
@@ -246,14 +261,14 @@ async function run() {
         Array.from({ length: N }, () =>
           authedFetch(concurrentProposer.token, '/api/ai/match-analysis', {
             method: 'POST',
-            body: JSON.stringify({ opportunityId: 'job-1', tone: 'confident' }),
+            body: JSON.stringify({ opportunityId: REAL_OPPORTUNITY_ID, tone: 'confident' }),
           })
         )
       );
       const successCount = results.filter((r) => r.ok).length;
       assert(
-        successCount <= 5,
-        `${N} concurrent proposal requests from one user never exceed 5 successes (got ${successCount})`
+        successCount === 5,
+        `${N} concurrent proposal requests from one user yield exactly 5 successes (got ${successCount})`
       );
     } else {
       skip('Concurrent proposal test — could not create a session');
