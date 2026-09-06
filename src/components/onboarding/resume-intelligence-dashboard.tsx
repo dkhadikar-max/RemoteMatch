@@ -180,7 +180,7 @@ export function ResumeIntelligenceDashboard({
                 Profile Strength recalculated from <strong>{analysis.overallScore}</strong> to <strong>{currentScore}</strong> ({acceptedImprovements.length} profile updates added).
               </span>
             </div>
-            <span className="tag !bg-white">Updated</span>
+            <span className="tag !bg-[var(--surface)]">Updated</span>
           </div>
           <div className="pl-6 space-y-1 text-[11px] text-[var(--muted)]">
             {acceptedImprovements.map((imp) => (
@@ -231,12 +231,12 @@ export function ResumeIntelligenceDashboard({
                 <p className="text-xs text-[var(--muted)] leading-relaxed">
                   {imp.explanation}
                 </p>
-                <div className="rounded-xl border border-[var(--line)] bg-white p-3 text-xs text-[var(--ink)] font-medium">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 text-xs text-[var(--ink)] font-medium">
                   Recommendation: {imp.action}
                 </div>
 
                 {editingImprovementId === imp.id ? (
-                  <div className="mt-3 rounded-xl border border-[var(--red)] bg-white p-3.5 space-y-2.5">
+                  <div className="mt-3 rounded-xl border border-[var(--red)] bg-[var(--surface)] p-3.5 space-y-2.5">
                     <label className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider block">
                       Add context or details (required):
                     </label>
@@ -375,7 +375,7 @@ export function ResumeIntelligenceDashboard({
                       <button
                         type="button"
                         onClick={() => setActivePromptId(item.id)}
-                        className="rounded-xl border border-[var(--red)] bg-[#fdf2f4] px-3 py-1.5 text-xs font-semibold text-[var(--red)] hover:bg-[var(--red)] hover:text-white transition-all"
+                        className="rounded-xl border border-[var(--red)] bg-[var(--red-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--red)] hover:bg-[var(--red)] hover:text-white transition-all"
                       >
                         Yes — Add Details
                       </button>
@@ -383,7 +383,7 @@ export function ResumeIntelligenceDashboard({
                       <button
                         type="button"
                         onClick={() => handleResolve(item, 'not_relevant')}
-                        className="rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-all"
+                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-all"
                       >
                         Yes — But Not Relevant
                       </button>
@@ -391,7 +391,7 @@ export function ResumeIntelligenceDashboard({
                       <button
                         type="button"
                         onClick={() => handleResolve(item, 'no')}
-                        className="rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--muted)] hover:text-red-600 hover:bg-[var(--surface-soft)] transition-all"
+                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--muted)] hover:text-red-600 hover:bg-[var(--surface-soft)] transition-all"
                       >
                         No — Remove
                       </button>

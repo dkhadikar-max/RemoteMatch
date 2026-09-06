@@ -45,7 +45,7 @@ export function SwipeControls({
           onClick={onPass}
           disabled={disabled}
           title="Pass (Left Arrow)"
-          className="flex-1 min-h-[48px] rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] py-2.5 px-4 text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-30 active:scale-[0.98]"
+          className="flex-1 min-h-[48px] rounded-2xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] py-2.5 px-4 text-xs font-semibold transition-colors flex items-center justify-center gap-2 shadow-sm disabled:opacity-30 active:scale-[0.98]"
         >
           <X size={17} className="text-[var(--muted)]" />
           <span>Pass</span>
@@ -56,11 +56,11 @@ export function SwipeControls({
           onClick={handleRewindClick}
           disabled={(!isFree && !canRewind) || disabled}
           title={isFree ? 'Rewind (Pro feature)' : 'Rewind Last Swipe'}
-          className="relative size-12 place-items-center rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
+          className="relative size-12 place-items-center rounded-2xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
         >
           <RotateCcw size={17} />
           {isFree && (
-            <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] px-1 rounded-full leading-tight">
+            <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-1 rounded-full leading-tight">
               PRO
             </span>
           )}
@@ -71,7 +71,7 @@ export function SwipeControls({
           onClick={onOpenDetails}
           disabled={disabled}
           title="Job Details (Space)"
-          className="size-12 place-items-center rounded-2xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
+          className="size-12 place-items-center rounded-2xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] transition-colors shadow-sm disabled:opacity-30 shrink-0 flex items-center justify-center active:scale-[0.98]"
         >
           <FileText size={17} />
         </button>

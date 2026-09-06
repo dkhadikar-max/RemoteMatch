@@ -27,11 +27,11 @@ export function JobDetailsModal({
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-2xl max-h-[88vh] rounded-2xl border border-[var(--line)] bg-white shadow-xl overflow-hidden animate-in zoom-in-95 duration-150"
+        className="relative flex flex-col w-full max-w-2xl max-h-[88vh] rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-xl overflow-hidden animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-6 sm:p-7 border-b border-[var(--line)] bg-white">
+        <div className="flex items-start justify-between p-6 sm:p-7 border-b border-[var(--line)] bg-[var(--surface)]">
           <div className="flex items-center gap-4">
             {opportunity.companyLogo ? (
               <img
@@ -60,7 +60,7 @@ export function JobDetailsModal({
 
           <button
             onClick={onClose}
-            className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+            className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
             aria-label="Close"
           >
             <X size={15} />
@@ -130,7 +130,7 @@ export function JobDetailsModal({
         </div>
 
         {/* Modal Actions Footer */}
-        <div className="flex items-center justify-between p-5 sm:p-6 border-t border-[var(--line)] bg-white">
+        <div className="flex items-center justify-between p-5 sm:p-6 border-t border-[var(--line)] bg-[var(--surface)]">
           <button
             onClick={() => {
               onPass();

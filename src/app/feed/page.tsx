@@ -267,7 +267,7 @@ export default function FeedPage() {
               {savesRemaining} saves left today
             </span>
           ) : (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
               Pro
             </span>
           )}
@@ -275,9 +275,9 @@ export default function FeedPage() {
       </div>
 
       {/* Top Context & Controls Bar */}
-      <div className="w-full max-w-[440px] md:max-w-[560px] flex items-center justify-between pb-3 mb-4 border-b border-[#F3E8E2]">
+      <div className="w-full max-w-[440px] md:max-w-[560px] flex items-center justify-between pb-3 mb-4 border-b border-[var(--line)]">
         <div>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)]" />
             Jobs picked for you
           </span>
@@ -301,8 +301,8 @@ export default function FeedPage() {
           onClick={() => setIsFilterModalOpen(true)}
           className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm min-h-[36px] ${
             hasActiveFilters
-              ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
-              : 'border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA]'
+              ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
+              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
           }`}
         >
           <SlidersHorizontal size={13} />

@@ -130,12 +130,12 @@ function SettingsContent() {
       {/* Settings Grid Layout matching Screen 5 */}
       <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-8 items-start">
         {/* Left Navigation: Horizontal Tab Selector on Mobile, Sidebar on Desktop */}
-        <aside className="bg-white rounded-2xl border border-[var(--line)] p-1.5 md:p-4 shadow-sm flex flex-row md:flex-col gap-1.5 overflow-x-auto scrollbar-none">
+        <aside className="bg-[var(--surface)] rounded-2xl border border-[var(--line)] p-1.5 md:p-4 shadow-sm flex flex-row md:flex-col gap-1.5 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveTab('profile')}
             className={`flex-1 md:flex-initial md:w-full flex items-center justify-center md:justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold min-h-[44px] whitespace-nowrap transition-colors ${
               activeTab === 'profile'
-                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc]'
+                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)]'
                 : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] border border-transparent'
             }`}
           >
@@ -147,7 +147,7 @@ function SettingsContent() {
             onClick={() => setActiveTab('preferences')}
             className={`flex-1 md:flex-initial md:w-full flex items-center justify-center md:justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold min-h-[44px] whitespace-nowrap transition-colors ${
               activeTab === 'preferences'
-                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc]'
+                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)]'
                 : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] border border-transparent'
             }`}
           >
@@ -159,7 +159,7 @@ function SettingsContent() {
             onClick={() => setActiveTab('billing')}
             className={`flex-1 md:flex-initial md:w-full flex items-center justify-center md:justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold min-h-[44px] whitespace-nowrap transition-colors ${
               activeTab === 'billing'
-                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc]'
+                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)]'
                 : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] border border-transparent'
             }`}
           >
@@ -171,7 +171,7 @@ function SettingsContent() {
             onClick={() => setActiveTab('settings')}
             className={`flex-1 md:flex-initial md:w-full flex items-center justify-center md:justify-start gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold min-h-[44px] whitespace-nowrap transition-colors ${
               activeTab === 'settings'
-                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc]'
+                ? 'bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)]'
                 : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] border border-transparent'
             }`}
           >
@@ -225,7 +225,7 @@ function SettingsContent() {
 
                 {/* 3 Core Profile Sections matching Master Plan */}
                 <div className="grid gap-3 sm:grid-cols-3 pt-1">
-                  <div className="rounded-2xl bg-white border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
+                  <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
                     <p className="font-bold text-sm text-[var(--ink)]">Your experience</p>
                     <p className="text-[11px] text-[var(--muted)] leading-relaxed">
                       The roles, projects, and experience that shape your profile.
@@ -236,7 +236,7 @@ function SettingsContent() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-white border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
+                  <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
                     <p className="font-bold text-sm text-[var(--ink)]">Your skills</p>
                     <p className="text-[11px] text-[var(--muted)] leading-relaxed">
                       The skills you've demonstrated through your experience.
@@ -247,7 +247,7 @@ function SettingsContent() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-white border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
+                  <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-4 text-xs space-y-1.5 shadow-sm">
                     <p className="font-bold text-sm text-[var(--ink)]">Your preferences</p>
                     <p className="text-[11px] text-[var(--muted)] leading-relaxed">
                       The roles, locations, and work setup you're looking for.
@@ -265,7 +265,7 @@ function SettingsContent() {
                 <div className="soft-card p-6 border border-[var(--line)] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">Your Plan</span>
-                    <span className="text-[11px] font-semibold text-[var(--red)] bg-[var(--surface-soft)] border border-[#fcd5dc] px-2 py-0.5 rounded-full capitalize">
+                    <span className="text-[11px] font-semibold text-[var(--red)] bg-[var(--surface-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full capitalize">
                       {profile.planTier}
                     </span>
                   </div>
@@ -297,7 +297,7 @@ function SettingsContent() {
                   </p>
                   <Link
                     href="/onboarding"
-                    className="block w-full text-center rounded-xl border border-[var(--line)] bg-white hover:bg-[var(--surface-soft)] text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
+                    className="block w-full text-center rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
                   >
                     Improve your matches
                   </Link>
@@ -421,7 +421,7 @@ function SettingsContent() {
                       {profile.planTier} Tier
                     </h3>
                     {profile.planTier === 'pro' && (
-                      <span className="rounded-full bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc] px-2.5 py-0.5 text-[11px] font-bold">
+                      <span className="rounded-full bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-2.5 py-0.5 text-[11px] font-bold">
                         ACTIVE
                       </span>
                     )}
@@ -479,7 +479,7 @@ function SettingsContent() {
 
                   <Link
                     href="/feed"
-                    className="block w-full text-center rounded-xl border border-[var(--line)] bg-[#FFF1EA] hover:bg-white text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
+                    className="block w-full text-center rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
                   >
                     Start finding jobs →
                   </Link>
@@ -487,7 +487,7 @@ function SettingsContent() {
 
                 {/* Pro Tier */}
                 <div className="soft-card p-6 space-y-4 relative border-2 border-[var(--red)] shadow-md">
-                  <div className="absolute top-4 right-4 rounded-full bg-[var(--surface-soft)] text-[var(--red)] border border-[#fcd5dc] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                  <div className="absolute top-4 right-4 rounded-full bg-[var(--surface-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                     Recommended
                   </div>
 

@@ -162,7 +162,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
               name="q"
               defaultValue={searchQuery}
               placeholder="Search by role, company, skill (e.g. React, Product Manager, Go)..."
-              className="w-full rounded-xl border border-[var(--line)] bg-white pl-10 pr-4 py-2.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--red)] transition-colors shadow-sm"
+              className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] pl-10 pr-4 py-2.5 text-xs text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--red)] transition-colors shadow-sm"
             />
           </div>
           <button
@@ -194,7 +194,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
               <Link
                 key={cat.slug}
                 href={`/remote-jobs/${cat.slug}`}
-                className="rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] hover:bg-[#fdf2f4] transition-all"
+                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] hover:bg-[var(--red-soft)] transition-all"
               >
                 {cat.title}
               </Link>
@@ -242,7 +242,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
             {jobs.map((job) => (
               <article
                 key={job.sourceId}
-                className="soft-card p-6 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-white"
+                className="soft-card p-6 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-[var(--surface)]"
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3">

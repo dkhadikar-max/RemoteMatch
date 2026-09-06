@@ -155,7 +155,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
       )}
 
       {/* Main Job Details Card */}
-      <article className="soft-card p-6 sm:p-8 space-y-6 bg-white border border-[var(--line)]">
+      <article className="soft-card p-6 sm:p-8 space-y-6 bg-[var(--surface)] border border-[var(--line)]">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
@@ -232,7 +232,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
         </div>
 
         {/* Conversion Callout: Know your chances before you apply */}
-        <div className="rounded-2xl border border-[#fcd5dc] bg-[#fdf2f4] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="rounded-2xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--red)]">
               <Target size={14} />
@@ -324,7 +324,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
               <Link
                 key={related.sourceId}
                 href={`/remote-jobs/view/${related.sourceId}`}
-                className="soft-card p-4 hover:shadow-sm transition-all group block border border-[var(--line)] bg-white"
+                className="soft-card p-4 hover:shadow-sm transition-all group block border border-[var(--line)] bg-[var(--surface)]"
               >
                 <span className="text-[11px] text-[var(--muted)] block">{related.company}</span>
                 <h3 className="text-xs font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5 line-clamp-1">

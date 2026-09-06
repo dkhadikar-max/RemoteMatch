@@ -89,7 +89,7 @@ export default function GuideHubPage() {
         {Array.from(new Set(SEO_GUIDE_ARTICLES.map((a) => a.topicalCluster))).map((cluster) => (
           <span
             key={cluster}
-            className="rounded-full bg-white border border-[var(--line)] px-3 py-1 text-[11px] font-medium text-[var(--ink)] shadow-sm"
+            className="rounded-full bg-[var(--surface)] border border-[var(--line)] px-3 py-1 text-[11px] font-medium text-[var(--ink)] shadow-sm"
           >
             {cluster}
           </span>
@@ -101,7 +101,7 @@ export default function GuideHubPage() {
         {SEO_GUIDE_ARTICLES.map((article) => (
           <article
             key={article.slug}
-            className="soft-card p-6 sm:p-7 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-white"
+            className="soft-card p-6 sm:p-7 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-[var(--surface)]"
           >
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-[var(--muted)]">
@@ -155,7 +155,7 @@ export default function GuideHubPage() {
             <Link
               key={cat.slug}
               href={`/remote-jobs/${cat.slug}`}
-              className="rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               {cat.title}
             </Link>

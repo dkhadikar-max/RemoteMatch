@@ -39,7 +39,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
   const badgeColor = COMPANY_COLORS[opportunity.company] || 'bg-[var(--ink)] text-white';
 
   return (
-    <div className="soft-card relative flex flex-col h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-5 sm:p-7 select-none justify-between bg-white text-[var(--ink)] rounded-3xl border border-[#F3E8E2] shadow-[0_4px_24px_rgba(76,44,30,0.04)] transition-all duration-200">
+    <div className="soft-card relative flex flex-col h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-5 sm:p-7 select-none justify-between bg-[var(--surface)] text-[var(--ink)] rounded-3xl border border-[var(--line)] shadow-[0_4px_24px_rgba(76,44,30,0.04)] transition-all duration-200">
       {/* Top Details */}
       <div>
         {/* Company & External Link */}
@@ -62,7 +62,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </div>
 
           {/* Right Coral-Red Score Box */}
-          <div className="rounded-2xl bg-[#fdf2f4] border border-[#fcd5dc] px-3.5 py-2 text-center shrink-0 min-w-[76px]">
+          <div className="rounded-2xl bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-3.5 py-2 text-center shrink-0 min-w-[76px]">
             <div className="mono text-2xl font-bold text-[var(--red)] leading-none">
               {fitScore}%
             </div>
@@ -84,12 +84,12 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
         {/* Skills Pills */}
         <div className="mt-3.5 flex flex-wrap gap-1.5">
           {displayTags.map((tag) => (
-            <span key={tag} className="tag bg-[#FFF1EA] border-[#F3E8E2] text-[#5c5550]">
+            <span key={tag} className="tag bg-[var(--surface-soft)] border-[var(--line)] text-[#5c5550]">
               {tag}
             </span>
           ))}
           {remainingCount > 0 && (
-            <span className="tag bg-[#FFF1EA] border-[#F3E8E2] text-[var(--muted)]">
+            <span className="tag bg-[var(--surface-soft)] border-[var(--line)] text-[var(--muted)]">
               +{remainingCount}
             </span>
           )}
@@ -128,10 +128,10 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
       </div>
 
       {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
-      <div className="pt-3.5 border-t border-[#F3E8E2] flex items-center justify-between gap-3">
+      <div className="pt-3.5 border-t border-[var(--line)] flex items-center justify-between gap-3">
         <Link
           href={`/match/${opportunity.id}`}
-          className="rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--ink)] flex-1 text-xs font-semibold text-center justify-center py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center"
+          className="rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] flex-1 text-xs font-semibold text-center justify-center py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center"
         >
           See why it matches
         </Link>

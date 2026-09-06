@@ -53,7 +53,7 @@ async function newAnonymousSession(): Promise<{ token: string; userId: string } 
     auth: { persistSession: false, autoRefreshToken: false },
     // Node 20 has no native WebSocket; this test never uses Supabase
     // Realtime, but the client constructor initializes it unconditionally.
-    realtime: { transport: ws as unknown as WebSocket },
+    realtime: { transport: ws as unknown as typeof WebSocket },
   });
   const { data, error } = await client.auth.signInAnonymously();
   if (error || !data.session) {

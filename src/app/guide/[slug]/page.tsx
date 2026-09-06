@@ -105,7 +105,7 @@ export default async function GuideArticlePage({ params }: Props) {
       <header className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="tag">{article.category}</span>
-          <span className="tag !bg-white !text-[var(--muted)] !border-[var(--line)]">
+          <span className="tag !bg-[var(--surface)] !text-[var(--muted)] !border-[var(--line)]">
             {article.topicalCluster}
           </span>
           <span className="text-xs text-[var(--muted)] flex items-center gap-1">
@@ -145,7 +145,7 @@ export default async function GuideArticlePage({ params }: Props) {
         ))}
 
         {/* Key Takeaways Box */}
-        <div className="soft-card p-6 sm:p-7 space-y-3 bg-white border border-[var(--line)] my-6">
+        <div className="soft-card p-6 sm:p-7 space-y-3 bg-[var(--surface)] border border-[var(--line)] my-6">
           <div className="flex items-center gap-2 font-semibold text-sm text-[var(--ink)]">
             <CheckCircle2 size={16} className="text-[var(--red)]" />
             <span>Key Takeaways</span>
@@ -168,25 +168,25 @@ export default async function GuideArticlePage({ params }: Props) {
           <div className="flex flex-wrap gap-2 text-xs">
             <Link
               href="/remote-jobs/software-engineering"
-              className="rounded-lg bg-white border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               Remote Software Engineering
             </Link>
             <Link
               href="/remote-jobs/product-management"
-              className="rounded-lg bg-white border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               Remote Product Management
             </Link>
             <Link
               href="/remote-jobs/worldwide"
-              className="rounded-lg bg-white border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               Worldwide Remote Jobs
             </Link>
             <Link
               href="/remote-jobs"
-              className="rounded-lg bg-white border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               Full Job Directory
             </Link>
@@ -194,7 +194,7 @@ export default async function GuideArticlePage({ params }: Props) {
         </div>
 
         {/* RemoteMatch Conversion Callout */}
-        <div className="rounded-2xl border border-[#fcd5dc] bg-[#fdf2f4] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-8">
+        <div className="rounded-2xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-8">
           <div className="space-y-1">
             <span className="text-xs font-semibold text-[var(--red)] flex items-center gap-1.5">
               <CheckCircle2 size={14} />
@@ -214,7 +214,7 @@ export default async function GuideArticlePage({ params }: Props) {
 
         {/* 3-Part Answer FAQ Section */}
         {article.faqs.length > 0 && (
-          <div className="soft-card p-6 space-y-4 mt-8 border border-[var(--line)] bg-white">
+          <div className="soft-card p-6 space-y-4 mt-8 border border-[var(--line)] bg-[var(--surface)]">
             <h3 className="text-sm font-semibold text-[var(--ink)]">
               Questions Answered in This Guide
             </h3>

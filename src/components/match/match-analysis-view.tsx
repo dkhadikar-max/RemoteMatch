@@ -201,7 +201,7 @@ ${initialResumeTweaks.bulletRewrites
         </div>
 
         {/* Top Header Card (Screen 3) */}
-        <div className="soft-card p-6 sm:p-8 space-y-6 border border-[#F3E8E2] rounded-3xl">
+        <div className="soft-card p-6 sm:p-8 space-y-6 border border-[var(--line)] rounded-3xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-4">
               <div className={`grid size-12 shrink-0 place-items-center rounded-2xl font-bold text-base shadow-sm ${badgeColor}`}>
@@ -232,7 +232,7 @@ ${initialResumeTweaks.bulletRewrites
               <button
                 type="button"
                 onClick={() => setIsSaved(!isSaved)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-xs font-semibold text-[var(--ink)] px-4 py-2.5 transition-colors shadow-sm min-h-[44px]"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-xs font-semibold text-[var(--ink)] px-4 py-2.5 transition-colors shadow-sm min-h-[44px]"
               >
                 <Bookmark size={14} className={isSaved ? 'fill-[var(--red)] text-[var(--red)]' : ''} />
                 <span>{isSaved ? 'Saved' : 'Save'}</span>
@@ -249,13 +249,13 @@ ${initialResumeTweaks.bulletRewrites
           </div>
 
           {/* Navigation Tabs (Screen 3) */}
-          <div className="flex items-center gap-2 border-b border-[#F3E8E2] pb-3 pt-2 text-xs">
+          <div className="flex items-center gap-2 border-b border-[var(--line)] pb-3 pt-2 text-xs">
             <button
               onClick={() => setActiveTab('analysis')}
               className={`px-3.5 py-1.5 rounded-full font-semibold transition-colors min-h-[36px] ${
                 activeTab === 'analysis'
                   ? 'bg-[var(--red)] text-white shadow-sm'
-                  : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
               }`}
             >
               Match Analysis
@@ -268,7 +268,7 @@ ${initialResumeTweaks.bulletRewrites
               className={`px-3.5 py-1.5 rounded-full font-semibold transition-colors min-h-[36px] ${
                 activeTab === 'materials'
                   ? 'bg-[var(--red)] text-white shadow-sm'
-                  : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                  : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
               }`}
             >
               Application Materials
@@ -310,11 +310,11 @@ ${initialResumeTweaks.bulletRewrites
               {/* Score & Breakdown Overview (Screen 3) */}
               <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-8 items-center pt-2">
                 {/* Circular Score Dial */}
-                <div className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[#fdf2f4] border border-[#fcd5dc] text-center">
+                <div className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[var(--red-soft)] border border-[var(--red-soft-border)] text-center">
                   <div className="relative size-28 flex items-center justify-center">
                     <svg className="size-full -rotate-90" viewBox="0 0 36 36">
                       <path
-                        className="text-[#fcd5dc]"
+                        className="text-[var(--red-soft-border)]"
                         strokeWidth="3.5"
                         stroke="currentColor"
                         fill="none"
@@ -368,7 +368,7 @@ ${initialResumeTweaks.bulletRewrites
                           <span className="font-medium text-[var(--ink)]">{factor.label}</span>
                           <span className="mono font-semibold text-[var(--red)]">{factor.score}%</span>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-[#F3E8E2] overflow-hidden">
+                        <div className="h-2 w-full rounded-full bg-[var(--line)] overflow-hidden">
                           <div
                             className="h-full bg-[var(--red)] rounded-full transition-all duration-300"
                             style={{ width: `${factor.score}%` }}
@@ -383,8 +383,8 @@ ${initialResumeTweaks.bulletRewrites
               {/* 3-Column Decision Grid (Screen 3) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4">
                 {/* Column 1: Why it fits (Green) */}
-                <div className="rounded-3xl border border-[#F3E8E2] bg-white p-5 space-y-4 shadow-sm">
-                  <div className="flex items-center gap-2 text-xs font-bold text-[var(--ink)] uppercase tracking-wider pb-2 border-b border-[#F3E8E2]">
+                <div className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[var(--ink)] uppercase tracking-wider pb-2 border-b border-[var(--line)]">
                     <CircleCheck size={16} className="text-[#059669]" />
                     <span>Why it fits</span>
                   </div>
@@ -403,8 +403,8 @@ ${initialResumeTweaks.bulletRewrites
                 </div>
 
                 {/* Column 2: What may be missing (Amber) */}
-                <div className="rounded-3xl border border-[#F3E8E2] bg-white p-5 space-y-4 shadow-sm">
-                  <div className="flex items-center gap-2 text-xs font-bold text-[#b45309] uppercase tracking-wider pb-2 border-b border-[#F3E8E2]">
+                <div className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#b45309] uppercase tracking-wider pb-2 border-b border-[var(--line)]">
                     <AlertCircle size={16} className="text-[#b45309]" />
                     <span>What may be missing</span>
                   </div>
@@ -423,7 +423,7 @@ ${initialResumeTweaks.bulletRewrites
                         </div>
                       ))
                     ) : (
-                      <div className="rounded-2xl bg-[#FFF1EA] p-4 text-xs text-[var(--muted)]">
+                      <div className="rounded-2xl bg-[var(--surface-soft)] p-4 text-xs text-[var(--muted)]">
                         All core requirements match your profile.
                       </div>
                     )}
@@ -431,9 +431,9 @@ ${initialResumeTweaks.bulletRewrites
                 </div>
 
                 {/* Column 3: Before you apply (Numbered Red Circles) */}
-                <div className="rounded-3xl border border-[#F3E8E2] bg-white p-5 space-y-4 shadow-sm flex flex-col justify-between">
+                <div className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-4 shadow-sm flex flex-col justify-between">
                   <div>
-                    <div className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider pb-2 border-b border-[#F3E8E2]">
+                    <div className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider pb-2 border-b border-[var(--line)]">
                       Before you apply
                     </div>
                     <p className="text-[11px] text-[var(--muted)] mt-2">
@@ -443,7 +443,7 @@ ${initialResumeTweaks.bulletRewrites
                     <div className="space-y-3 mt-3">
                       {beforeYouApplySteps.slice(0, 3).map((step, idx) => (
                         <div key={idx} className="flex items-start gap-3 text-xs">
-                          <span className="grid size-5 place-items-center rounded-full bg-[#fdf2f4] border border-[#fcd5dc] text-[11px] font-bold text-[var(--red)] shrink-0 mt-0.5">
+                          <span className="grid size-5 place-items-center rounded-full bg-[var(--red-soft)] border border-[var(--red-soft-border)] text-[11px] font-bold text-[var(--red)] shrink-0 mt-0.5">
                             {idx + 1}
                           </span>
                           <span className="font-medium text-[var(--ink)] leading-snug">{step}</span>
@@ -455,7 +455,7 @@ ${initialResumeTweaks.bulletRewrites
                   <button
                     type="button"
                     onClick={() => setShowApplicationReview(!showApplicationReview)}
-                    className="w-full mt-4 rounded-xl bg-[#fdf2f4] hover:bg-[#fde8eb] text-[var(--red)] border border-[#fcd5dc] text-xs font-semibold py-2.5 px-3 transition-colors flex items-center justify-center gap-1.5 min-h-[44px]"
+                    className="w-full mt-4 rounded-xl bg-[var(--red-soft)] hover:bg-[var(--red-soft-border)] text-[var(--red)] border border-[var(--red-soft-border)] text-xs font-semibold py-2.5 px-3 transition-colors flex items-center justify-center gap-1.5 min-h-[44px]"
                   >
                     <span>Tailored application materials</span>
                     {showApplicationReview ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -481,7 +481,7 @@ ${initialResumeTweaks.bulletRewrites
             <div className="space-y-4 pt-2 text-xs text-[var(--ink)] leading-relaxed">
               <h3 className="font-semibold text-sm">About {opportunity.company}</h3>
               <p>Remote-friendly organization with verified distributed hiring eligibility.</p>
-              <div className="p-4 rounded-2xl bg-[#FFF1EA] border border-[#F3E8E2] space-y-1">
+              <div className="p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] space-y-1">
                 <p><strong>Primary Remote Policy:</strong> {opportunity.remoteType || 'Worldwide'}</p>
                 <p><strong>Compensation Range:</strong> ${Math.round((opportunity.salaryMin || 0)/1000)}k – ${Math.round((opportunity.salaryMax || 0)/1000)}k USD</p>
               </div>
@@ -492,7 +492,7 @@ ${initialResumeTweaks.bulletRewrites
             <div className="space-y-3 pt-2 text-xs">
               <p className="text-[var(--muted)]">Explore similar opportunities aligned with your experience:</p>
               <div className="flex gap-2">
-                <Link href="/feed" className="rounded-xl border border-[#F3E8E2] bg-white px-4 py-2 text-xs font-semibold hover:bg-[#FFF1EA] min-h-[44px] flex items-center">
+                <Link href="/feed" className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold hover:bg-[var(--surface-soft)] min-h-[44px] flex items-center">
                   View More in Feed →
                 </Link>
               </div>
@@ -502,8 +502,8 @@ ${initialResumeTweaks.bulletRewrites
 
         {/* Expandable Application Materials Drawer */}
         {(showApplicationReview || activeTab === 'materials') && (
-          <div className="soft-card p-6 sm:p-8 space-y-6 border border-[#F3E8E2] rounded-3xl animate-in fade-in duration-200">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F3E8E2]">
+          <div className="soft-card p-6 sm:p-8 space-y-6 border border-[var(--line)] rounded-3xl animate-in fade-in duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
               <div>
                 <h2 className="text-sm font-bold text-[var(--ink)] uppercase tracking-wider">
                   Tailored Application Materials
@@ -524,7 +524,7 @@ ${initialResumeTweaks.bulletRewrites
                 {initialResumeTweaks.bulletRewrites.map((bullet, idx) => (
                   <div
                     key={idx}
-                    className="rounded-2xl border border-[#F3E8E2] bg-[#FFF1EA] p-4 space-y-2 text-xs"
+                    className="rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 space-y-2 text-xs"
                   >
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[var(--ink)]">
@@ -548,7 +548,7 @@ ${initialResumeTweaks.bulletRewrites
                         )}
                       </button>
                     </div>
-                    <p className="bg-white p-3 rounded-xl border border-[#F3E8E2] text-xs text-[var(--ink)] leading-relaxed font-mono">
+                    <p className="bg-[var(--surface)] p-3 rounded-xl border border-[var(--line)] text-xs text-[var(--ink)] leading-relaxed font-mono">
                       "{bullet.suggestedRewrite}"
                     </p>
                     <span className="text-[11px] text-[var(--muted)] block">
@@ -586,7 +586,7 @@ ${initialResumeTweaks.bulletRewrites
                       className={`px-3 py-1.5 text-xs capitalize rounded-xl transition-colors min-h-[36px] ${
                         activeTone === tone
                           ? 'bg-[var(--red)] text-white font-semibold shadow-sm'
-                          : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:text-[var(--ink)]'
+                          : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:text-[var(--ink)]'
                       }`}
                     >
                       {tone}
@@ -600,12 +600,12 @@ ${initialResumeTweaks.bulletRewrites
                   value={coverLetter}
                   onChange={(e) => setCoverLetter(e.target.value)}
                   rows={8}
-                  className="soft-input resize-none text-xs leading-relaxed font-mono border-[#F3E8E2]"
+                  className="soft-input resize-none text-xs leading-relaxed font-mono border-[var(--line)]"
                 />
                 <button
                   type="button"
                   onClick={() => copyToClipboard(coverLetter, true)}
-                  className="absolute top-3 right-3 flex items-center gap-1 rounded-xl border border-[#F3E8E2] bg-white px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] shadow-sm min-h-[32px]"
+                  className="absolute top-3 right-3 flex items-center gap-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] shadow-sm min-h-[32px]"
                 >
                   {copiedCoverLetter ? (
                     <>

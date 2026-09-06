@@ -1,7 +1,15 @@
 import type { Metadata } from 'next';
+import { Figtree } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/navigation/navbar';
 import { AuthBootstrap } from '@/components/auth/auth-bootstrap';
+
+// "Organic" design-system typography (imported design: RemoteMatch.dc.html) —
+// self-hosted via next/font so there's no external request or layout shift.
+// The source design's Caprasimo display face read as too bold/bulky in
+// practice, so every heading uses this body font at a bold weight instead
+// (see globals.css) — Figtree is the only face actually loaded.
+const figtree = Figtree({ subsets: ['latin'], display: 'swap', variable: '--font-body' });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://remotematch.com'),
@@ -96,7 +104,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={figtree.variable}>
       <head>
         <script
           type="application/ld+json"
@@ -107,7 +115,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdWebSite) }}
         />
       </head>
-      <body className="bg-[var(--bg)] text-[var(--ink)] antialiased min-h-screen flex flex-col selection:bg-[#fcd5dc] selection:text-[var(--ink)]">
+      <body className="bg-[var(--bg)] text-[var(--ink)] antialiased min-h-screen flex flex-col selection:bg-[var(--red-soft-border)] selection:text-[var(--ink)]">
         <AuthBootstrap />
         <Navbar />
         <main className="flex-1 flex flex-col">{children}</main>

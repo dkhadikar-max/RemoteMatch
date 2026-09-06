@@ -91,7 +91,7 @@ export function DidYouApplyModal({
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-md rounded-3xl border border-[#F3E8E2] bg-white p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5"
+        className="relative flex flex-col w-full max-w-md rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         {isSubmitted && selectedOutcome === 'applied' ? (
@@ -120,7 +120,7 @@ export function DidYouApplyModal({
         ) : (
           <>
             {/* Header */}
-            <div className="flex items-start justify-between pb-3.5 border-b border-[#F3E8E2]">
+            <div className="flex items-start justify-between pb-3.5 border-b border-[var(--line)]">
               <div>
                 <span className="status good text-[11px] py-0.5 px-2.5">Outcome Record</span>
                 <h3 className="text-lg font-bold text-[var(--ink)] mt-1.5">
@@ -133,7 +133,7 @@ export function DidYouApplyModal({
 
               <button
                 onClick={onClose}
-                className="grid size-8 place-items-center rounded-xl border border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
               >
                 <X size={15} />
               </button>
@@ -155,8 +155,8 @@ export function DidYouApplyModal({
                     onClick={() => setSelectedOutcome(opt.id)}
                     className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
                       isSelected
-                        ? 'border-[var(--red)] bg-[#fdf2f4]'
-                        : 'border-[#F3E8E2] bg-white hover:bg-[#FFF1EA]'
+                        ? 'border-[var(--red)] bg-[var(--red-soft)]'
+                        : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]'
                     }`}
                   >
                     <div className="mt-0.5">
@@ -197,7 +197,7 @@ export function DidYouApplyModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="soft-button secondary flex-1 text-xs font-semibold py-2.5 border-[#F3E8E2] min-h-[44px]"
+                className="soft-button secondary flex-1 text-xs font-semibold py-2.5 border-[var(--line)] min-h-[44px]"
               >
                 Decide Later
               </button>

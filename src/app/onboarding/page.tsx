@@ -297,8 +297,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                         onClick={() => toggleEmploymentType(type)}
                         className={`rounded-2xl border p-4 text-left transition-all flex items-center justify-between ${
                           isSelected
-                            ? 'border-[var(--red)] bg-[#fdf2f4]'
-                            : 'border-[var(--line)] bg-white hover:bg-[var(--surface-soft)]'
+                            ? 'border-[var(--red)] bg-[var(--red-soft)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]'
                         }`}
                       >
                         <div className="flex items-center gap-3">
@@ -331,7 +331,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                   {targetRoles.map((role) => (
                     <span
                       key={role}
-                      className="tag !bg-[#fdf2f4] !text-[var(--red)] !border-[#fcd5dc] inline-flex items-center gap-1.5"
+                      className="tag !bg-[var(--red-soft)] !text-[var(--red)] !border-[var(--red-soft-border)] inline-flex items-center gap-1.5"
                     >
                       <span>{role}</span>
                       <button
@@ -386,8 +386,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                           }}
                           className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                             isSelected
-                              ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
-                              : 'border-[var(--line)] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                              ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
+                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
                           }`}
                         >
                           {role}
@@ -417,7 +417,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                   {skills.map((skill) => (
                     <span
                       key={skill}
-                      className="tag !bg-[#fdf2f4] !text-[var(--red)] !border-[#fcd5dc] inline-flex items-center gap-1.5"
+                      className="tag !bg-[var(--red-soft)] !text-[var(--red)] !border-[var(--red-soft-border)] inline-flex items-center gap-1.5"
                     >
                       <span>{skill}</span>
                       <button
@@ -472,8 +472,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                           }}
                           className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                             isSelected
-                              ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
-                              : 'border-[var(--line)] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                              ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
+                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
                           }`}
                         >
                           {sk}
@@ -515,8 +515,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                         onClick={() => setYearsOfExperience(tier)}
                         className={`w-full rounded-2xl border p-4 text-left transition-all flex items-center justify-between ${
                           isSelected
-                            ? 'border-[var(--red)] bg-[#fdf2f4]'
-                            : 'border-[var(--line)] bg-white hover:bg-[var(--surface-soft)]'
+                            ? 'border-[var(--red)] bg-[var(--red-soft)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]'
                         }`}
                       >
                         <span className="font-semibold text-sm text-[var(--ink)]">
@@ -560,8 +560,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                         onClick={() => setWorkPreference(scope.id as any)}
                         className={`rounded-2xl border p-3 text-xs font-semibold transition-all text-center ${
                           workPreference === scope.id
-                            ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
-                            : 'border-[var(--line)] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                            ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
                         }`}
                       >
                         {scope.label}
@@ -620,8 +620,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                           }}
                           className={`rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
                             isSelected
-                              ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)]'
-                              : 'border-[var(--line)] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                              ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
+                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
                           }`}
                         >
                           {tz}
@@ -661,7 +661,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                 </div>
 
                 {/* Editable Confirmation Box */}
-                <div className="rounded-2xl border border-[var(--line)] bg-white p-4 space-y-3">
+                <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 space-y-3">
                   <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider block">
                     Identity Confirmation
                   </span>

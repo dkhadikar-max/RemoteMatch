@@ -64,11 +64,11 @@ export function InterviewModal({
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-lg rounded-3xl border border-[#F3E8E2] bg-white p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5 max-h-[90vh] overflow-y-auto"
+        className="relative flex flex-col w-full max-w-lg rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5 max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between pb-3.5 border-b border-[#F3E8E2]">
+        <div className="flex items-start justify-between pb-3.5 border-b border-[var(--line)]">
           <div>
             <h3 className="text-xl font-bold text-[var(--ink)]">
               Interview Details
@@ -80,7 +80,7 @@ export function InterviewModal({
 
           <button
             onClick={onClose}
-            className="grid size-9 place-items-center rounded-xl border border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+            className="grid size-9 place-items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
           >
             <X size={16} />
           </button>
@@ -99,8 +99,8 @@ export function InterviewModal({
                 onClick={() => setStage(s.id)}
                 className={`p-2.5 rounded-xl border text-left transition-all ${
                   stage === s.id
-                    ? 'border-[var(--red)] bg-[#fdf2f4] text-[var(--red)] font-semibold'
-                    : 'border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--muted)]'
+                    ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)] font-semibold'
+                    : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)]'
                 }`}
               >
                 <div className="text-xs font-semibold">{s.label}</div>
@@ -146,7 +146,7 @@ export function InterviewModal({
         </div>
 
         {/* Preparation Focus Points */}
-        <div className="p-3.5 rounded-2xl bg-[#FFF1EA] border border-[#F3E8E2] space-y-2">
+        <div className="p-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)]">
             <CheckCircle2 size={15} className="text-[#059669]" />
             <span>What should you prepare for?</span>
@@ -178,7 +178,7 @@ export function InterviewModal({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 border-t border-[#F3E8E2]">
+        <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 border-t border-[var(--line)]">
           <button
             type="button"
             onClick={() => handleSave('offer')}

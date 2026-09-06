@@ -60,7 +60,7 @@ export default function LandingPage() {
       {/* 1. Hero Section */}
       <section className="container grid items-center gap-12 py-14 lg:grid-cols-[1.1fr_480px] lg:py-20">
         <div>
-          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc]">
+          <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)] animate-pulse" />
             Less searching. Better matches.
           </span>
@@ -104,9 +104,9 @@ export default function LandingPage() {
         </div>
 
         {/* 2. Product Preview Card */}
-        <div className="soft-card p-6 border border-[#F3E8E2] rounded-3xl shadow-sm">
+        <div className="soft-card p-6 border border-[var(--line)] rounded-3xl shadow-sm">
           {/* Card Header & Preview Switcher */}
-          <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#F3E8E2]">
+          <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--line)]">
             <div>
               <h3 className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
                 Jobs picked for you
@@ -123,7 +123,7 @@ export default function LandingPage() {
                   className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors min-h-[36px] ${
                     activeIdx === idx
                       ? 'bg-[var(--red)] text-white font-semibold shadow-sm'
-                      : 'bg-[#FFF1EA] text-[var(--muted)] hover:text-[var(--ink)]'
+                      : 'bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)]'
                   }`}
                 >
                   {job.company}
@@ -155,7 +155,7 @@ export default function LandingPage() {
             </div>
 
             {/* Coral-Red Score Box */}
-            <div className="rounded-2xl bg-[#fdf2f4] border border-[#fcd5dc] px-4 py-3 text-center min-w-[95px] shrink-0">
+            <div className="rounded-2xl bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-4 py-3 text-center min-w-[95px] shrink-0">
               <div className="mono text-3xl font-bold text-[var(--red)]">
                 {current.score}%
               </div>
@@ -188,7 +188,7 @@ export default function LandingPage() {
           <div className="mt-4 flex items-center gap-3 pt-2">
             <Link
               href={`/match/${current.id}`}
-              className="flex-1 rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF1EA] text-[var(--ink)] text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
+              className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
             >
               See why it matches
             </Link>
@@ -203,7 +203,7 @@ export default function LandingPage() {
       </section>
 
       {/* 3. What is RemoteMatch? */}
-      <section className="border-t border-[#F3E8E2] bg-white py-14 sm:py-16">
+      <section className="border-t border-[var(--line)] bg-[var(--surface)] py-14 sm:py-16">
         <div className="container max-w-4xl text-center space-y-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
             Product Overview
@@ -218,7 +218,7 @@ export default function LandingPage() {
       </section>
 
       {/* 4. How it works */}
-      <section id="how-it-works" className="border-t border-[#F3E8E2] bg-[#FFF7F2] py-16 sm:py-20">
+      <section id="how-it-works" className="border-t border-[var(--line)] bg-[var(--bg)] py-16 sm:py-20">
         <div className="container">
           <div className="text-center max-w-2xl mx-auto mb-12">
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
@@ -257,7 +257,7 @@ export default function LandingPage() {
             ].map((step) => (
               <div
                 key={step.num}
-                className="rounded-3xl bg-white border border-[#F3E8E2] p-6 shadow-sm hover:border-[#fcd5dc] transition-colors"
+                className="rounded-3xl bg-[var(--surface)] border border-[var(--line)] p-6 shadow-sm hover:border-[var(--red-soft-border)] transition-colors"
               >
                 <span className="mono text-xs font-bold text-[var(--red)]">
                   {step.num}
@@ -275,7 +275,7 @@ export default function LandingPage() {
       </section>
 
       {/* 5. Free vs Pro Pricing Section */}
-      <section id="pricing" className="border-t border-[#F3E8E2] bg-white py-16 sm:py-20">
+      <section id="pricing" className="border-t border-[var(--line)] bg-[var(--surface)] py-16 sm:py-20">
         <div className="container max-w-4xl">
           <div className="text-center max-w-xl mx-auto mb-12">
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
@@ -291,7 +291,7 @@ export default function LandingPage() {
 
           <div className="grid gap-6 md:grid-cols-2">
             {/* Free Tier */}
-            <div className="soft-card p-7 sm:p-8 rounded-3xl border border-[#F3E8E2] bg-white space-y-6">
+            <div className="soft-card p-7 sm:p-8 rounded-3xl border border-[var(--line)] bg-[var(--surface)] space-y-6">
               <div>
                 <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Free</h3>
                 <p className="mt-1 text-xs text-[var(--muted)]">Get started for free.</p>
@@ -319,15 +319,15 @@ export default function LandingPage() {
 
               <Link
                 href="/feed"
-                className="block w-full text-center rounded-xl border border-[#F3E8E2] bg-[#FFF1EA] hover:bg-white text-xs font-semibold text-[var(--ink)] py-3 transition-colors shadow-sm min-h-[44px]"
+                className="block w-full text-center rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-xs font-semibold text-[var(--ink)] py-3 transition-colors shadow-sm min-h-[44px]"
               >
                 Start finding jobs →
               </Link>
             </div>
 
             {/* Pro Tier */}
-            <div className="soft-card p-7 sm:p-8 rounded-3xl border-2 border-[var(--red)] bg-white space-y-6 relative shadow-md">
-              <div className="absolute top-4 right-4 rounded-full bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+            <div className="soft-card p-7 sm:p-8 rounded-3xl border-2 border-[var(--red)] bg-[var(--surface)] space-y-6 relative shadow-md">
+              <div className="absolute top-4 right-4 rounded-full bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                 Recommended
               </div>
 
@@ -370,7 +370,7 @@ export default function LandingPage() {
       </section>
 
       {/* 6. AEO / Direct-Answer FAQ Section */}
-      <section className="border-t border-[#F3E8E2] bg-[#FFF7F2] py-16 sm:py-20">
+      <section className="border-t border-[var(--line)] bg-[var(--bg)] py-16 sm:py-20">
         <div className="container max-w-3xl">
           <div className="text-center mb-10">
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">
@@ -382,7 +382,7 @@ export default function LandingPage() {
           </div>
 
           <div className="space-y-4 text-xs">
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 What is RemoteMatch?
               </h3>
@@ -400,7 +400,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 How does RemoteMatch work?
               </h3>
@@ -418,7 +418,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 How do I find remote jobs that match my experience?
               </h3>
@@ -436,7 +436,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 Can I see why a remote job matches me?
               </h3>
@@ -454,7 +454,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 Can I track remote job applications?
               </h3>
@@ -472,7 +472,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 Are all jobs on RemoteMatch 100% remote?
               </h3>
@@ -490,7 +490,7 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[#F3E8E2] p-5 shadow-sm space-y-2">
+            <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
               <h3 className="font-bold text-sm text-[var(--ink)]">
                 How often are job listings updated?
               </h3>
@@ -512,7 +512,7 @@ export default function LandingPage() {
       </section>
 
       {/* 7. Footer */}
-      <footer className="border-t border-[#F3E8E2] py-10 bg-[#FFF1EA]">
+      <footer className="border-t border-[var(--line)] py-10 bg-[var(--surface-soft)]">
         <div className="container flex flex-col gap-6 text-xs text-[var(--muted)]">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-1">
@@ -531,7 +531,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[#F3E8E2]/80 pt-4 text-[11px]">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[var(--line)]/80 pt-4 text-[11px]">
             <span className="font-semibold text-[var(--ink)]">
               Know your chances before you apply.
             </span>

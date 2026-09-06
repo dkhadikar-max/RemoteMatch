@@ -107,7 +107,7 @@ export function SwipeDeck({
 
   if (!currentOpp) {
     return (
-      <div className="soft-card flex flex-col items-center justify-center h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-8 text-center space-y-4 rounded-3xl border border-[#F3E8E2]">
+      <div className="soft-card flex flex-col items-center justify-center h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-8 text-center space-y-4 rounded-3xl border border-[var(--line)]">
         <div className="grid size-12 place-items-center rounded-2xl bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
           <CheckCircle2 size={24} />
         </div>
@@ -121,7 +121,7 @@ export function SwipeDeck({
           {canRewind && (
             <button
               onClick={handleRewind}
-              className="soft-button secondary flex-1 flex items-center justify-center gap-2 text-xs border-[#F3E8E2]"
+              className="soft-button secondary flex-1 flex items-center justify-center gap-2 text-xs border-[var(--line)]"
             >
               <RotateCcw size={14} />
               <span>Rewind</span>
@@ -148,7 +148,7 @@ export function SwipeDeck({
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="absolute -top-16 z-50 flex items-center justify-between gap-3 w-full rounded-2xl border border-[#F3E8E2] bg-white px-4 py-3 shadow-[0_4px_20px_rgba(76,44,30,0.06)] text-xs"
+            className="absolute -top-16 z-50 flex items-center justify-between gap-3 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-[0_4px_20px_rgba(76,44,30,0.06)] text-xs"
           >
             <div className="flex items-center gap-2 text-[var(--ink)]">
               <Check size={15} className="text-[#059669]" />

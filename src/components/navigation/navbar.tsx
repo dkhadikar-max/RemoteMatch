@@ -22,7 +22,7 @@ export function Navbar() {
   return (
     <>
       {/* Desktop & Tablet Top Navigation */}
-      <header className="sticky top-0 z-30 border-b border-[#F3E8E2] bg-[#FFF7F2]/90 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--bg)]/90 backdrop-blur-md">
         <div className="container flex h-[68px] items-center justify-between gap-6">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-2.5 tracking-tight group">
@@ -41,31 +41,31 @@ export function Navbar() {
               <>
                 <Link
                   href="/feed"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                 >
                   Jobs
                 </Link>
                 <Link
                   href="/remote-jobs"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                 >
                   Directory
                 </Link>
                 <a
                   href="#how-it-works"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                 >
                   How It Works
                 </a>
                 <Link
                   href="/guide"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                 >
                   Guides
                 </Link>
                 <Link
                   href="/settings?tab=billing"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
                 >
                   Pricing
                 </Link>
@@ -76,8 +76,8 @@ export function Navbar() {
                   href="/feed"
                   className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
                     pathname === '/feed' || pathname.startsWith('/match')
-                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
-                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                      ? 'bg-[var(--surface)] text-[var(--red)] font-semibold shadow-sm border border-[var(--line)]'
+                      : 'text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
                   Jobs
@@ -86,8 +86,8 @@ export function Navbar() {
                   href="/tracker"
                   className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
                     pathname === '/tracker'
-                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
-                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                      ? 'bg-[var(--surface)] text-[var(--red)] font-semibold shadow-sm border border-[var(--line)]'
+                      : 'text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
                   Applications
@@ -96,8 +96,8 @@ export function Navbar() {
                   href="/settings"
                   className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
                     pathname === '/settings'
-                      ? 'bg-white text-[var(--red)] font-semibold shadow-sm border border-[#F3E8E2]'
-                      : 'text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                      ? 'bg-[var(--surface)] text-[var(--red)] font-semibold shadow-sm border border-[var(--line)]'
+                      : 'text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
                   Profile
@@ -112,7 +112,7 @@ export function Navbar() {
               <>
                 <Link
                   href="/feed"
-                  className="rounded-xl border border-[#F3E8E2] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors shadow-sm"
+                  className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
                 >
                   Browse jobs
                 </Link>
@@ -126,11 +126,11 @@ export function Navbar() {
             ) : (
               <>
                 {isPro ? (
-                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[#fdf2f4] text-[var(--red)] border border-[#fcd5dc] shadow-sm">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] shadow-sm">
                     Pro
                   </span>
                 ) : (
-                  <div className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[var(--muted)] bg-white border border-[#F3E8E2] rounded-full px-3 py-1 shadow-sm">
+                  <div className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[var(--muted)] bg-[var(--surface)] border border-[var(--line)] rounded-full px-3 py-1 shadow-sm">
                     <span className="size-1.5 rounded-full bg-[var(--red)]" />
                     <span>{savesRemaining} saves left today</span>
                   </div>
@@ -138,7 +138,7 @@ export function Navbar() {
 
                 <Link
                   href="/settings"
-                  className="grid size-9 place-items-center rounded-full bg-[#fde8eb] text-xs font-bold text-[var(--red)] border border-[#fcd5dc] shadow-sm hover:bg-[#fcd5dc] transition-colors"
+                  className="grid size-9 place-items-center rounded-full bg-[var(--red-soft-border)] text-xs font-bold text-[var(--red)] border border-[var(--red-soft-border)] shadow-sm hover:bg-[var(--red-soft-border)] transition-colors"
                 >
                   A
                 </Link>
@@ -149,12 +149,12 @@ export function Navbar() {
       </header>
 
       {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) */}
-      <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[#F3E8E2] bg-white/95 p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
+      <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"
           className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
             pathname === '/feed' || pathname.startsWith('/match')
-              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              ? 'text-[var(--red)] font-semibold bg-[var(--red-soft)]'
               : 'text-[var(--muted)] hover:text-[var(--ink)]'
           }`}
         >
@@ -165,7 +165,7 @@ export function Navbar() {
           href="/tracker"
           className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
             pathname === '/tracker'
-              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              ? 'text-[var(--red)] font-semibold bg-[var(--red-soft)]'
               : 'text-[var(--muted)] hover:text-[var(--ink)]'
           }`}
         >
@@ -176,7 +176,7 @@ export function Navbar() {
           href="/settings"
           className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
             pathname === '/settings'
-              ? 'text-[var(--red)] font-semibold bg-[#fdf2f4]'
+              ? 'text-[var(--red)] font-semibold bg-[var(--red-soft)]'
               : 'text-[var(--muted)] hover:text-[var(--ink)]'
           }`}
         >

@@ -177,7 +177,7 @@ export default async function RemoteCategoryPage({ params }: Props) {
             {jobs.map((job) => (
               <article
                 key={job.sourceId}
-                className="soft-card p-6 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-white"
+                className="soft-card p-6 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-[var(--surface)]"
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
@@ -278,7 +278,7 @@ export default async function RemoteCategoryPage({ params }: Props) {
             <Link
               key={c.slug}
               href={`/remote-jobs/${c.slug}`}
-              className="rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--muted)] transition-colors"
+              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-[var(--ink)] hover:border-[var(--muted)] transition-colors"
             >
               {c.title}
             </Link>

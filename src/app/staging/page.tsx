@@ -105,7 +105,7 @@ export default function StagingControlRoom() {
                 <span className="status good text-[11px]">
                   ● System healthy
                 </span>
-                <span className="tag !bg-white text-[11px] inline-flex items-center gap-1">
+                <span className="tag !bg-[var(--surface)] text-[11px] inline-flex items-center gap-1">
                   <Lock size={12} /> Model frozen
                 </span>
               </div>
@@ -212,7 +212,7 @@ export default function StagingControlRoom() {
               </div>
               <div className="space-y-2">
                 {data.system.providers.map((p) => (
-                  <div key={p.name} className="rounded-xl border border-[var(--line)] bg-white p-3 flex items-center justify-between">
+                  <div key={p.name} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                       <span className="size-2 rounded-full bg-[#059669]" />
                       <span className="text-xs font-medium text-[var(--ink)]">{p.name}</span>
@@ -310,7 +310,7 @@ export default function StagingControlRoom() {
               return (
                 <div key={step.stage} className="rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 w-56">
-                    <span className="size-5 rounded-lg border border-[var(--line)] bg-white text-[var(--muted)] font-mono text-[11px] flex items-center justify-center font-bold">
+                    <span className="size-5 rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] font-mono text-[11px] flex items-center justify-center font-bold">
                       {idx + 1}
                     </span>
                     <span className="text-xs font-medium text-[var(--ink)]">{step.stage}</span>
@@ -354,7 +354,7 @@ export default function StagingControlRoom() {
             </span>
           </div>
 
-          <div className="rounded-2xl border border-[var(--line)] overflow-hidden bg-white">
+          <div className="rounded-2xl border border-[var(--line)] overflow-hidden bg-[var(--surface)]">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-[var(--line)] bg-[var(--surface-soft)] text-[var(--muted)]">

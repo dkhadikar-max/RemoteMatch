@@ -4,36 +4,40 @@
 
 @layer base {
   :root {
-    /* Soft Peach Visual Palette */
-    --bg: #FFF7F2;
-    --surface: #ffffff;
-    --surface-soft: #FFF1EA;
-    --line: #F3E8E2;
-    --ink: #181412;
-    --muted: #736b66;
-    
-    /* RemoteMatch Coral-Red Accent System */
-    --red: #E51E3E;
-    --red-dark: #C91432;
-    --red-soft: #fdf2f4;
-    --red-soft-border: #fcd5dc;
-    --primary: #E51E3E;
-    --primary-foreground: #ffffff;
+    /* "Organic" Visual Palette — imported design: RemoteMatch.dc.html.
+       Same variable names as before so every component that already
+       references var(--bg)/var(--red)/etc. picks up the new identity
+       automatically; only the values changed. */
+    --bg: #f5ead8;
+    --surface: #ebddc5;
+    --surface-soft: #fff2eb;
+    --line: color-mix(in srgb, #201e1d 16%, transparent);
+    --ink: #201e1d;
+    --muted: #82796a;
 
-    /* Semantic Match Indicators */
-    --green: #10b981;
-    --green-dark: #059669;
-    --green-soft: #ecfdf5;
-    --green-border: #a7f3d0;
-    
-    /* Gaps & Missing Proof */
+    /* RemoteMatch Terracotta Accent System (was coral-red) */
+    --red: #c67139;
+    --red-dark: #8c491a;
+    --red-soft: #fff2eb;
+    --red-soft-border: #ffe1d0;
+    --primary: #c67139;
+    --primary-foreground: #f5ead8;
+
+    /* Semantic Match Indicators — sage green, the design's second accent */
+    --green: #7a8a5e;
+    --green-dark: #56633f;
+    --green-soft: #f0fae1;
+    --green-border: #e1eecc;
+
+    /* Gaps & Missing Proof — unchanged; distinct semantic warning color,
+       not part of the imported brand palette */
     --amber: #d97706;
     --amber-soft: #fffbeb;
     --amber-border: #fde68a;
-    
+
     --danger: #b3261e;
-    --shadow: 0 10px 30px rgba(76, 44, 30, 0.07);
-    --shadow-soft: 0 4px 20px rgba(76, 44, 30, 0.04);
+    --shadow: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+    --shadow-soft: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
     --radius: 20px;
 
     --background: var(--bg);
@@ -63,19 +67,29 @@ html {
 
 body {
   margin: 0;
-  background-color: #FFF7F2 !important;
-  color: #181412 !important;
+  background-color: var(--bg) !important;
+  color: var(--ink) !important;
   color-scheme: light !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   overflow-x: hidden;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* All headings use the body font (Figtree) at a bold weight — the
+   imported design's Caprasimo display face read as too bold/bulky in
+   practice, so hierarchy comes from size/weight instead of a second
+   typeface. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
 ::selection {
-  background: #fcd5dc;
-  color: #181412;
+  background: var(--red-soft-border);
+  color: var(--ink);
 }
 
 button, a, input, select, textarea {
@@ -98,7 +112,7 @@ button {
 .soft-input {
   width: 100%;
   border: 1px solid var(--line);
-  background: #ffffff;
+  background: var(--surface);
   border-radius: 16px;
   padding: 14px 16px;
   outline: none;
@@ -108,8 +122,8 @@ button {
 }
 
 .soft-input:focus {
-  border-color: #fca5b1;
-  box-shadow: 0 0 0 4px rgba(229, 30, 62, 0.08);
+  border-color: var(--red);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 8%, transparent);
 }
 
 .soft-button {
@@ -130,8 +144,8 @@ button {
 
 .soft-button.primary {
   background: var(--red);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(229, 30, 62, 0.22);
+  color: var(--bg);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--red) 22%, transparent);
 }
 
 .soft-button.primary:hover {
@@ -139,10 +153,10 @@ button {
 }
 
 .soft-button.secondary {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink);
-  box-shadow: 0 2px 8px rgba(76, 44, 30, 0.03);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 3%, transparent);
 }
 
 .soft-button.secondary:hover {
@@ -162,7 +176,7 @@ button {
   border: 1px solid var(--line);
   padding: 5px 12px;
   font-size: 12px;
-  color: #5c5550;
+  color: var(--muted);
 }
 
 .status {
@@ -196,7 +210,7 @@ button {
 .bar {
   height: 8px;
   border-radius: 999px;
-  background: #F3E8E2;
+  background: var(--line);
   overflow: hidden;
 }
 
@@ -298,11 +312,11 @@ button {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #e8dbd3;
+  background: var(--surface);
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #d8c8bf;
+  background: var(--line);
 }
 
 @media (max-width: 700px) {

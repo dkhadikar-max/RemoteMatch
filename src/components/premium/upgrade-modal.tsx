@@ -98,13 +98,13 @@ export function UpgradeModal({
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-md rounded-3xl border border-[#F3E8E2] bg-white p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5"
+        className="relative flex flex-col w-full max-w-md rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] animate-modal space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Close */}
         <div className="flex items-start justify-between">
           <div className="space-y-1">
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--red)] uppercase tracking-wider bg-[#fdf2f4] border border-[#fcd5dc] px-2.5 py-0.5 rounded-full">
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[var(--red)] uppercase tracking-wider bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2.5 py-0.5 rounded-full">
               {copy.badge}
             </span>
             <h3 className="text-xl font-bold text-[var(--ink)] pt-1 leading-snug">
@@ -118,14 +118,14 @@ export function UpgradeModal({
           <button
             type="button"
             onClick={onClose}
-            className="grid size-8 place-items-center rounded-xl border border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors shrink-0 ml-2"
+            className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors shrink-0 ml-2"
           >
             <X size={15} />
           </button>
         </div>
 
         {/* Feature List */}
-        <div className="rounded-2xl border border-[#F3E8E2] bg-[#FFF7F2] p-4 space-y-2.5">
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2.5">
           <span className="text-[11px] font-bold text-[var(--muted)] uppercase tracking-wider block mb-1">
             Everything in RemoteMatch Pro
           </span>

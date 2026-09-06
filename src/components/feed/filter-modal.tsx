@@ -96,11 +96,11 @@ export function FilterModal({
       onClick={onClose}
     >
       <div
-        className="relative flex flex-col w-full max-w-lg max-h-[90vh] rounded-3xl border border-[#F3E8E2] bg-white p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] space-y-5 overflow-y-auto"
+        className="relative flex flex-col w-full max-w-lg max-h-[90vh] rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 sm:p-7 shadow-[0_20px_50px_rgba(76,44,30,0.12)] space-y-5 overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-[#F3E8E2] pb-3">
+        <div className="flex items-start justify-between border-b border-[var(--line)] pb-3">
           <div>
             <h3 className="text-lg font-bold text-[var(--ink)]">Filter Matches</h3>
             <p className="text-xs text-[var(--muted)] mt-0.5">
@@ -110,7 +110,7 @@ export function FilterModal({
           <button
             type="button"
             onClick={onClose}
-            className="grid size-8 place-items-center rounded-xl border border-[#F3E8E2] bg-white text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors shrink-0 ml-2"
+            className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors shrink-0 ml-2"
           >
             <X size={15} />
           </button>
@@ -147,7 +147,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {role}
@@ -177,7 +177,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {type}
@@ -207,7 +207,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {lvl}
@@ -219,12 +219,12 @@ export function FilterModal({
         </div>
 
         {/* Section 2: Precision Targeting (Pro Only) */}
-        <div className="rounded-2xl border border-[#F3E8E2] bg-[#FFF7F2] p-4 space-y-4">
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
               Precision Targeting
             </span>
-            <span className="text-[10px] font-bold text-[var(--red)] bg-[#fdf2f4] border border-[#fcd5dc] px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="text-[10px] font-bold text-[var(--red)] bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full flex items-center gap-1">
               {!isPro && <Lock size={10} />}
               <span>PRO</span>
             </span>
@@ -260,7 +260,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {loc}
@@ -295,7 +295,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {sal.label}
@@ -330,7 +330,7 @@ export function FilterModal({
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
                       isSelected
                         ? 'bg-[var(--red)] text-white shadow-sm'
-                        : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                     }`}
                   >
                     {tz}
@@ -342,7 +342,7 @@ export function FilterModal({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-2 border-t border-[#F3E8E2]">
+        <div className="flex items-center justify-between pt-2 border-t border-[var(--line)]">
           <button
             type="button"
             onClick={handleReset}
@@ -356,7 +356,7 @@ export function FilterModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-[#F3E8E2] bg-white px-4 py-2 text-xs font-semibold text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[#FFF1EA] transition-colors"
+              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
             >
               Cancel
             </button>

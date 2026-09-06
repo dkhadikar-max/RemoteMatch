@@ -71,7 +71,7 @@ export default function TrackerPage() {
     <main className="page">
       <div className="container py-8 max-w-5xl space-y-7">
         {/* Header */}
-        <div className="pb-4 border-b border-[#F3E8E2]">
+        <div className="pb-4 border-b border-[var(--line)]">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">
             Your applications, all in one place.
           </h1>
@@ -83,7 +83,7 @@ export default function TrackerPage() {
         {/* 4 Outcome Metric Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Active */}
-          <div className="soft-card p-5 border border-[#F3E8E2] bg-white rounded-3xl">
+          <div className="soft-card p-5 border border-[var(--line)] bg-[var(--surface)] rounded-3xl">
             <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">Active</p>
             <p className="mono mt-2 text-3xl font-bold text-[var(--ink)]">
               {activeCount}
@@ -92,7 +92,7 @@ export default function TrackerPage() {
           </div>
 
           {/* Card 2: Interviews (Soft Red) */}
-          <div className="rounded-3xl p-5 border border-[#fcd5dc] bg-[#fdf2f4]">
+          <div className="rounded-3xl p-5 border border-[var(--red-soft-border)] bg-[var(--red-soft)]">
             <p className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider">Interviews</p>
             <p className="mono mt-2 text-3xl font-bold text-[var(--red)]">
               {interviewCount}
@@ -110,7 +110,7 @@ export default function TrackerPage() {
           </div>
 
           {/* Card 4: Not selected */}
-          <div className="soft-card p-5 border border-[#F3E8E2] bg-white rounded-3xl">
+          <div className="soft-card p-5 border border-[var(--line)] bg-[var(--surface)] rounded-3xl">
             <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">Not selected</p>
             <p className="mono mt-2 text-3xl font-bold text-[var(--ink)]">
               {notSelectedCount}
@@ -137,7 +137,7 @@ export default function TrackerPage() {
                   className={`px-3.5 py-1.5 text-xs font-semibold rounded-full transition-colors min-h-[36px] ${
                     isActive
                       ? 'bg-[var(--red)] text-white shadow-sm'
-                      : 'bg-white border border-[#F3E8E2] text-[var(--muted)] hover:bg-[#FFF1EA] hover:text-[var(--ink)]'
+                      : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
                   {tab.label}
@@ -153,15 +153,15 @@ export default function TrackerPage() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search applications..."
-              className="soft-input py-2 pl-9 pr-3 text-xs border-[#F3E8E2]"
+              className="soft-input py-2 pl-9 pr-3 text-xs border-[var(--line)]"
             />
           </div>
         </div>
 
         {/* Application Cards List */}
         {filtered.length === 0 ? (
-          <div className="soft-card p-12 text-center space-y-3 border border-[#F3E8E2] rounded-3xl">
-            <div className="grid size-12 place-items-center rounded-2xl bg-[#FFF1EA] text-[var(--muted)] mx-auto">
+          <div className="soft-card p-12 text-center space-y-3 border border-[var(--line)] rounded-3xl">
+            <div className="grid size-12 place-items-center rounded-2xl bg-[var(--surface-soft)] text-[var(--muted)] mx-auto">
               <BriefcaseBusiness size={20} />
             </div>
             <h3 className="font-bold text-base text-[var(--ink)]">
@@ -192,7 +192,7 @@ export default function TrackerPage() {
               const isOffer = status === 'offer';
 
               return (
-                <article key={app.id} className="soft-card p-5 sm:p-6 space-y-4 border border-[#F3E8E2] rounded-3xl">
+                <article key={app.id} className="soft-card p-5 sm:p-6 space-y-4 border border-[var(--line)] rounded-3xl">
                   {/* Top Bar: Company, Role & Status Tag */}
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div>
@@ -201,7 +201,7 @@ export default function TrackerPage() {
                           {opp.company}
                         </span>
                         <span className="text-xs text-[var(--muted)]/40">·</span>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--red)] bg-[#fdf2f4] border border-[#fcd5dc] px-2 py-0.5 rounded-full">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--red)] bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full">
                           {fitScore}% match
                         </span>
                       </div>
@@ -220,7 +220,7 @@ export default function TrackerPage() {
                         onChange={(e) =>
                           handleStatusChange(opp.id, e.target.value as ApplicationStatus)
                         }
-                        className="rounded-xl border border-[#F3E8E2] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
+                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
                       >
                         <option value="interested">Interested</option>
                         <option value="applied">Applied</option>
@@ -243,7 +243,7 @@ export default function TrackerPage() {
                             }`}
                           />
                           <span className={`block h-1 flex-1 rounded-full ${
-                            isApplied ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                            isApplied ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
                           }`} />
                         </div>
                         <span className={isApplied ? 'font-semibold text-[var(--ink)]' : ''}>Applied</span>
@@ -256,7 +256,7 @@ export default function TrackerPage() {
                             }`}
                           />
                           <span className={`block h-1 flex-1 rounded-full ${
-                            isScreening ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                            isScreening ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
                           }`} />
                         </div>
                         <span className={isScreening ? 'font-semibold text-[var(--ink)]' : ''}>Screening</span>
@@ -269,7 +269,7 @@ export default function TrackerPage() {
                             }`}
                           />
                           <span className={`block h-1 flex-1 rounded-full ${
-                            isInterview ? 'bg-[var(--red)]' : 'bg-[#F3E8E2]'
+                            isInterview ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
                           }`} />
                         </div>
                         <span className={isInterview ? 'font-semibold text-[var(--ink)]' : ''}>Interview</span>
@@ -282,7 +282,7 @@ export default function TrackerPage() {
                             }`}
                           />
                           <span className={`block h-1 flex-1 rounded-full ${
-                            isOffer ? 'bg-[#059669]' : 'bg-[#F3E8E2]'
+                            isOffer ? 'bg-[#059669]' : 'bg-[var(--line)]'
                           }`} />
                         </div>
                         <span className={isOffer ? 'font-semibold text-[#059669]' : ''}>Offer</span>
@@ -291,7 +291,7 @@ export default function TrackerPage() {
                   </div>
 
                   {/* Immediate Next Action Guidance Bar */}
-                  <div className="rounded-2xl bg-[#FFF1EA] border border-[#F3E8E2] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2.5">
                       {status === 'interview' ? (
                         <>
@@ -339,7 +339,7 @@ export default function TrackerPage() {
                         <button
                           type="button"
                           onClick={() => openInterviewModal(app)}
-                          className="rounded-xl border border-[#F3E8E2] bg-white hover:bg-[#FFF7F2] text-[var(--ink)] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto flex items-center justify-center gap-1.5"
+                          className="rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--bg)] text-[var(--ink)] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto flex items-center justify-center gap-1.5"
                         >
                           <Calendar size={13} className="text-[var(--red)]" />
                           <span>Schedule Interview</span>
@@ -364,7 +364,7 @@ export default function TrackerPage() {
                   </div>
 
                   {/* Bottom Actions & Notes */}
-                  <div className="flex items-center justify-between border-t border-[#F3E8E2] pt-3 text-xs">
+                  <div className="flex items-center justify-between border-t border-[var(--line)] pt-3 text-xs">
                     <button
                       onClick={() =>
                         setEditingNotesId(editingNotesId === app.id ? null : app.id)
@@ -394,7 +394,7 @@ export default function TrackerPage() {
                         defaultValue={app.notes || ''}
                         onBlur={(e) => handleNotesChange(opp.id, e.target.value)}
                         placeholder="E.g., Recruiter screening passed, technical round scheduled for Thursday..."
-                        className="soft-input text-xs py-2 px-3 resize-none border-[#F3E8E2]"
+                        className="soft-input text-xs py-2 px-3 resize-none border-[var(--line)]"
                         rows={2}
                       />
                     </div>
