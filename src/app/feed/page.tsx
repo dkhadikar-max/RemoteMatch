@@ -299,7 +299,7 @@ export default function FeedPage() {
         <button
           type="button"
           onClick={() => setIsFilterModalOpen(true)}
-          className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm min-h-[36px] ${
+          className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm min-h-[44px] ${
             hasActiveFilters
               ? 'border-[var(--red)] bg-[var(--red-soft)] text-[var(--red)]'
               : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
