@@ -7,6 +7,10 @@ export interface ServerEntitlement {
   usageDate: string;
   rightSwipeLimit: number;
   proposalLimit: number;
+  email: string | null;
+  isAnonymous: boolean;
+  linkedinUrl: string | null;
+  githubUrl: string | null;
 }
 
 /**

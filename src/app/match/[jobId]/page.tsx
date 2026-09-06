@@ -157,7 +157,20 @@ export default function MatchDetailPage() {
         onUpgraded={async () => {
           const entitlement = await fetchServerEntitlement();
           if (entitlement) {
-            setProfile((prev) => (prev ? { ...prev, ...entitlement } : prev));
+            setProfile((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    planTier: entitlement.planTier,
+                    dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
+                    dailyProposalsCount: entitlement.dailyProposalsCount,
+                    usageDate: entitlement.usageDate,
+                    isAnonymous: entitlement.isAnonymous,
+                    linkedinUrl: entitlement.linkedinUrl,
+                    githubUrl: entitlement.githubUrl,
+                  }
+                : prev
+            );
           }
         }}
       />

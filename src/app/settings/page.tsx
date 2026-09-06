@@ -6,6 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import { PersonProfile } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { normalizeProfileUrl } from '@/lib/profile-links/validate';
+import { AccountSecuritySection, shouldShowPostUpgradePrompt } from '@/components/settings/account-security';
 import {
   User,
   CheckCircle2,
@@ -16,6 +19,8 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Check,
+  Linkedin,
+  Github,
 } from 'lucide-react';
 
 function SettingsContent() {
@@ -33,6 +38,20 @@ function SettingsContent() {
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
+  // Identity/linking state and the two professional-link fields are
+  // server-authoritative (see supabase/migrations/005_profile_links.sql) —
+  // unlike fullName/headline, which stay on the local fixture below.
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(true);
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [linkedinError, setLinkedinError] = useState<string | null>(null);
+  const [githubError, setGithubError] = useState<string | null>(null);
+  const [isSavingLinks, setIsSavingLinks] = useState(false);
+  const [linksSaved, setLinksSaved] = useState(false);
+  const [linkedConfirmation, setLinkedConfirmation] = useState<'success' | 'error' | null>(null);
+  const [showPostUpgradePrompt, setShowPostUpgradePrompt] = useState(false);
+
   // Merges local, non-authoritative profile CONTENT with the
   // server-authoritative entitlement fields — see feed/page.tsx for the
   // same pattern and its rationale. `planTier` displayed anywhere on this
@@ -47,15 +66,38 @@ function SettingsContent() {
           dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
           dailyProposalsCount: entitlement.dailyProposalsCount,
           usageDate: entitlement.usageDate,
+          isAnonymous: entitlement.isAnonymous,
+          linkedinUrl: entitlement.linkedinUrl,
+          githubUrl: entitlement.githubUrl,
         }
       : localProfile;
     setProfile(merged);
+    if (entitlement) {
+      setAuthEmail(entitlement.email);
+      setIsAnonymous(entitlement.isAnonymous);
+      setLinkedinUrl(entitlement.linkedinUrl ?? '');
+      setGithubUrl(entitlement.githubUrl ?? '');
+    }
     return merged;
   };
 
   useEffect(() => {
     loadProfile();
+    setShowPostUpgradePrompt(shouldShowPostUpgradePrompt());
   }, []);
+
+  useEffect(() => {
+    // Target of /auth/confirm's redirect after a linking/sign-in email is
+    // clicked — reflects the real outcome, never assumes success from the
+    // param's mere presence.
+    const linked = searchParams?.get('linked');
+    if (linked === 'success' || linked === 'error') {
+      setLinkedConfirmation(linked);
+      setActiveTab('settings');
+      loadProfile();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     // A `session_id` in the URL means Stripe redirected back here — it is
@@ -101,6 +143,46 @@ function SettingsContent() {
     }));
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2500);
+  };
+
+  // Unlike handleSaveProfile above (localStore, client-only), these two
+  // fields write to the real `profiles` table — see migration 005. The
+  // profiles_update_own_safe_columns RLS policy (auth.uid() = id) and the
+  // column-level GRANT are what actually authorize this, but PostgREST
+  // itself independently refuses to send an UPDATE with no WHERE clause at
+  // all (a safety guard, unrelated to RLS) — `.eq('id', user.id)` is
+  // required for the request to be accepted, not for authorization.
+  const handleSaveProfileLinks = async () => {
+    const linkedin = normalizeProfileUrl(linkedinUrl);
+    const github = normalizeProfileUrl(githubUrl);
+    setLinkedinError(linkedin.error ?? null);
+    setGithubError(github.error ?? null);
+    if (linkedin.error || github.error) return;
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    setIsSavingLinks(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ linkedin_url: linkedin.value, github_url: github.value })
+      .eq('id', user.id);
+    setIsSavingLinks(false);
+
+    if (error) {
+      setGithubError('Could not save right now. Please try again.');
+      return;
+    }
+
+    setLinkedinUrl(linkedin.value ?? '');
+    setGithubUrl(github.value ?? '');
+    setLinksSaved(true);
+    setTimeout(() => setLinksSaved(false), 2500);
   };
 
   const handleUpgradeToPro = async () => {
@@ -370,6 +452,86 @@ function SettingsContent() {
                   )}
                 </div>
               </div>
+
+              {/* Professional links — display data only, not an auth
+                  mechanism (see src/lib/profile-links/validate.ts). Kept
+                  as its own card + save action since these persist to the
+                  real profiles table, unlike fullName/headline above. */}
+              <div className="soft-card p-6 sm:p-8 space-y-5 border border-[var(--line)]">
+                <h3 className="text-sm font-semibold text-[var(--ink)] uppercase tracking-wider">
+                  Professional links
+                </h3>
+                <p className="text-[11px] text-[var(--muted)] -mt-3">
+                  Optional. Shown on your profile — not used for sign-in.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-medium text-[var(--ink)] mb-1 flex items-center gap-1.5">
+                      <Linkedin size={13} />
+                      <span>LinkedIn</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={linkedinUrl}
+                      onChange={(e) => {
+                        setLinkedinUrl(e.target.value);
+                        setLinkedinError(null);
+                      }}
+                      placeholder="linkedin.com/in/you"
+                      className="soft-input py-2 px-3 text-xs"
+                    />
+                    {linkedinError && <p className="text-[11px] text-[var(--red)] mt-1">{linkedinError}</p>}
+                    {linkedinUrl && !linkedinError && (
+                      <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[var(--muted)] hover:text-[var(--red)] mt-1 inline-block truncate max-w-full">
+                        {linkedinUrl}
+                      </a>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-[var(--ink)] mb-1 flex items-center gap-1.5">
+                      <Github size={13} />
+                      <span>GitHub</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={githubUrl}
+                      onChange={(e) => {
+                        setGithubUrl(e.target.value);
+                        setGithubError(null);
+                      }}
+                      placeholder="github.com/you"
+                      className="soft-input py-2 px-3 text-xs"
+                    />
+                    {githubError && <p className="text-[11px] text-[var(--red)] mt-1">{githubError}</p>}
+                    {githubUrl && !githubError && (
+                      <a href={githubUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-[var(--muted)] hover:text-[var(--red)] mt-1 inline-block truncate max-w-full">
+                        {githubUrl}
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-1 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={handleSaveProfileLinks}
+                    disabled={isSavingLinks}
+                    className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-50 text-white text-xs font-semibold px-4 py-2.5 transition-colors shadow-sm flex items-center gap-1.5"
+                  >
+                    <Save size={13} />
+                    <span>{isSavingLinks ? 'Saving…' : linksSaved ? 'Saved!' : 'Save links'}</span>
+                  </button>
+                  {linksSaved && (
+                    <span className="text-xs font-medium text-[#059669] flex items-center gap-1">
+                      <CheckCircle2 size={13} />
+                      <span>Links updated</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
             </>
           )}
 
@@ -410,6 +572,18 @@ function SettingsContent() {
                     </p>
                   </div>
                 </div>
+              )}
+
+              {/* Surfaced after a successful upgrade per spec, never required
+                  — dismissing just hides this banner, Pro access is already
+                  in effect regardless. */}
+              {upgradeSuccess && isAnonymous && showPostUpgradePrompt && (
+                <AccountSecuritySection
+                  email={authEmail}
+                  isAnonymous={isAnonymous}
+                  variant="compact"
+                  onDismiss={() => setShowPostUpgradePrompt(false)}
+                />
               )}
 
               {/* Current Status Card */}
@@ -539,14 +713,35 @@ function SettingsContent() {
 
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && (
-            <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
-              <h2 className="text-lg font-bold text-[var(--ink)]">Account Preferences</h2>
-              <p className="text-xs text-[var(--muted)]">Manage login methods, notifications, and privacy preferences.</p>
-              <div className="pt-2">
-                <span className="text-xs font-semibold text-[#059669] bg-[#ecfdf5] border border-[#a7f3d0] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5">
-                  <ShieldCheck size={14} />
-                  Privacy Protected · Zero Third-Party Tracking
-                </span>
+            <div className="space-y-6">
+              {linkedConfirmation && (
+                <div
+                  className={`flex items-center gap-3 p-4 rounded-xl border text-xs ${
+                    linkedConfirmation === 'success'
+                      ? 'border-[#a7f3d0] bg-[#ecfdf5]'
+                      : 'border-[var(--red-soft-border)] bg-[var(--red-soft)]'
+                  }`}
+                >
+                  <CheckCircle2 size={18} className={linkedConfirmation === 'success' ? 'text-[#059669] shrink-0' : 'text-[var(--red)] shrink-0'} />
+                  <span className="font-semibold text-[var(--ink)]">
+                    {linkedConfirmation === 'success'
+                      ? 'Your account is now secured.'
+                      : "That link didn't work — it may have expired. Try again below."}
+                  </span>
+                </div>
+              )}
+
+              <AccountSecuritySection email={authEmail} isAnonymous={isAnonymous} variant="full" />
+
+              <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
+                <h2 className="text-lg font-bold text-[var(--ink)]">Account Preferences</h2>
+                <p className="text-xs text-[var(--muted)]">Manage notifications and privacy preferences.</p>
+                <div className="pt-2">
+                  <span className="text-xs font-semibold text-[#059669] bg-[#ecfdf5] border border-[#a7f3d0] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5">
+                    <ShieldCheck size={14} />
+                    Privacy Protected · Zero Third-Party Tracking
+                  </span>
+                </div>
               </div>
             </div>
           )}

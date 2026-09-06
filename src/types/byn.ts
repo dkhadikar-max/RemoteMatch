@@ -57,6 +57,15 @@ export interface PersonProfile {
   createdAt: string;
   updatedAt: string;
 
+  // Identity/linking state — server-authoritative, read from the verified
+  // auth session (see /api/profile). Never set from client state.
+  isAnonymous?: boolean;
+  // Professional profile links — display data only, not an auth mechanism.
+  // Server-authoritative (see supabase/migrations/005_profile_links.sql),
+  // unlike fullName/headline which still live on the local fixture.
+  linkedinUrl?: string | null;
+  githubUrl?: string | null;
+
   // Nested BYN relations
   intent?: ProfileIntent;
   skills: ProfileSkill[];

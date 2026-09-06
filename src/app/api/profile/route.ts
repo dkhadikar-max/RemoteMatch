@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('plan_tier, daily_right_swipes_count, daily_proposals_count, usage_date')
+    .select('plan_tier, daily_right_swipes_count, daily_proposals_count, usage_date, linkedin_url, github_url')
     .eq('id', user.id)
     .single();
 
@@ -37,5 +37,12 @@ export async function GET(req: NextRequest) {
     usageDate: data.usage_date as string,
     rightSwipeLimit: 15,
     proposalLimit: 5,
+    // Identity/linking state — read from the verified auth user, never
+    // client-suppliable. Powers the "Secure your account" UI's decision
+    // between showing the linking flow vs. account-already-linked state.
+    email: user.email ?? null,
+    isAnonymous: user.is_anonymous ?? true,
+    linkedinUrl: (data.linkedin_url as string | null) ?? null,
+    githubUrl: (data.github_url as string | null) ?? null,
   });
 }
