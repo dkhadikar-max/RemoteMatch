@@ -12,21 +12,25 @@
  * no Supabase project / dev server — running it here will report exactly
  * that rather than fabricate a pass):
  *   - `npm run dev` (or a deployed URL) reachable at BASE_URL
- *   - NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY set, pointing
- *     at a project with supabase/migrations/00{1,2,3}_*.sql applied
- *   - "Allow anonymous sign-ins" enabled in that project's Auth settings
+ *   - NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY /
+ *     SUPABASE_SERVICE_ROLE_KEY set, pointing at a project with
+ *     supabase/migrations/00{1..5}_*.sql applied
  *   - STRIPE_SECRET_KEY (test mode) for the STRIPE test group; that group
  *     skips itself with a clear message if absent, rather than failing.
+ *
+ * Test identities are provisioned as real, verified accounts (admin-created
+ * + email-confirmed — see test/helpers/verified-session.ts), matching the
+ * mandatory-verified-account invariant now enforced in production. This
+ * suite no longer uses signInAnonymously() anywhere — it did before the
+ * verified-account requirement existed; anonymous sessions are exercised
+ * separately, specifically to prove rejection, in test/auth-invariant-suite.ts.
  *
  * Run: npx tsx test/security-remediation-suite.ts
  */
 
-import { createClient } from '@supabase/supabase-js';
-import ws from 'ws';
+import { hasRequiredEnv, newVerifiedSession } from './helpers/verified-session';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 let passed = 0;
 let failed = 0;
@@ -47,20 +51,14 @@ function skip(message: string) {
   skipped++;
 }
 
-async function newAnonymousSession(): Promise<{ token: string; userId: string } | null> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
-  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    // Node 20 has no native WebSocket; this test never uses Supabase
-    // Realtime, but the client constructor initializes it unconditionally.
-    realtime: { transport: ws as unknown as typeof WebSocket },
-  });
-  const { data, error } = await client.auth.signInAnonymously();
-  if (error || !data.session) {
-    console.error('  Could not create an anonymous session:', error?.message);
+async function newSession(): Promise<{ token: string; userId: string } | null> {
+  try {
+    const session = await newVerifiedSession();
+    return { token: session.token, userId: session.userId };
+  } catch (err) {
+    console.error('  Could not create a verified test session:', (err as Error).message);
     return null;
   }
-  return { token: data.session.access_token, userId: data.session.user.id };
 }
 
 function authedFetch(token: string | null, path: string, init: RequestInit = {}) {
@@ -72,24 +70,16 @@ function authedFetch(token: string | null, path: string, init: RequestInit = {})
   return fetch(`${BASE_URL}${path}`, { ...init, headers });
 }
 
-async function resetQuotaForTest(_userId: string) {
-  // Intentionally not implemented via a backdoor endpoint — an endpoint that
-  // can reset another account's quota would itself be a P0 finding. Tests
-  // that need a clean boundary create a fresh anonymous user instead.
-}
-
 async function run() {
   console.log('='.repeat(78));
   console.log('REMOTEMATCH — P0 SECURITY REMEDIATION SUITE (HTTP boundary)');
   console.log('='.repeat(78));
 
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!hasRequiredEnv()) {
     console.log(
-      '\nNEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY are not set in this ' +
-        'environment, so this suite cannot create real sessions or reach a real ' +
-        'server. This is being reported honestly rather than faked — see the ' +
-        'remediation report\'s "Test results" section for what could and could not ' +
-        'be executed here.'
+      '\nNEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY ' +
+        'are not all set in this environment, so this suite cannot create verified test ' +
+        'sessions or reach a real server. This is being reported honestly rather than faked.'
     );
     process.exitCode = 1;
     return;
@@ -129,16 +119,16 @@ async function run() {
     assert(res.status === 401, 'A forged/garbage bearer token is rejected (401)');
   }
 
-  const userA = await newAnonymousSession();
-  const userB = await newAnonymousSession();
+  const userA = await newSession();
+  const userB = await newSession();
 
   if (!userA || !userB) {
-    console.log('\nCould not establish anonymous sessions — skipping every test that needs one.');
+    console.log('\nCould not establish verified test sessions — skipping every test that needs one.');
     console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped.`);
     process.exitCode = failed > 0 ? 1 : 0;
     return;
   }
-  assert(userA.userId !== userB.userId, 'Two anonymous sign-ins produce two distinct user identities');
+  assert(userA.userId !== userB.userId, 'Two verified sign-ups produce two distinct user identities');
 
   {
     // User B cannot mutate User A's state: rewind has no target parameter
@@ -157,7 +147,7 @@ async function run() {
   // ----------------------------------------------------------------------
   console.log('\nRIGHT SWIPE');
 
-  const swiper = await newAnonymousSession();
+  const swiper = await newSession();
   if (swiper) {
     for (let i = 1; i <= 15; i++) {
       const res = await authedFetch(swiper.token, '/api/opportunities/swipe', {
@@ -199,7 +189,7 @@ async function run() {
     // and confirm the atomic reservation caps successes at exactly 15,
     // regardless of arrival order — this is the test the pre-remediation
     // check-then-act implementation had no way to pass.
-    const concurrentUser = await newAnonymousSession();
+    const concurrentUser = await newSession();
     if (concurrentUser) {
       const N = 20;
       const results = await Promise.all(
@@ -230,7 +220,7 @@ async function run() {
   // canonical id as `opp-${source}-${sourceId}`, not the bare sourceId.
   const REAL_OPPORTUNITY_ID = 'opp-curated-curated-001';
 
-  const proposer = await newAnonymousSession();
+  const proposer = await newSession();
   if (proposer) {
     for (let i = 1; i <= 5; i++) {
       const res = await authedFetch(proposer.token, '/api/ai/match-analysis', {
@@ -254,7 +244,7 @@ async function run() {
   }
 
   {
-    const concurrentProposer = await newAnonymousSession();
+    const concurrentProposer = await newSession();
     if (concurrentProposer) {
       const N = 15;
       const results = await Promise.all(
@@ -281,7 +271,7 @@ async function run() {
   console.log('\nREWIND');
 
   {
-    const freeUser = await newAnonymousSession();
+    const freeUser = await newSession();
     if (freeUser) {
       await authedFetch(freeUser.token, '/api/opportunities/swipe', {
         method: 'POST',
@@ -311,7 +301,7 @@ async function run() {
   // ----------------------------------------------------------------------
   console.log('\nSTRIPE');
 
-  const stripeUser = await newAnonymousSession();
+  const stripeUser = await newSession();
   if (stripeUser) {
     const mockAttempt = await authedFetch(stripeUser.token, '/api/stripe/verify', {
       method: 'POST',
@@ -332,7 +322,7 @@ async function run() {
         'mock_ session is accepted ONLY because Stripe is not configured in this test environment (demo/local convenience path, not a bypass of a configured Stripe integration)'
       );
 
-      const otherUser = await newAnonymousSession();
+      const otherUser = await newSession();
       if (otherUser) {
         const replay = await authedFetch(otherUser.token, '/api/stripe/verify', {
           method: 'POST',
@@ -364,7 +354,7 @@ async function run() {
   // What remains checkable over HTTP is that the server ignores exactly the
   // inputs that used to matter.
   {
-    const attacker = await newAnonymousSession();
+    const attacker = await newSession();
     if (attacker) {
       const res = await authedFetch(attacker.token, '/api/stripe/verify', {
         method: 'POST',

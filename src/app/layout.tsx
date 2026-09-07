@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Figtree } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/navigation/navbar';
-import { AuthBootstrap } from '@/components/auth/auth-bootstrap';
 
 // "Organic" design-system typography (imported design: RemoteMatch.dc.html) —
 // self-hosted via next/font so there's no external request or layout shift.
@@ -116,7 +115,6 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-[var(--bg)] text-[var(--ink)] antialiased min-h-screen flex flex-col selection:bg-[var(--red-soft-border)] selection:text-[var(--ink)]">
-        <AuthBootstrap />
         <Navbar />
         <main className="flex-1 flex flex-col">{children}</main>
       </body>

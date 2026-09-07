@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { PersonProfile } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
-import { AccountSecuritySection, shouldShowPostUpgradePrompt } from '@/components/settings/account-security';
+import { signOutCurrentSession } from '@/lib/auth/auth-flow';
 import {
   User,
   CheckCircle2,
@@ -21,9 +21,11 @@ import {
   Check,
   Linkedin,
   Github,
+  LogOut,
 } from 'lucide-react';
 
 function SettingsContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams?.get('tab') || 'profile';
 
@@ -38,19 +40,19 @@ function SettingsContent() {
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
-  // Identity/linking state and the two professional-link fields are
-  // server-authoritative (see supabase/migrations/005_profile_links.sql) —
-  // unlike fullName/headline, which stay on the local fixture below.
+  // The two professional-link fields are server-authoritative (see
+  // supabase/migrations/005_profile_links.sql) — unlike fullName/headline,
+  // which stay on the local fixture below. `authEmail` is the verified
+  // account's email, always present now that every session reaching this
+  // page has already passed the middleware/API verified-account gate.
   const [authEmail, setAuthEmail] = useState<string | null>(null);
-  const [isAnonymous, setIsAnonymous] = useState(true);
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
   const [linkedinError, setLinkedinError] = useState<string | null>(null);
   const [githubError, setGithubError] = useState<string | null>(null);
   const [isSavingLinks, setIsSavingLinks] = useState(false);
   const [linksSaved, setLinksSaved] = useState(false);
-  const [linkedConfirmation, setLinkedConfirmation] = useState<'success' | 'error' | null>(null);
-  const [showPostUpgradePrompt, setShowPostUpgradePrompt] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Merges local, non-authoritative profile CONTENT with the
   // server-authoritative entitlement fields — see feed/page.tsx for the
@@ -74,7 +76,6 @@ function SettingsContent() {
     setProfile(merged);
     if (entitlement) {
       setAuthEmail(entitlement.email);
-      setIsAnonymous(entitlement.isAnonymous);
       setLinkedinUrl(entitlement.linkedinUrl ?? '');
       setGithubUrl(entitlement.githubUrl ?? '');
     }
@@ -83,21 +84,13 @@ function SettingsContent() {
 
   useEffect(() => {
     loadProfile();
-    setShowPostUpgradePrompt(shouldShowPostUpgradePrompt());
   }, []);
 
-  useEffect(() => {
-    // Target of /auth/confirm's redirect after a linking/sign-in email is
-    // clicked — reflects the real outcome, never assumes success from the
-    // param's mere presence.
-    const linked = searchParams?.get('linked');
-    if (linked === 'success' || linked === 'error') {
-      setLinkedConfirmation(linked);
-      setActiveTab('settings');
-      loadProfile();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    await signOutCurrentSession();
+    router.push('/login');
+  };
 
   useEffect(() => {
     // A `session_id` in the URL means Stripe redirected back here — it is
@@ -574,18 +567,6 @@ function SettingsContent() {
                 </div>
               )}
 
-              {/* Surfaced after a successful upgrade per spec, never required
-                  — dismissing just hides this banner, Pro access is already
-                  in effect regardless. */}
-              {upgradeSuccess && isAnonymous && showPostUpgradePrompt && (
-                <AccountSecuritySection
-                  email={authEmail}
-                  isAnonymous={isAnonymous}
-                  variant="compact"
-                  onDismiss={() => setShowPostUpgradePrompt(false)}
-                />
-              )}
-
               {/* Current Status Card */}
               <div className="soft-card p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[var(--line)]">
                 <div className="space-y-1">
@@ -714,24 +695,28 @@ function SettingsContent() {
           {/* SETTINGS TAB */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              {linkedConfirmation && (
-                <div
-                  className={`flex items-center gap-3 p-4 rounded-xl border text-xs ${
-                    linkedConfirmation === 'success'
-                      ? 'border-[#a7f3d0] bg-[#ecfdf5]'
-                      : 'border-[var(--red-soft-border)] bg-[var(--red-soft)]'
-                  }`}
+              {/* Every session reaching this page has already passed the
+                  verified-account gate (middleware + getAuthenticatedUser) —
+                  there is no "secure your account" prompt anymore because
+                  there is no lesser-verified state left to prompt about. */}
+              <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
+                <h2 className="text-lg font-bold text-[var(--ink)] flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-[#059669]" />
+                  Account
+                </h2>
+                <p className="text-xs text-[var(--muted)]">
+                  Signed in as <span className="font-semibold text-[var(--ink)]">{authEmail}</span>.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] text-xs font-semibold px-3.5 py-2 transition-colors min-h-[44px]"
                 >
-                  <CheckCircle2 size={18} className={linkedConfirmation === 'success' ? 'text-[#059669] shrink-0' : 'text-[var(--red)] shrink-0'} />
-                  <span className="font-semibold text-[var(--ink)]">
-                    {linkedConfirmation === 'success'
-                      ? 'Your account is now secured.'
-                      : "That link didn't work — it may have expired. Try again below."}
-                  </span>
-                </div>
-              )}
-
-              <AccountSecuritySection email={authEmail} isAnonymous={isAnonymous} variant="full" />
+                  <LogOut size={13} />
+                  <span>{isSigningOut ? 'Signing out…' : 'Sign out'}</span>
+                </button>
+              </div>
 
               <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
                 <h2 className="text-lg font-bold text-[var(--ink)]">Account Preferences</h2>

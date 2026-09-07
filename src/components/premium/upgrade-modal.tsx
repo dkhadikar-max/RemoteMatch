@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
-import { ensureAuthenticatedSession } from '@/lib/supabase/browser';
 
 export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters';
 
@@ -61,7 +60,10 @@ export function UpgradeModal({
   const handleUpgrade = async () => {
     setIsUpgrading(true);
     try {
-      await ensureAuthenticatedSession();
+      // No session-provisioning step needed here anymore — every page that
+      // can show this modal is already behind the verified-account gate
+      // (middleware + getAuthenticatedUser), so a real session is
+      // guaranteed by the time a user reaches this button.
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

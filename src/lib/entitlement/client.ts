@@ -1,5 +1,3 @@
-import { ensureAuthenticatedSession } from '@/lib/supabase/browser';
-
 export interface ServerEntitlement {
   planTier: 'free' | 'pro';
   dailyRightSwipesCount: number;
@@ -18,9 +16,13 @@ export interface ServerEntitlement {
  * fields. Every page that needs to display or gate on planTier/quota must
  * go through this — never `localStore`/localStorage — so there is exactly
  * one place that can regress into trusting client state again.
+ *
+ * No session-provisioning happens here anymore: by the time a page that
+ * calls this renders, middleware has already required a verified session
+ * to reach it (see src/middleware.ts). A null return here just means the
+ * fetch itself failed — not a signal to go create any kind of session.
  */
 export async function fetchServerEntitlement(): Promise<ServerEntitlement | null> {
-  await ensureAuthenticatedSession();
   try {
     const res = await fetch('/api/profile', { method: 'GET' });
     if (!res.ok) return null;
