@@ -70,7 +70,7 @@ async function runMonetizationTests() {
     'dailyRightSwipesCount remains 15 after blocked 16th swipe'
   );
   assert(
-    localStore.getApplication('overflow-job-16') === undefined,
+    !localStore.getAllApplications().some((a) => a.opportunityId === 'overflow-job-16'),
     'No application record is created for blocked 16th swipe'
   );
 

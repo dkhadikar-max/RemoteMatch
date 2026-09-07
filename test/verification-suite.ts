@@ -272,55 +272,19 @@ Worked on web development and fixed bugs for client applications.`;
   );
 
   // --------------------------------------------------------------------------
-  // TEST 9: Outcome Loop & State Transitions
+  // TEST 9: Server Quota & AI Cost Control
+  //
+  // (Formerly also included a TEST 9 "Outcome Loop & State Transitions" here,
+  // exercising localStore.saveApplication/recordFeedback/updateApplicationStatus
+  // in-process. That functionality was intentionally moved server-side by the
+  // outcome-lifecycle migration — see supabase/migrations/006_outcome_lifecycle.sql
+  // and test/outcome-lifecycle-suite.ts, which tests the real thing over HTTP
+  // against a verified session, the way security-remediation-suite.ts and
+  // auth-invariant-suite.ts already do for their respective surfaces. An
+  // in-process localStore test of that surface would now just be testing
+  // dead code.)
   // --------------------------------------------------------------------------
-  console.log('\nTEST 9: Outcome Loop & State Transitions');
-  const testOppId = 'opp-test-101';
-  localStore.saveApplication({
-    id: 'app-test-1',
-    profileId: 'u1',
-    opportunityId: testOppId,
-    status: 'interested',
-    notes: 'Initial bookmark',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-
-  // Transition: Interested -> Applied
-  localStore.recordFeedback(testOppId, 'applied', 'Applied via official site');
-  const appAfterApply = localStore.getApplication(testOppId);
-  assert(
-    appAfterApply?.status === 'applied' && Boolean(appAfterApply?.appliedAt),
-    'Feedback loop updates application status to "applied" with appliedAt timestamp'
-  );
-
-  // Transition: Applied -> Interview
-  localStore.updateApplicationStatus(testOppId, 'interview', 'First round scheduled for Tuesday');
-  const appAfterInterview = localStore.getApplication(testOppId);
-  assert(
-    appAfterInterview?.status === 'interview' && appAfterInterview?.notes.includes('Tuesday'),
-    'Status updates to "interview" with persisted interview notes'
-  );
-
-  // Transition: Interview -> Offer
-  localStore.updateApplicationStatus(testOppId, 'offer', 'Received offer $140k');
-  const appAfterOffer = localStore.getApplication(testOppId);
-  assert(
-    appAfterOffer?.status === 'offer',
-    'Status updates to "offer" completing the outcome flywheel'
-  );
-
-  // Check event logging
-  const events = localStore.getEvents();
-  assert(
-    events.length >= 3,
-    `Outcome events recorded in application_events (total: ${events.length})`
-  );
-
-  // --------------------------------------------------------------------------
-  // TEST 10: Server Quota & AI Cost Control
-  // --------------------------------------------------------------------------
-  console.log('\nTEST 10: Server Quota & AI Cost Control');
+  console.log('\nTEST 9: Server Quota & AI Cost Control');
   const currentCount = localStore.getProfile().dailyEvaluationsCount;
   localStore.recordSwipe('opp-quota-test', 'passed');
   const nextCount = localStore.getProfile().dailyEvaluationsCount;

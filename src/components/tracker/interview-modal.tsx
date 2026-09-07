@@ -8,7 +8,7 @@ interface InterviewModalProps {
   isOpen: boolean;
   application: ApplicationRecord | null;
   onClose: () => void;
-  onUpdateStatus: (opportunityId: string, status: ApplicationStatus, notes: string) => void;
+  onUpdateStatus: (opportunityId: string, currentStatus: ApplicationStatus, status: ApplicationStatus, notes: string) => void;
 }
 
 const INTERVIEW_STAGES = [
@@ -46,7 +46,7 @@ export function InterviewModal({
       .filter(Boolean)
       .join('\n');
 
-    onUpdateStatus(opp.id, targetStatus, formattedNotes);
+    onUpdateStatus(opp.id, application.status, targetStatus, formattedNotes);
     if (targetStatus === 'offer') {
       setIsOfferSaved(true);
       setTimeout(() => {

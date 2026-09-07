@@ -2,11 +2,12 @@
  * Shared test-user provisioning for the HTTP-boundary suites, built around
  * the mandatory-verified-account invariant (src/lib/auth/get-authenticated-user.ts:
  * isAccountVerified — real session, is_anonymous === false, email_confirmed_at
- * set). Anonymous sign-in is still enabled in Supabase during this phase
- * (disabling it is the LAST step, after this code/test suite is complete),
- * so newAnonymousSessionForRejectionTest() is still available specifically
- * to prove anonymous sessions are rejected — never used to stand in for a
- * real user anywhere else.
+ * set). Anonymous Sign-Ins is now permanently disabled in production, so
+ * there is no live anonymous session obtainable at all any more — a helper
+ * that created one (newAnonymousSessionForRejectionTest) was removed for
+ * that reason; see test/auth-invariant-suite.ts section 2 for how the
+ * anonymous-rejection invariant is proven now instead (a synthetic
+ * unit-level check against isAccountVerified() + authErrorResponse()).
  *
  * Verified users are created via the admin API with `email_confirm: true`
  * — this bypasses only the email click-through (no live inbox in this
@@ -112,16 +113,4 @@ export async function createUnconfirmedUser(): Promise<{ email: string; password
     throw new Error(`Could not create unconfirmed test user: ${error?.message}`);
   }
   return { email, password, userId: data.user.id };
-}
-
-/** Still available while Anonymous Sign-Ins remains enabled (this phase) —
- *  used ONLY to prove the app correctly rejects an anonymous session, never
- *  as a stand-in for a real user in any other test. */
-export async function newAnonymousSessionForRejectionTest(): Promise<TestSession> {
-  const client = anonKeyClient();
-  const { data, error } = await client.auth.signInAnonymously();
-  if (error || !data.session || !data.user) {
-    throw new Error(`Could not create anonymous session: ${error?.message}`);
-  }
-  return { client, userId: data.user.id, email: '', password: '', token: data.session.access_token };
 }

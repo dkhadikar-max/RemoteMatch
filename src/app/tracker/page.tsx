@@ -15,6 +15,23 @@ import {
   Award,
 } from 'lucide-react';
 
+// Shape returned by GET /api/applications — the server-authoritative
+// lifecycle state, joined with the fit-score-at-decision-time snapshot
+// recorded by finalize_interested_swipe(). Deliberately does not carry the
+// full `opportunity`/`match` objects ApplicationRecord allows for — those
+// are looked up from the (legitimately client-local) opportunity catalog
+// per-render, same as before.
+interface ServerApplication {
+  id: string;
+  opportunityId: string;
+  status: ApplicationStatus;
+  appliedAt: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  decisionSnapshot: { fitScore?: number } | null;
+}
+
 export default function TrackerPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -23,19 +40,62 @@ export default function TrackerPage() {
   const [interviewModalApp, setInterviewModalApp] = useState<ApplicationRecord | null>(null);
   const [isInterviewModalOpen, setIsInterviewModalOpen] = useState(false);
 
-  useEffect(() => {
-    const apps = localStore.getAllApplications();
+  const loadApplications = async () => {
+    const res = await fetch('/api/applications');
+    if (!res.ok) return;
+    const data = await res.json();
+    const apps: ApplicationRecord[] = (data.applications as ServerApplication[]).map((a) => ({
+      id: a.id,
+      profileId: '',
+      opportunityId: a.opportunityId,
+      status: a.status,
+      appliedAt: a.appliedAt ?? undefined,
+      notes: a.notes,
+      // Only `fitScore` is populated server-side today (see ServerApplication
+      // above) — cast through `unknown` since this is deliberately a partial
+      // DecisionSnapshot, not the full shape the type otherwise implies.
+      decisionSnapshot: (a.decisionSnapshot ?? undefined) as unknown as ApplicationRecord['decisionSnapshot'],
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    }));
     setApplications(apps);
-  }, []);
-
-  const handleStatusChange = (opportunityId: string, newStatus: ApplicationStatus, notes?: string) => {
-    localStore.updateApplicationStatus(opportunityId, newStatus, notes);
-    setApplications(localStore.getAllApplications());
   };
 
-  const handleNotesChange = (opportunityId: string, notes: string) => {
-    localStore.updateApplicationStatus(opportunityId, undefined as any, notes);
-    setApplications(localStore.getAllApplications());
+  useEffect(() => {
+    loadApplications();
+  }, []);
+
+  // The server is the only authority on whether a transition is valid —
+  // this call can be rejected (e.g. 409 invalid_transition, or 409
+  // status_conflict if the application changed since it was last loaded)
+  // and the local list is only updated from what the server actually
+  // accepted, via the re-fetch, never optimistically. `currentStatus` is
+  // the status this screen actually observed — required so the server can
+  // detect a stale view instead of silently transitioning from whatever
+  // the row happens to be at now (see 007_application_transition_cas.sql).
+  const handleStatusChange = async (
+    opportunityId: string,
+    currentStatus: ApplicationStatus,
+    newStatus: ApplicationStatus,
+    notes?: string
+  ) => {
+    const res = await fetch('/api/applications/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opportunityId, expectedStatus: currentStatus, status: newStatus, notes }),
+    });
+    if (!res.ok) return;
+    await loadApplications();
+  };
+
+  const handleNotesChange = async (opportunityId: string, notes: string) => {
+    const res = await fetch('/api/applications/notes', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opportunityId, notes }),
+    });
+    if (!res.ok) return;
+    await loadApplications();
   };
 
   const openInterviewModal = (app: ApplicationRecord) => {
@@ -46,7 +106,12 @@ export default function TrackerPage() {
   const activeCount = applications.filter((a) => a.status === 'applied' || a.status === 'interested').length || 12;
   const interviewCount = applications.filter((a) => a.status === 'interview').length || 4;
   const offerCount = applications.filter((a) => a.status === 'offer').length || 1;
-  const notSelectedCount = applications.filter((a) => a.status === 'rejected' || a.status === 'archived').length || 3;
+  // "withdrawn" joins the existing "Not selected" bucket for display — a
+  // genuine, distinct outcome underneath (see get_application_outcome() in
+  // 006_outcome_lifecycle.sql), just grouped with rejected/archived here so
+  // the tracker's existing 4-tab UX doesn't need a 5th tab for it.
+  const notSelectedCount =
+    applications.filter((a) => a.status === 'rejected' || a.status === 'withdrawn' || a.status === 'archived').length || 3;
   const totalCount = activeCount + interviewCount + offerCount + notSelectedCount;
 
   const filtered = applications.filter((app) => {
@@ -59,7 +124,7 @@ export default function TrackerPage() {
         ? app.status === 'interview'
         : activeTab === 'offer'
         ? app.status === 'offer'
-        : app.status === 'rejected' || app.status === 'archived';
+        : app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
 
     const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
@@ -182,7 +247,13 @@ export default function TrackerPage() {
               const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
               if (!opp) return null;
 
-              const fitScore = opp.fitScore ?? 92;
+              // Prefer the score actually recorded at the moment this
+              // application was created (swipes.decision_snapshot, joined in
+              // by GET /api/applications) over the opportunity catalog's
+              // live-recomputed fitScore — the decision-time value is what
+              // P0's outcome data is keyed on, so the tracker should show
+              // the same number the dataset uses.
+              const fitScore = app.decisionSnapshot?.fitScore ?? opp.fitScore ?? 92;
               const status = app.status;
 
               // Step indicator active status
@@ -218,7 +289,7 @@ export default function TrackerPage() {
                       <select
                         value={app.status}
                         onChange={(e) =>
-                          handleStatusChange(opp.id, e.target.value as ApplicationStatus)
+                          handleStatusChange(opp.id, app.status, e.target.value as ApplicationStatus)
                         }
                         className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
                       >
@@ -227,6 +298,7 @@ export default function TrackerPage() {
                         <option value="interview">Interview</option>
                         <option value="offer">Offer</option>
                         <option value="rejected">Rejected</option>
+                        <option value="withdrawn">Withdrawn</option>
                         <option value="archived">Archived</option>
                       </select>
                     </div>

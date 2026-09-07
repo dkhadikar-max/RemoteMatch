@@ -22,6 +22,7 @@ export type ApplicationStatus =
   | 'interview'
   | 'rejected'
   | 'offer'
+  | 'withdrawn'
   | 'archived';
 
 export type FeedbackOutcome =

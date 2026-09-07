@@ -119,7 +119,19 @@ export default function MatchDetailPage() {
 
   const handleRecordFeedback = (didApply: any, notes?: string) => {
     if (opportunity) {
-      localStore.recordFeedback(opportunity.id, didApply, notes);
+      // Server-authoritative and ownership-scoped — see
+      // record_application_feedback() in
+      // supabase/migrations/006_outcome_lifecycle.sql. Previously called
+      // localStore.recordFeedback(), which had no auth check and mutated a
+      // module-level singleton that never persisted anything server-side.
+      fetch('/api/applications/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: opportunity.id, didApply, notes }),
+      }).catch(() => {
+        // Best-effort from this screen's perspective, same as before — the
+        // route itself is now real, but this call site doesn't block on it.
+      });
     }
   };
 

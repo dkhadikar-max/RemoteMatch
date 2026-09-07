@@ -174,24 +174,11 @@ export default function FeedPage() {
 
     // Local bookkeeping only — keeps this opportunity out of the deck on
     // reload and drives the opportunity pool's local match-score display.
-    // It is never consulted for quota/entitlement decisions.
+    // It is never consulted for quota/entitlement decisions. The
+    // "interested" application row itself is already created server-side by
+    // finalize_interested_swipe(); the tracker now reads it back from
+    // GET /api/applications, so no local mirror of it is written here.
     localStore.recordSwipe(opportunityId, action);
-    if (action === 'interested') {
-      const opp = localStore.getOpportunityById(opportunityId);
-      if (opp && data.match) {
-        localStore.saveApplication({
-          id: `app-${Date.now()}`,
-          profileId: profile?.id || 'demo-user-1',
-          opportunityId: opp.id,
-          opportunity: opp,
-          match: data.match,
-          status: 'interested',
-          notes: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-    }
 
     setSwipedCount((prev) => prev + 1);
     setProfile((prev) => {

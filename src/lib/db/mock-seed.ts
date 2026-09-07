@@ -2,8 +2,6 @@ import {
   PersonProfile,
   CanonicalOpportunity,
   ApplicationRecord,
-  ApplicationEvent,
-  FeedbackOutcome,
   MaterialTone,
 } from '@/types/byn';
 import { CuratedProvider, CURATED_JOBS } from '../providers/curated';
@@ -90,7 +88,6 @@ const STORAGE_KEYS = {
   PROFILE: 'remotematch_profile',
   SWIPES: 'remotematch_swipes',
   APPLICATIONS: 'remotematch_applications',
-  EVENTS: 'remotematch_events',
 };
 
 // In-memory data store with browser localStorage synchronization
@@ -99,7 +96,6 @@ class LocalRepository {
   private opportunities: CanonicalOpportunity[] = CURATED_JOBS.map(normalizeOpportunity);
   private swipes: Array<{ opportunityId: string; action: 'interested' | 'passed'; date: string }> = [];
   private applications: Map<string, ApplicationRecord> = new Map();
-  private events: ApplicationEvent[] = [];
   private isLoadedFromStorage = false;
 
   constructor() {
@@ -127,10 +123,6 @@ class LocalRepository {
         parsedApps.forEach((app) => this.applications.set(app.opportunityId, app));
       }
 
-      const storedEvents = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      if (storedEvents) {
-        this.events = JSON.parse(storedEvents);
-      }
       this.isLoadedFromStorage = true;
     } catch (err) {
       console.warn('Could not load from localStorage:', err);
@@ -146,7 +138,6 @@ class LocalRepository {
         STORAGE_KEYS.APPLICATIONS,
         JSON.stringify(Array.from(this.applications.values()))
       );
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(this.events));
     } catch (err) {
       console.warn('Could not sync to localStorage:', err);
     }
@@ -282,27 +273,17 @@ class LocalRepository {
     return this.swipes;
   }
 
-  saveApplication(record: ApplicationRecord) {
-    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
-      this.loadFromStorage();
-    }
-    this.applications.set(record.opportunityId, record);
-    this.addEvent({
-      id: `evt-${Date.now()}`,
-      applicationId: record.id,
-      eventType: 'status_changed',
-      eventPayload: { newStatus: record.status },
-      createdAt: new Date().toISOString(),
-    });
-    this.syncToStorage();
-  }
-
-  getApplication(opportunityId: string): ApplicationRecord | undefined {
-    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
-      this.loadFromStorage();
-    }
-    return this.applications.get(opportunityId);
-  }
+  // saveApplication / updateApplicationStatus / recordFeedback / getApplication
+  // / addEvent / getEvents were removed as part of the outcome-lifecycle
+  // migration (supabase/migrations/006_outcome_lifecycle.sql) — the
+  // application lifecycle (status transitions, notes, feedback, and their
+  // durable event history) is now server-authoritative via
+  // transition_application_status() / record_application_feedback() /
+  // update_application_notes(), reached through /api/applications/*. This
+  // class's local `applications` cache and getAllApplications() below are
+  // kept only because src/app/api/staging/metrics/route.ts (an unrelated,
+  // pre-existing demo/staging dashboard, out of this migration's scope)
+  // still reads from them.
 
   getAllApplications(): ApplicationRecord[] {
     if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
@@ -311,70 +292,6 @@ class LocalRepository {
     return Array.from(this.applications.values()).sort(
       (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
     );
-  }
-
-  updateApplicationStatus(
-    opportunityId: string,
-    status: ApplicationRecord['status'],
-    notes?: string
-  ) {
-    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
-      this.loadFromStorage();
-    }
-    const app = this.applications.get(opportunityId);
-    if (app) {
-      if (status) app.status = status;
-      if (notes !== undefined) app.notes = notes;
-      if (status === 'applied' && !app.appliedAt) {
-        app.appliedAt = new Date().toISOString();
-      }
-      app.updatedAt = new Date().toISOString();
-      this.applications.set(opportunityId, app);
-
-      this.addEvent({
-        id: `evt-${Date.now()}`,
-        applicationId: app.id,
-        eventType: 'status_changed',
-        eventPayload: { newStatus: status, notes },
-        createdAt: new Date().toISOString(),
-      });
-      this.syncToStorage();
-    }
-  }
-
-  recordFeedback(opportunityId: string, didApply: FeedbackOutcome, notes?: string) {
-    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
-      this.loadFromStorage();
-    }
-    const app = this.applications.get(opportunityId);
-    if (app) {
-      if (didApply === 'applied') {
-        app.status = 'applied';
-        app.appliedAt = new Date().toISOString();
-      }
-      app.updatedAt = new Date().toISOString();
-
-      this.addEvent({
-        id: `evt-${Date.now()}`,
-        applicationId: app.id,
-        eventType: 'feedback_submitted',
-        eventPayload: { didApply, notes },
-        createdAt: new Date().toISOString(),
-      });
-      this.syncToStorage();
-    }
-  }
-
-  private addEvent(event: ApplicationEvent) {
-    this.events.push(event);
-    this.syncToStorage();
-  }
-
-  getEvents(): ApplicationEvent[] {
-    if (typeof window !== 'undefined' && !this.isLoadedFromStorage) {
-      this.loadFromStorage();
-    }
-    return this.events;
   }
 }
 
