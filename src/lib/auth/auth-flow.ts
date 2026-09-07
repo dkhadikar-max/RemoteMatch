@@ -97,6 +97,29 @@ export async function requestMagicLink(email: string): Promise<AuthFlowResult> {
   return { success: true, needsConfirmation: true };
 }
 
+/**
+ * Re-sends the signup confirmation email — distinct from requestMagicLink:
+ * this re-triggers the same "verify your new account" email signUp() sent,
+ * not a passwordless sign-in link. Kept separate so the two concepts
+ * (mandatory email verification vs. optional passwordless sign-in for an
+ * already-verified account) never get conflated in the UI layer either.
+ */
+export async function resendVerificationEmail(email: string): Promise<AuthFlowResult> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return { success: false, error: 'Service not configured.' };
+
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: confirmRedirectUrl() },
+  });
+
+  if (error) {
+    return { success: false, error: "Couldn't resend the verification email. Please try again shortly." };
+  }
+  return { success: true };
+}
+
 export async function signOutCurrentSession(): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return;

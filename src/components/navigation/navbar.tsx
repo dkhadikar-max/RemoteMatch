@@ -17,6 +17,11 @@ export function Navbar() {
   const maxFreeSaves = 15;
   const savesRemaining = Math.max(maxFreeSaves - evaluationCount, 0);
   const isLanding = pathname === '/';
+  // /login is reachable with no session by construction (it's where an
+  // unauthenticated visitor lands) — showing the authenticated app's nav
+  // (Jobs/Applications/Profile, saves badge, avatar) there is misleading,
+  // since none of it reflects real state for a signed-out visitor.
+  const isAuthPage = pathname === '/login';
   const isPro = false; // localStore can supply or default to false
 
   return (
@@ -35,7 +40,8 @@ export function Navbar() {
             <span className="text-lg font-bold tracking-tight text-[var(--ink)]">RemoteMatch</span>
           </Link>
 
-          {/* Center Navigation Links */}
+          {/* Center Navigation Links — omitted entirely on /login; see isAuthPage above */}
+          {!isAuthPage && (
           <nav className="hidden items-center gap-1 md:flex">
             {isLanding ? (
               <>
@@ -105,8 +111,10 @@ export function Navbar() {
               </>
             )}
           </nav>
+          )}
 
-          {/* Right Controls */}
+          {/* Right Controls — omitted entirely on /login; brand/header only */}
+          {!isAuthPage && (
           <div className="flex items-center gap-3">
             {isLanding ? (
               <>
@@ -145,10 +153,13 @@ export function Navbar() {
               </>
             )}
           </div>
+          )}
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) */}
+      {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) —
+          omitted on /login for the same reason as the desktop right controls. */}
+      {!isAuthPage && (
       <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"
@@ -184,6 +195,7 @@ export function Navbar() {
           <span className="mt-0.5">Profile</span>
         </Link>
       </nav>
+      )}
     </>
   );
 }

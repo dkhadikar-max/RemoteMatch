@@ -2,8 +2,8 @@
 
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Mail, KeyRound, Send, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { signUpWithPassword, signInWithPassword, requestMagicLink } from '@/lib/auth/auth-flow';
+import { Mail, KeyRound, Send, CheckCircle2, ShieldCheck, MailCheck } from 'lucide-react';
+import { signUpWithPassword, signInWithPassword, requestMagicLink, resendVerificationEmail } from '@/lib/auth/auth-flow';
 import { sanitizeRedirectPath } from '@/lib/auth/sanitize-redirect';
 
 type Mode = 'signin' | 'signup' | 'magiclink';
@@ -27,6 +27,14 @@ function LoginContent() {
       : null
   );
 
+  // Set right after a successful sign-up, in place of switching back to the
+  // sign-in tab with an inline banner. Email verification is mandatory and
+  // deserves its own clear step, not a footnote on the sign-in form — see
+  // handleSubmit's 'signup' branch below.
+  const [awaitingVerification, setAwaitingVerification] = useState<string | null>(null);
+  const [resendPending, setResendPending] = useState(false);
+  const [resendMessage, setResendMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
@@ -47,18 +55,16 @@ function LoginContent() {
       const result = await signUpWithPassword(email, password);
       setPending(false);
       if (result.success) {
-        setMessage({
-          type: 'success',
-          text: 'Check your email to confirm your account, then come back and sign in.',
-        });
-        setMode('signin');
+        setAwaitingVerification(email);
         return;
       }
       setMessage({ type: 'error', text: result.error || 'Something went wrong.' });
       return;
     }
 
-    // magiclink
+    // magiclink — sign-in only (see the tab toggle below, hidden during
+    // sign-up): a passwordless way back in for an already-verified account,
+    // never presented as the account-verification mechanism itself.
     const result = await requestMagicLink(email);
     setPending(false);
     setMessage(
@@ -67,6 +73,78 @@ function LoginContent() {
         : { type: 'error', text: result.error || 'Something went wrong.' }
     );
   };
+
+  const handleResend = async () => {
+    if (!awaitingVerification) return;
+    setResendPending(true);
+    setResendMessage(null);
+    const result = await resendVerificationEmail(awaitingVerification);
+    setResendPending(false);
+    setResendMessage(
+      result.success
+        ? { type: 'success', text: 'Verification email sent again.' }
+        : { type: 'error', text: result.error || 'Something went wrong.' }
+    );
+  };
+
+  if (awaitingVerification) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center space-y-1.5">
+            <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
+              <MailCheck size={20} />
+            </div>
+            <h1 className="text-xl font-bold text-[var(--ink)]">Verify your email</h1>
+            <p className="text-xs text-[var(--muted)]">
+              Check your email to verify your account. We sent a link to{' '}
+              <span className="font-semibold text-[var(--ink)]">{awaitingVerification}</span>.
+            </p>
+          </div>
+
+          <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
+            <p className="text-xs text-[var(--muted)]">
+              You'll need to click that link before you can sign in — verification confirms this
+              email actually belongs to you.
+            </p>
+
+            {resendMessage && (
+              <p
+                className={`text-xs font-medium flex items-start gap-1.5 ${
+                  resendMessage.type === 'success' ? 'text-[#059669]' : 'text-[var(--red)]'
+                }`}
+              >
+                {resendMessage.type === 'success' && <CheckCircle2 size={13} className="shrink-0 mt-0.5" />}
+                <span>{resendMessage.text}</span>
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resendPending}
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
+            >
+              <Send size={13} />
+              <span>{resendPending ? 'Sending…' : 'Resend verification email'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAwaitingVerification(null);
+                setResendMessage(null);
+                setMode('signin');
+              }}
+              className="w-full text-center text-xs font-semibold text-[var(--muted)] hover:text-[var(--ink)] transition-colors py-1"
+            >
+              Back to sign in
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex items-center justify-center px-4 py-12">
@@ -138,6 +216,13 @@ function LoginContent() {
               </div>
             )}
 
+            {mode === 'signup' && (
+              <p className="text-[11px] text-[var(--muted)] flex items-start gap-1.5">
+                <MailCheck size={13} className="shrink-0 mt-0.5" />
+                <span>You'll need to verify your email before you can sign in.</span>
+              </p>
+            )}
+
             {message && (
               <p
                 className={`text-xs font-medium flex items-start gap-1.5 ${
@@ -167,7 +252,11 @@ function LoginContent() {
             </button>
           </form>
 
-          {mode !== 'magiclink' ? (
+          {/* Magic-link sign-in: passwordless re-entry for an already-verified
+              account. Not offered during sign-up — verification, not magic
+              links, is how a new account gets confirmed (see the note above
+              the submit button and the dedicated "Verify your email" screen). */}
+          {mode === 'signin' && (
             <button
               type="button"
               onClick={() => {
@@ -179,7 +268,8 @@ function LoginContent() {
               <Send size={13} />
               <span>Use a magic link instead</span>
             </button>
-          ) : (
+          )}
+          {mode === 'magiclink' && (
             <button
               type="button"
               onClick={() => {
