@@ -306,6 +306,14 @@ export interface DecisionSnapshot {
   salaryDisclosed?: boolean;
   postingAgeDaysAtDecision?: number;
   remoteScopeExplicit?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
+  /** C2 (Additional Supply Discovery) — the deterministic, coarse demand
+   *  pattern of the SWIPED OPPORTUNITY, frozen at decision time. Derived
+   *  server-side from `opp` only (never client-supplied). Instrumentation for
+   *  the later demand model — does NOT feed matching, scoring, eligibility, or
+   *  quota. See src/lib/demand/pattern.ts. */
+  demandPattern?: import('@/lib/demand/pattern').DemandPattern;
+  demandPatternKey?: string;
+  patternLexiconVersion?: string;
 }
 
 export interface ApplicationRecord {

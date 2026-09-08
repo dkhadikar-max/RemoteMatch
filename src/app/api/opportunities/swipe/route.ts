@@ -5,6 +5,7 @@ import { localStore } from '@/lib/db/mock-seed';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
+import { normalizeDemandPattern, demandPatternKey, PATTERN_LEXICON_VERSION } from '@/lib/demand/pattern';
 
 const VALID_ACTIONS = ['interested', 'passed'] as const;
 type SwipeAction = (typeof VALID_ACTIONS)[number];
@@ -141,6 +142,29 @@ export async function POST(req: NextRequest) {
         (Date.now() - new Date(opp.postedAt).getTime()) / (1000 * 60 * 60 * 24)
       ),
       remoteScopeExplicit: opp.explicitRemoteScope ?? 'unknown',
+      // C2 (Additional Supply Discovery) — the coarse, deterministic demand
+      // pattern of THIS opportunity, frozen at decision time. Derived only
+      // from `opp` (server-authoritative), never from client input. Pure
+      // instrumentation: it feeds a later, separate demand-model measurement
+      // job and nothing else — not matching, scoring, eligibility, or quota.
+      // Same "measure, don't act" posture as the P1 attributes above.
+      ...(() => {
+        const demandPattern = normalizeDemandPattern({
+          title: opp.title,
+          requiredSkills: opp.requiredSkills,
+          remoteType: opp.remoteType,
+          eligibleCountries: opp.eligibleCountries,
+          experienceRequirement: opp.experienceRequirement,
+          salaryMin: opp.salaryMin,
+          salaryCurrency: opp.salaryCurrency,
+          description: opp.description,
+        });
+        return {
+          demandPattern,
+          demandPatternKey: demandPatternKey(demandPattern),
+          patternLexiconVersion: PATTERN_LEXICON_VERSION,
+        };
+      })(),
     };
     matchResultForClient = matchResult;
   }
