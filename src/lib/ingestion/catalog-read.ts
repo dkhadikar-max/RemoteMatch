@@ -20,7 +20,7 @@ const OPPORTUNITY_COLUMNS =
   'id, type, title, company, company_logo, description, source, source_id, source_url, ' +
   'official_url, canonical_url_hash, content_hash, employment_type, remote_type, ' +
   'eligible_countries, excluded_countries, timezone_requirements, salary_min, salary_max, ' +
-  'salary_currency, required_skills, preferred_skills, experience_requirement, quality_score, ' +
+  'salary_currency, salary_period, required_skills, preferred_skills, experience_requirement, quality_score, ' +
   'source_quality, description_completeness, salary_quality, remote_policy_confidence, ' +
   'explicit_remote_scope, status, posted_at, is_permanently_removed, link_checked_at';
 
@@ -45,6 +45,7 @@ interface OpportunityRow {
   salary_min: number | null;
   salary_max: number | null;
   salary_currency: string;
+  salary_period: string | null;
   required_skills: string[];
   preferred_skills: string[];
   experience_requirement: string | null;
@@ -82,6 +83,7 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
     salaryMin: row.salary_min ?? undefined,
     salaryMax: row.salary_max ?? undefined,
     salaryCurrency: row.salary_currency,
+    salaryPeriod: (row.salary_period as CanonicalOpportunity['salaryPeriod']) ?? undefined,
     requiredSkills: row.required_skills ?? [],
     preferredSkills: row.preferred_skills ?? [],
     experienceRequirement: row.experience_requirement ?? undefined,

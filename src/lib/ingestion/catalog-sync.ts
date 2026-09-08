@@ -254,6 +254,7 @@ export async function syncOpportunitiesToCatalog(
       salary_min: opp.salaryMin ?? null,
       salary_max: opp.salaryMax ?? null,
       salary_currency: opp.salaryCurrency ?? 'USD',
+      salary_period: opp.salaryPeriod ?? 'unknown',
       required_skills: opp.requiredSkills,
       preferred_skills: opp.preferredSkills,
       experience_requirement: opp.experienceRequirement ?? null,

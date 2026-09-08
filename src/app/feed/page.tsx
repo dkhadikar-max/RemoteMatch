@@ -108,23 +108,29 @@ export default function FeedPage() {
   };
 
   const refreshOpportunities = async () => {
-    await loadProfile();
+    const currentProfile = await loadProfile();
 
     // Opportunity catalog now comes from the persisted, live-supply-backed
     // /api/opportunities/feed (Live Supply Activation) instead of reading
     // localStore.getOpportunities() directly — that pool was always the
-    // static CURATED_JOBS array. Fit-scoring already happens server-side in
-    // that route (computeScreeningFit, unchanged); this just consumes the
-    // result instead of duplicating the same computation client-side.
-    // Unswiped-filtering stays exactly where it already was: client-side,
-    // against the local swipe cache — see mock-seed.ts's recordSwipe()
-    // comment for why that cache is display-only, never entitlement.
+    // static CURATED_JOBS array. Fit-scoring happens server-side in that
+    // route (computeScreeningFit, unchanged) against THIS user's profile,
+    // which is POSTed here — there is no server-authoritative store of
+    // profile CONTENT, so the client supplies the profile it just loaded
+    // (same advisory-only trust level as the pre-Live-Supply client-side
+    // scoring). Unswiped-filtering stays exactly where it already was:
+    // client-side, against the local swipe cache — see mock-seed.ts's
+    // recordSwipe() comment for why that cache is display-only.
     const swipes = localStore.getSwipes();
     const swipedIds = new Set(swipes.map((s) => s.opportunityId));
 
     let scored: Array<CanonicalOpportunity & { fitScore?: number; fitBadge?: string }> = [];
     try {
-      const res = await fetch('/api/opportunities/feed');
+      const res = await fetch('/api/opportunities/feed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: currentProfile }),
+      });
       const data = await res.json();
       if (res.ok && data.success) {
         scored = (data.opportunities as typeof scored).filter((opp) => !swipedIds.has(opp.id));

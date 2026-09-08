@@ -218,6 +218,29 @@ export function computeScreeningFit(
   };
 }
 
+/**
+ * Feed fit-scoring boundary: applies the (completely unchanged)
+ * computeScreeningFit to every opportunity for ONE caller-supplied profile,
+ * returning the list ranked by fit.
+ *
+ * Extracted so "which profile is scored against" in /api/opportunities/feed
+ * is directly testable — see test/feed-profile-scoring-suite.ts. This score
+ * is advisory display only: it never gates a swipe, a quota, or the persisted
+ * decision snapshot (that path runs server-side in /api/opportunities/swipe
+ * and is unaffected by this function).
+ */
+export function scoreOpportunitiesForFeed(
+  profile: PersonProfile,
+  opportunities: CanonicalOpportunity[]
+): Array<CanonicalOpportunity & { fitScore: number; fitBadge: string }> {
+  return opportunities
+    .map((opp) => {
+      const fit = computeScreeningFit(profile, opp);
+      return { ...opp, fitScore: fit.fitScore, fitBadge: fit.fitBadge };
+    })
+    .sort((a, b) => b.fitScore - a.fitScore);
+}
+
 // ==============================================================================
 // 3. DEEP MATCH ANALYSIS
 // ==============================================================================

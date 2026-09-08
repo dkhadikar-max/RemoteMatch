@@ -223,6 +223,24 @@ export function computeQualityScore(payload: RawJobPayload): number {
   return Math.min(Math.max(score, 20), 99);
 }
 
+/**
+ * Resolve a job's pay period WITHOUT guessing. Order:
+ *   1. an explicit period the provider set (RawJobPayload.salaryPeriod)
+ *   2. an unambiguous marker in the free-text salaryString
+ *   3. 'unknown' — never assume 'yearly' from a bare number
+ * The result flows to schema.org JobPosting: 'unknown' means unitText is
+ * omitted, not defaulted (see buildJobPostingSchema / the Phase A blocker fix).
+ */
+export function resolveSalaryPeriod(raw: RawJobPayload): 'hourly' | 'monthly' | 'yearly' | 'unknown' {
+  if (raw.salaryPeriod && raw.salaryPeriod !== 'unknown') return raw.salaryPeriod;
+  const s = (raw.salaryString || '').toLowerCase();
+  if (!s) return 'unknown';
+  if (/(per|\/|\ba[n]?)\s*(hour|hr\b)|hourly/.test(s)) return 'hourly';
+  if (/(per|\/|\ba)\s*(month|mo\b)|monthly|p\.?m\.?\b/.test(s)) return 'monthly';
+  if (/(per|\/|\ba)\s*(year|yr\b|annum)|annual(ly)?|p\.?a\.?\b/.test(s)) return 'yearly';
+  return 'unknown';
+}
+
 // Normalize RawJobPayload to CanonicalOpportunity
 export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
   const cleanUrl = cleanOfficialUrl(raw.officialUrl || raw.sourceUrl || '');
@@ -269,6 +287,7 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     salaryMin: raw.salaryMin,
     salaryMax: raw.salaryMax,
     salaryCurrency: raw.salaryCurrency || 'USD',
+    salaryPeriod: resolveSalaryPeriod(raw),
     requiredSkills: raw.tags || [],
     preferredSkills: [],
     experienceRequirement: raw.experienceLevel || '2-3',

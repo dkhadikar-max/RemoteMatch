@@ -32,6 +32,19 @@
  *   11. Expired/permanently-removed SEO behavior (noindex / 410) is intact.
  *   12. Auth/quota behavior is unchanged (spot check only — full coverage
  *      already in auth-invariant-suite.ts / monetization-suite.ts).
+ *   13. Salary-period structured data (blocker-2 fix): schema.org unitText is
+ *      HOUR/MONTH/YEAR only for a known period, OMITTED for unknown — never a
+ *      defaulted 'YEAR'.
+ *   14. Catalog consistency: DB active count == feed count == sitemap job-URL
+ *      count, the feed carries a real non-curated job (no fixture fallback),
+ *      and a DB-active job resolves through its public detail route as
+ *      indexable.
+ *   15. Deployment provenance: /api/health reports the build's git SHA;
+ *      asserts an exact match when EXPECTED_DEPLOY_SHA is set.
+ *
+ *   Plus 7b: POST /api/opportunities/feed scores against the CALLER's profile
+ *      (blocker-1 fix) — two opposed profiles yield materially different
+ *      per-job scores over the live catalog.
  *
  * REQUIRES:
  *   - A running server at BASE_URL (default http://localhost:3000)
@@ -44,10 +57,51 @@
  *
  * Run: npx tsx test/production-smoke.ts
  */
+import type { PersonProfile } from '../src/types/byn';
 import { hasRequiredEnv, adminClient, anonKeyClient, newVerifiedSession } from './helpers/verified-session';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 const INGESTION_SYNC_SECRET = process.env.INGESTION_SYNC_SECRET;
+// Set to the SHA that SHOULD be live (the Phase A + blocker-fix commit) to
+// turn section 16's provenance check from "a SHA is reported" into an
+// exact-match assertion.
+const EXPECTED_SHA = process.env.EXPECTED_DEPLOY_SHA;
+
+/** A minimal scorable profile — enough for computeScreeningFit / the feed
+ *  POST path. Deliberately NOT the "Alex Chen" demo fixture. */
+function smokeProfile(id: string, skills: string[]): PersonProfile {
+  const now = new Date().toISOString();
+  return {
+    id, email: `${id}@smoke.example`, fullName: id, planTier: 'free',
+    dailyEvaluationsCount: 0, lastEvaluationResetAt: now, createdAt: now, updatedAt: now,
+    intent: {
+      id: `i-${id}`, profileId: id, employmentTypes: ['Full-time'], targetRoles: [skills[0]],
+      yearsOfExperience: '4-6', minSalary: 0, preferredCurrency: 'USD',
+      availabilityStatus: 'immediately', updatedAt: now,
+    },
+    skills: skills.map((s, i) => ({
+      id: `s-${id}-${i}`, profileId: id, skillName: s, yearsUsed: 5,
+      isPrimary: true, evidenceLevel: 'strong' as const,
+    })),
+    experiences: [],
+    location: {
+      id: `l-${id}`, profileId: id, currentCountry: 'Worldwide', currentTimezone: 'UTC',
+      workPreference: 'worldwide', allowedCountries: [], willingTimezones: ['UTC'],
+    },
+  };
+}
+
+function extractJsonLd(html: string, type: string): any | null {
+  const blocks = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi) || [];
+  for (const b of blocks) {
+    const json = b.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
+    try {
+      const parsed = JSON.parse(json);
+      if (parsed['@type'] === type) return parsed;
+    } catch { /* ignore */ }
+  }
+  return null;
+}
 
 let passed = 0;
 let failed = 0;
@@ -236,6 +290,39 @@ async function run() {
     assert(opportunities.length > 0, `Feed returns a non-empty set of opportunities (got ${opportunities.length})`);
     feedOpportunityId = opportunities[0]?.id ?? null;
     assert(Boolean(feedOpportunityId && feedOpportunityId.startsWith('opp-')), `Feed opportunity ids use the DB-backed canonical id format (got ${feedOpportunityId})`);
+
+    // 7b. Blocker-1 fix: POST scores against the CALLER's profile, not a
+    // server-side demo fixture. Two deliberately-opposed profiles must yield
+    // materially different scoring on the SAME jobs.
+    const scoreMap = async (profile: PersonProfile) => {
+      const r = await fetch(`${BASE_URL}/api/opportunities/feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ profile }),
+      });
+      const b = await r.json().catch(() => null);
+      const m = new Map<string, number>();
+      for (const o of (b?.opportunities ?? []) as Array<{ id: string; fitScore?: number }>) {
+        if (typeof o.fitScore === 'number') m.set(o.id, o.fitScore);
+      }
+      return { ok: r.status === 200 && b?.scored === true, scores: m };
+    };
+    const reactP = smokeProfile('smoke-react', ['React', 'TypeScript', 'Next.js']);
+    const dataP = smokeProfile('smoke-data', ['Python', 'SQL', 'dbt', 'Snowflake', 'Spark']);
+    const a = await scoreMap(reactP);
+    const c = await scoreMap(dataP);
+    assert(a.ok && c.ok, 'POST /api/opportunities/feed with a profile returns scored:true');
+    const shared = Array.from(a.scores.keys()).filter((id) => c.scores.has(id));
+    const differs = shared.some((id) => a.scores.get(id) !== c.scores.get(id));
+    assert(shared.length > 0 && differs,
+      `Two different caller profiles produce DIFFERENT per-job fit scores over the live catalog (${shared.length} shared jobs, differ=${differs})`);
+    // Not the demo fixture: a Python/data profile must NOT rank a React-only
+    // role the way the React profile does — and vice-versa — on at least one job.
+    const anyInversion = shared.some((id) => {
+      const av = a.scores.get(id)!; const cv = c.scores.get(id)!;
+      return Math.abs(av - cv) >= 10;
+    });
+    assert(anyInversion, 'At least one live job scores >=10 points apart between the two profiles (scoring is genuinely caller-driven, not a shared default)');
   }
 
   // --------------------------------------------------------------------
@@ -351,10 +438,111 @@ async function run() {
     assert([307, 308].includes(feedPageRes.status), `GET /feed with no session redirects to login (got ${feedPageRes.status})`);
   }
 
+  // --------------------------------------------------------------------
+  // 13. Salary semantics — schema.org unitText reflects the REAL period
+  //     (blocker-2 fix), never a defaulted 'YEAR'.
+  // --------------------------------------------------------------------
+  console.log('\n13. SALARY-PERIOD STRUCTURED DATA (blocker-2 fix)');
+  {
+    const admin = adminClient();
+    const expectUnit: Record<string, string> = { hourly: 'HOUR', monthly: 'MONTH', yearly: 'YEAR' };
+    for (const period of ['hourly', 'monthly', 'yearly'] as const) {
+      const { data } = await admin
+        .from('opportunities')
+        .select('source_id')
+        .eq('status', 'active')
+        .eq('salary_period', period)
+        .not('salary_min', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      if (!data?.source_id) { skip(`No active job with salary_period='${period}' to spot-check`); continue; }
+      const html = await (await fetch(`${BASE_URL}/remote-jobs/view/${data.source_id}`)).text();
+      const jp = extractJsonLd(html, 'JobPosting');
+      assert(jp?.baseSalary?.value?.unitText === expectUnit[period],
+        `A ${period} job's JobPosting JSON-LD carries unitText='${expectUnit[period]}' (got ${jp?.baseSalary?.value?.unitText})`);
+    }
+    // Unknown period + a salary present -> unitText OMITTED, salary still shown.
+    const { data: unk } = await admin
+      .from('opportunities')
+      .select('source_id')
+      .eq('status', 'active')
+      .or('salary_period.is.null,salary_period.eq.unknown')
+      .not('salary_min', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (!unk?.source_id) {
+      skip('No active job with an unknown period + a salary to spot-check');
+    } else {
+      const html = await (await fetch(`${BASE_URL}/remote-jobs/view/${unk.source_id}`)).text();
+      const jp = extractJsonLd(html, 'JobPosting');
+      assert(jp?.baseSalary?.value && jp.baseSalary.value.unitText === undefined,
+        'An unknown-period job emits baseSalary WITHOUT unitText (never a defaulted YEAR)');
+      assert(typeof jp?.baseSalary?.value?.minValue === 'number',
+        'The salary figure itself is still emitted for an unknown-period job');
+    }
+  }
+
+  // --------------------------------------------------------------------
+  // 14. Catalog consistency — DB active set == what users/crawlers see.
+  // --------------------------------------------------------------------
+  console.log('\n14. CATALOG CONSISTENCY (DB active == feed == sitemap, no fixture fallback)');
+  {
+    const admin = adminClient();
+    const { count: dbActive } = await admin
+      .from('opportunities').select('*', { count: 'exact', head: true }).eq('status', 'active');
+
+    const feedBody = await (await fetch(`${BASE_URL}/api/opportunities/feed`)).json().catch(() => null);
+    const feedCount = (feedBody?.opportunities ?? []).length;
+    // Allow a delta of 1 for a lifecycle transition landing between the two reads.
+    assert(dbActive != null && Math.abs(feedCount - dbActive) <= 1,
+      `Feed opportunity count matches the DB active count (feed=${feedCount}, db=${dbActive})`);
+
+    const feedIds: string[] = (feedBody?.opportunities ?? []).map((o: { id: string }) => o.id);
+    assert(feedIds.some((id) => !id.startsWith('opp-curated-')),
+      'The live feed contains at least one non-curated (real provider) job — no curated-only fallback');
+
+    const sitemap = await (await fetch(`${BASE_URL}/sitemap.xml`)).text();
+    const sitemapJobUrls = (sitemap.match(/\/remote-jobs\/view\//g) || []).length;
+    assert(dbActive != null && Math.abs(sitemapJobUrls - dbActive) <= 1,
+      `Sitemap job-URL count matches the DB active count (sitemap=${sitemapJobUrls}, db=${dbActive})`);
+
+    // A DB-confirmed active job resolves through its public detail route as a
+    // live (indexable) page, not a closed/410 one.
+    const { data: oneActive } = await admin
+      .from('opportunities').select('source_id').eq('status', 'active').limit(1).maybeSingle();
+    if (oneActive?.source_id) {
+      const r = await fetch(`${BASE_URL}/remote-jobs/view/${oneActive.source_id}`);
+      const h = await r.text();
+      assert(r.status === 200 && !/name="robots"[^>]*content="[^"]*noindex/i.test(h),
+        `A DB-active job resolves through /remote-jobs/view/${oneActive.source_id} as an indexable page`);
+    }
+  }
+
+  // --------------------------------------------------------------------
+  // 15. Deployment provenance — the running build is the intended commit.
+  // --------------------------------------------------------------------
+  console.log('\n15. DEPLOYMENT PROVENANCE');
+  {
+    const r = await fetch(`${BASE_URL}/api/health`);
+    const h = await r.json().catch(() => null);
+    assert(r.status === 200 && h?.status === 'ok', `GET /api/health responds ok (got ${r.status})`);
+    if (EXPECTED_DEPLOY_SHA_present()) {
+      assert(h?.sha === EXPECTED_SHA, `Deployed SHA matches the intended commit (got ${h?.sha}, expected ${EXPECTED_SHA})`);
+    } else if (h?.sha) {
+      console.log(`  – INFO: deployed SHA = ${h.sha} (set EXPECTED_DEPLOY_SHA to assert an exact match)`);
+    } else {
+      skip('No build SHA reported by /api/health (RAILWAY_GIT_COMMIT_SHA not set in this environment)');
+    }
+  }
+
   console.log('\n' + '='.repeat(78));
   console.log(`${passed} passed, ${failed} failed, ${skipped} skipped.`);
   console.log('='.repeat(78));
   if (failed > 0) process.exitCode = 1;
+}
+
+function EXPECTED_DEPLOY_SHA_present(): boolean {
+  return Boolean(EXPECTED_SHA && EXPECTED_SHA.length >= 7);
 }
 
 run().catch((err) => {

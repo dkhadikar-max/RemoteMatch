@@ -56,6 +56,8 @@ export class JobicyProvider implements JobProvider {
           salaryMin: minSal,
           salaryMax: maxSal,
           salaryCurrency: job.salaryCurrency || 'USD',
+          // Jobicy's fields are explicitly `annualSalaryMin`/`annualSalaryMax`.
+          salaryPeriod: (minSal || maxSal) ? 'yearly' : undefined,
           tags,
           publicationDate: job.pubDate || new Date().toISOString(),
           experienceLevel: job.jobLevel || '2-3',

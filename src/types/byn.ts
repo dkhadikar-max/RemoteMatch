@@ -182,6 +182,12 @@ export interface CanonicalOpportunity {
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  /** Pay period for salaryMin/salaryMax. 'unknown' (or undefined) means the
+   *  source never stated it — consumers MUST NOT assume a default. In
+   *  particular buildJobPostingSchema() omits schema.org `unitText` entirely
+   *  when this is not 'hourly' | 'monthly' | 'yearly', rather than emitting a
+   *  possibly-false 'YEAR'. */
+  salaryPeriod?: 'hourly' | 'monthly' | 'yearly' | 'unknown';
   requiredSkills: string[];
   preferredSkills: string[];
   experienceRequirement?: string;

@@ -616,20 +616,22 @@ export async function searchJobs(query: string | undefined, categorySlug: string
  * Builds Schema.org BreadcrumbList.
  */
 /**
- * Display-only salary range string, e.g. "$120,000–$160,000 USD". Replaces
- * the old raw `salaryString` field (free text from the provider, e.g.
- * "$120,000 - $160,000 USD"), which isn't persisted on CanonicalOpportunity
- * — only the parsed salaryMin/salaryMax/salaryCurrency are. Returns
- * undefined (never a fabricated range) when no salary was disclosed at all.
+ * Display-only salary range string, e.g. "$120,000–$160,000 USD" or
+ * "$70–$110 USD/hr". Replaces the old raw `salaryString` field; the parsed
+ * salaryMin/salaryMax/salaryCurrency AND salaryPeriod are what's persisted.
+ * Returns undefined (never a fabricated range) when no salary was disclosed.
+ * An hourly/monthly period is shown as a suffix so a "$70+" figure can't be
+ * misread as annual; an unknown period gets no suffix (never invented).
  */
 export function formatSalaryRange(job: CanonicalOpportunity): string | undefined {
   if (!job.salaryMin) return undefined;
   const currency = job.salaryCurrency || 'USD';
+  const suffix = job.salaryPeriod === 'hourly' ? '/hr' : job.salaryPeriod === 'monthly' ? '/mo' : '';
   const min = job.salaryMin.toLocaleString('en-US');
   if (job.salaryMax && job.salaryMax > job.salaryMin) {
-    return `$${min}–$${job.salaryMax.toLocaleString('en-US')} ${currency}`;
+    return `$${min}–$${job.salaryMax.toLocaleString('en-US')} ${currency}${suffix}`;
   }
-  return `$${min}+ ${currency}`;
+  return `$${min}+ ${currency}${suffix}`;
 }
 
 export function buildBreadcrumbSchema(items: Array<{ name: string; url: string }>) {
@@ -654,12 +656,12 @@ export function buildBreadcrumbSchema(items: Array<{ name: string; url: string }
  * - Do NOT invent validThrough (omit unless supplied).
  * - Do NOT invent missing employment type or applicant location.
  *
- * Live Supply Activation note: the raw pay-period text ("/ hour" etc.) that
- * used to drive unitText isn't persisted on CanonicalOpportunity — only the
- * parsed salaryMin/salaryMax/salaryCurrency are. unitText now defaults to
- * 'YEAR' rather than guessing from a string that no longer exists at this
- * point; this is a real, narrower loss of granularity than before,
- * flagged here rather than silently changed. Applicant location now comes
+ * Pay period: `salaryPeriod` is now persisted (normalizeOpportunity's
+ * resolveSalaryPeriod — an explicit provider value or an unambiguous marker
+ * in the raw salary string, never a guess). It maps to schema.org `unitText`
+ * only for a known period; when it is 'unknown'/undefined, `unitText` is
+ * OMITTED entirely — a "$40" figure is never labelled YEAR without evidence.
+ * Applicant location now comes
  * from remoteType/eligibleCountries (already-classified, not persisted as
  * free text either) rather than the old raw locationString — for a
  * Worldwide role this means correctly omitting
@@ -712,8 +714,18 @@ export function buildJobPostingSchema(job: CanonicalOpportunity) {
     const valueObj: Record<string, any> = {
       '@type': 'QuantitativeValue',
       minValue: job.salaryMin,
-      unitText: 'YEAR',
     };
+    // unitText ONLY for a period the source actually stated. An unknown /
+    // missing period leaves unitText off rather than asserting a false 'YEAR'.
+    const unitText =
+      job.salaryPeriod === 'hourly'
+        ? 'HOUR'
+        : job.salaryPeriod === 'monthly'
+        ? 'MONTH'
+        : job.salaryPeriod === 'yearly'
+        ? 'YEAR'
+        : undefined;
+    if (unitText) valueObj.unitText = unitText;
     if (job.salaryMax && job.salaryMax > job.salaryMin) {
       valueObj.maxValue = job.salaryMax;
     }
