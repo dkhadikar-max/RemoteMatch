@@ -22,7 +22,7 @@ import {
   formatSalaryRange,
   SEO_CATEGORIES,
 } from '@/lib/seo/data';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabasePublicClient } from '@/lib/supabase/server';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -30,12 +30,16 @@ interface Props {
 
 /**
  * A static list can't stay in sync with a live, changing catalog — Live
- * Supply Activation. Returning an empty array (rather than trying to
- * enumerate every currently-active job at build time) relies on Next.js's
- * default `dynamicParams: true`: any id not in this list is still rendered
- * correctly, on demand, the first time it's requested. Nothing in this
- * page opts out of that.
+ * Supply Activation. Returning an empty array (rather than enumerating every
+ * currently-active job at build time) means every id renders on demand.
+ * `export const dynamic = 'force-dynamic'` makes that explicit: the page
+ * reads a live catalog and must never be statically cached (and must never
+ * have Next attempt a static generation for an on-demand path — that
+ * attempt is what threw DYNAMIC_SERVER_USAGE in production, see the
+ * related-jobs read below). Same posture as sitemap.ts.
  */
+export const dynamic = 'force-dynamic';
+
 export async function generateStaticParams() {
   return [];
 }
@@ -73,7 +77,20 @@ export default async function PublicJobDetailPage({ params }: Props) {
   if (!job) notFound();
 
   const isLive = isJobIndexable(job);
-  const supabase = createSupabaseServerClient();
+  // Public, non-personalized read (the "related jobs" cards) — same as
+  // sitemap.ts's fix, this must NOT use the cookie-bound
+  // createSupabaseServerClient(). That client's cookies() call makes any
+  // render path touching it dynamic, which collides with this route's
+  // generateStaticParams() => [] (deliberately empty so any id renders
+  // on-demand, per Live Supply Activation's freshness requirement) —
+  // Next.js's static-generation attempt for an on-demand path then hits a
+  // dynamic API mid-render and throws DYNAMIC_SERVER_USAGE (confirmed via a
+  // local production build reproduction: every /remote-jobs/view/[id]
+  // request 500'd, while /remote-jobs and /remote-jobs/[slug] — which don't
+  // hit this exact static/dynamic collision — stayed healthy under the same
+  // build). This read needs no session state at all, so the public client
+  // is also the more correct choice on its own merits, not just a workaround.
+  const supabase = createSupabasePublicClient();
   const activeJobs = supabase ? await getActiveJobs(supabase) : [];
   const relatedJobs = activeJobs.filter((j) => j.sourceId !== job.sourceId).slice(0, 3);
 
