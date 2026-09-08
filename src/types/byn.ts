@@ -168,7 +168,10 @@ export interface CanonicalOpportunity {
   company: string;
   companyLogo?: string;
   description: string;
-  source: 'curated' | 'remotive' | 'arbeitnow' | 'jobicy';
+  /** Acquisition platform (`supply_platforms.slug`). Low-cardinality — NOT a
+   *  per-employer value; the employer/board lives in `sourceId`. Was a closed
+   *  union before the supply-discovery registry (gate C1). */
+  source: string;
   sourceId: string;
   sourceUrl?: string;
   officialUrl: string;

@@ -3,9 +3,14 @@
 // Reference architecture inspired by Ever Jobs, EndpointJobs, and jobsh
 // ==============================================================================
 
+import type { SourceSlug } from '../ingestion/source-slug';
+
 export interface RawJobPayload {
   sourceId: string;
-  source: 'curated' | 'remotive' | 'arbeitnow' | 'jobicy';
+  // Acquisition platform, not a per-employer value. Was a closed union
+  // ('curated'|'remotive'|'arbeitnow'|'jobicy') before the supply-discovery
+  // registry (gate C1) — now any registered `supply_platforms.slug`.
+  source: SourceSlug;
   title: string;
   company: string;
   companyLogo?: string;
@@ -35,6 +40,6 @@ export interface RawJobPayload {
 
 export interface JobProvider {
   readonly name: string;
-  readonly sourceKey: 'curated' | 'remotive' | 'arbeitnow' | 'jobicy';
+  readonly sourceKey: SourceSlug;
   fetchJobs(): Promise<RawJobPayload[]>;
 }

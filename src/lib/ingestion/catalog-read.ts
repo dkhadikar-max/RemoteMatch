@@ -31,7 +31,9 @@ interface OpportunityRow {
   company: string;
   company_logo: string | null;
   description: string;
-  source: 'curated' | 'remotive' | 'arbeitnow' | 'jobicy';
+  // Acquisition platform slug (supply_platforms.slug). Dynamic set since gate
+  // C1 — was a closed union.
+  source: string;
   source_id: string;
   source_url: string | null;
   official_url: string;
@@ -117,20 +119,26 @@ export async function getActiveOpportunities(supabase: SupabaseClient): Promise<
 /** Looks up a single opportunity by its `opp-${source}-${sourceId}` id
  *  string (the format used everywhere else in the app — swipes,
  *  applications, decision snapshots). RLS-scoped like the function above:
- *  only returns a result if the row is currently 'active'. */
+ *  only returns a result if the row is currently 'active'.
+ *
+ *  Gate C1: matches the persisted, generated `canonical_id` column directly
+ *  (`'opp-' || source || '-' || source_id`, migration 012) instead of
+ *  parsing the string with `/^opp-([a-z]+)-(.+)$/` — that regex could not
+ *  survive a source slug outside `[a-z]` (the discovery registry adds slugs
+ *  like `greenhouse`) or a hyphenated `source_id`. A shape guard still
+ *  rejects obvious non-ids before a query. */
 export async function getActiveOpportunityByCanonicalId(
   supabase: SupabaseClient,
   canonicalId: string
 ): Promise<CanonicalOpportunity | null> {
-  const match = /^opp-([a-z]+)-(.+)$/.exec(canonicalId);
-  if (!match) return null;
-  const [, source, sourceId] = match;
+  if (typeof canonicalId !== 'string' || !canonicalId.startsWith('opp-') || canonicalId.length > 200) {
+    return null;
+  }
 
   const { data, error } = await supabase
     .from('opportunities')
     .select(OPPORTUNITY_COLUMNS)
-    .eq('source', source)
-    .eq('source_id', sourceId)
+    .eq('canonical_id', canonicalId)
     .maybeSingle();
   if (error || !data) return null;
   return rowToCanonicalOpportunity(data as unknown as OpportunityRow);

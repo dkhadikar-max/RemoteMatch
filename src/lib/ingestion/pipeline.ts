@@ -1,5 +1,6 @@
 import { CanonicalOpportunity, RemoteType, EmploymentType } from '@/types/byn';
 import { RawJobPayload, JobProvider } from '../providers/types';
+import { sourceQualityFor } from './source-slug';
 import { CuratedProvider } from '../providers/curated';
 import { RemotiveProvider } from '../providers/remotive';
 import { ArbeitnowProvider } from '../providers/arbeitnow';
@@ -292,7 +293,11 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     preferredSkills: [],
     experienceRequirement: raw.experienceLevel || '2-3',
     qualityScore: computeQualityScore(raw),
-    sourceQuality: raw.source === 'curated' ? 95 : raw.source === 'remotive' ? 90 : raw.source === 'arbeitnow' ? 88 : 85,
+    // Provenance hint for the 4 built-in sources; `undefined` for any source
+    // the discovery registry adds later — we make no quality claim about a
+    // source we have no outcome evidence for (gate C1, decision Q4). The
+    // column is nullable and catalog-sync writes `?? null`.
+    sourceQuality: sourceQualityFor(raw.source),
     descriptionCompleteness: (raw.description || '').length > 800 ? 'high' : (raw.description || '').length > 300 ? 'medium' : 'low',
     salaryQuality: raw.salaryMin && raw.salaryMin > 0 ? 'verified' : raw.salaryString ? 'estimated' : 'unspecified',
     remotePolicyConfidence: remoteType === 'Worldwide' || eligibleCountries.length > 0 ? 'high' : 'medium',
