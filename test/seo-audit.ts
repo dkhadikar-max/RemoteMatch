@@ -1,18 +1,38 @@
 /**
  * RemoteMatch — Comprehensive SEO/AEO/GEO Website Audit Suite
  *
+ * Live Supply Activation: this suite now requires a real Supabase project
+ * AND live network access to the provider APIs (Remotive/Arbeitnow/Jobicy)
+ * — it runs a real catalog sync (syncOpportunitiesToCatalog()) before
+ * asserting anything, the same way test/gate2-live-supply.ts already
+ * exercises live provider data. It is no longer a pure offline unit test:
+ * the job catalog it inspects comes from the persisted `opportunities`
+ * table, populated by the sync this suite itself triggers, not from the
+ * static CURATED_JOBS array read directly.
+ *
  * Verifies:
  * 1. Canonical URLs on all public indexable pages
  * 2. Zero duplicate metadata (titles, descriptions)
  * 3. Sitemap integrity (valid canonicals only, accurate lastmod, private routes absent, expired jobs absent)
  * 4. Factual JobPosting schema (only active jobs, no invented facts, baseSalary strictly validated)
- * 5. Job Freshness lifecycle (ACTIVE, UPDATED, EXPIRED, 410 for permanently removed, 200 noindex for closed)
+ * 5. Job Freshness lifecycle (unknown -> active/expired, explicit editorial override, 410 for permanently removed, 200 noindex for closed)
  * 6. Authentic Search experience (/remote-jobs?q=...)
  * 7. BreadcrumbList structured data for all public routes
  * 8. Robots.txt configuration (public allowed, private application routes disallowed)
  * 9. IndexNow security & guardrails (strictly public URLs, reject private URLs, authenticated API)
  * 10. HTTP-level response verification (200, 410, noindex, text/plain key)
+ * 11. RLS / public-read gate: active selectable, unknown/expired/draft never publicly selectable
  */
+
+// Test-environment-only: Node 20 has no native WebSocket global, which
+// @supabase/realtime-js's client-construction path requires. This suite's
+// setup step calls syncOpportunitiesToCatalog(), which uses the shared
+// production getSupabaseAdminClient() (src/lib/supabase/admin.ts) directly
+// — that helper is deliberately NOT modified for this; the polyfill only
+// affects this test process's global scope, before any Supabase client is
+// constructed. See test/live-supply-suite.ts for the same fix.
+import ws from 'ws';
+(globalThis as any).WebSocket = ws;
 
 import http from 'http';
 import sitemap from '../src/app/sitemap';
@@ -32,9 +52,9 @@ import {
   isPublicIndexableUrl,
   verifyInternalSecret,
   INDEXNOW_KEY,
-  INDEXNOW_KEY_LOCATION,
 } from '../src/lib/seo/indexnow';
-import { CURATED_JOBS } from '../src/lib/providers/curated';
+import { syncOpportunitiesToCatalog } from '../src/lib/ingestion/catalog-sync';
+import { hasRequiredEnv, anonKeyClient, adminClient } from './helpers/verified-session';
 
 let passed = 0;
 let failed = 0;
@@ -55,6 +75,19 @@ async function runAudit() {
   console.log('Testing Canonical, Schema, Freshness, Sitemap, IndexNow & HTTP');
   console.log('============================================================\n');
 
+  if (!hasRequiredEnv()) {
+    console.log('Required Supabase env vars are not all set — cannot run this suite (Live Supply Activation requires a real catalog).');
+    process.exitCode = 1;
+    return;
+  }
+
+  console.log('--- SETUP: syncing the live catalog before auditing it ---');
+  const syncSummary = await syncOpportunitiesToCatalog();
+  console.log(`  Provider outcomes: ${syncSummary.providerOutcomes.map((o) => `${o.sourceKey}=${o.success ? 'ok' : 'FAILED'}`).join(', ')}`);
+  console.log(`  new active=${syncSummary.newJobsVerifiedActive} new expired=${syncSummary.newJobsVerifiedExpired} explicit override=${syncSummary.explicitlyExpiredCount} refreshed=${syncSummary.refreshedExistingActive}\n`);
+
+  const anon = anonKeyClient();
+
   // --------------------------------------------------------------------------
   // TEST 1: Canonical URLs & Metadata Uniqueness
   // --------------------------------------------------------------------------
@@ -65,7 +98,6 @@ async function runAudit() {
   let duplicateTitles = 0;
   let duplicateDescriptions = 0;
 
-  // Categories
   for (const cat of SEO_CATEGORIES) {
     if (titles.has(cat.metaTitle)) duplicateTitles++;
     titles.add(cat.metaTitle);
@@ -73,7 +105,6 @@ async function runAudit() {
     descriptions.add(cat.metaDescription);
   }
 
-  // Guides
   for (const guide of SEO_GUIDE_ARTICLES) {
     const guideTitle = `${guide.title} — Remote Job Guide | RemoteMatch`;
     if (titles.has(guideTitle)) duplicateTitles++;
@@ -85,8 +116,8 @@ async function runAudit() {
   assert(duplicateTitles === 0, 'Zero duplicate page titles across hubs and guides');
   assert(duplicateDescriptions === 0, 'Zero duplicate meta descriptions across hubs and guides');
 
-  // Canonical URL structure
-  const activeJobs = getActiveJobs();
+  const activeJobs = await getActiveJobs(anon);
+  assert(activeJobs.length > 0, `At least one active job exists after sync (got ${activeJobs.length})`);
   const sampleJob = activeJobs[0];
   const expectedJobCanonical = `https://remotematch.com/remote-jobs/view/${sampleJob.sourceId}`;
   assert(
@@ -98,27 +129,23 @@ async function runAudit() {
   // TEST 2: Data-Driven Sitemap Verification
   // --------------------------------------------------------------------------
   console.log('\n--- TEST 2: Data-Driven Sitemap Verification ---');
-  const sitemapEntries = sitemap();
+  const sitemapEntries = await sitemap();
   const sitemapUrls = sitemapEntries.map((e) => e.url);
 
-  // Assert essential public URLs present
   assert(sitemapUrls.includes('https://remotematch.com'), 'Homepage included in sitemap');
   assert(sitemapUrls.includes('https://remotematch.com/remote-jobs'), 'Directory included in sitemap');
   assert(sitemapUrls.includes('https://remotematch.com/guide'), 'Guide hub included in sitemap');
 
-  // Verify all 10 categories present
   const allCategoriesPresent = SEO_CATEGORIES.every((c) =>
     sitemapUrls.includes(`https://remotematch.com/remote-jobs/${c.slug}`)
   );
   assert(allCategoriesPresent, 'All 10 useful category & location hubs present in sitemap');
 
-  // Verify all 8 guides present
   const allGuidesPresent = SEO_GUIDE_ARTICLES.every((g) =>
     sitemapUrls.includes(`https://remotematch.com/guide/${g.slug}`)
   );
   assert(allGuidesPresent, 'All 8 tactical guide articles present in sitemap');
 
-  // Private routes strictly absent
   const privateRoutesFound = sitemapUrls.filter((u) =>
     u.includes('/feed') ||
     u.includes('/tracker') ||
@@ -130,20 +157,17 @@ async function runAudit() {
   );
   assert(privateRoutesFound.length === 0, 'Private application routes strictly absent from sitemap');
 
-  // Expired jobs strictly absent
   const expiredJobsInSitemap = sitemapUrls.filter((u) =>
     u.includes('curated-closed-001') || u.includes('curated-removed-001')
   );
   assert(expiredJobsInSitemap.length === 0, 'Expired/closed jobs strictly absent from active sitemap');
 
-  // Active jobs present
   assert(
     sitemapUrls.includes(`https://remotematch.com/remote-jobs/view/${activeJobs[0].sourceId}`),
     'Active jobs correctly included in sitemap'
   );
 
-  // Stable lastModified values
-  const hasInvalidDates = sitemapEntries.some((e) => !(e.lastModified instanceof Date) || isNaN(e.lastModified.getTime()));
+  const hasInvalidDates = sitemapEntries.some((e) => !(e.lastModified instanceof Date) || isNaN((e.lastModified as Date).getTime()));
   assert(!hasInvalidDates, 'All sitemap lastModified values are valid Date objects');
 
   // --------------------------------------------------------------------------
@@ -151,13 +175,13 @@ async function runAudit() {
   // --------------------------------------------------------------------------
   console.log('\n--- TEST 3: Job Freshness & Lifecycle Boundary ---');
 
-  const liveJob = getJobById('curated-001');
-  const closedJob = getJobById('curated-closed-001');
-  const removedJob = getJobById('curated-removed-001');
+  const liveJob = await getJobById('curated-001');
+  const closedJob = await getJobById('curated-closed-001');
+  const removedJob = await getJobById('curated-removed-001');
 
-  assert(liveJob !== undefined && isJobIndexable(liveJob), 'Live/Updated job is recognized as indexable (200, index,follow)');
-  assert(closedJob !== undefined && !isJobIndexable(closedJob), 'Closed job is recognized as non-indexable (200, noindex,follow)');
-  assert(removedJob !== undefined && isJobPermanentlyRemoved(removedJob), 'Permanently removed job is flagged for 410 Gone');
+  assert(liveJob !== undefined && isJobIndexable(liveJob), 'Live curated job is recognized as indexable (200, index,follow)');
+  assert(closedJob !== undefined && !isJobIndexable(closedJob), 'Closed job (explicit editorial override) is recognized as non-indexable (200, noindex,follow)');
+  assert(removedJob !== undefined && isJobPermanentlyRemoved(removedJob), 'Permanently removed job (explicit editorial override) is flagged for 410 Gone');
 
   // --------------------------------------------------------------------------
   // TEST 4: Factual JobPosting Schema Validation (No Invented Facts)
@@ -180,14 +204,20 @@ async function runAudit() {
   // --------------------------------------------------------------------------
   console.log('\n--- TEST 5: Authentic Search Experience Filtering ---');
 
-  const allActive = searchJobs();
-  const engineerResults = searchJobs('engineer');
-  const designerResults = searchJobs('designer');
-  const emptyResults = searchJobs('nonexistenttermxyz999');
+  const allActive = await searchJobs(undefined, undefined, anon);
+  const engineerResults = await searchJobs('engineer', undefined, anon);
+  const designerResults = await searchJobs('designer', undefined, anon);
+  const emptyResults = await searchJobs('nonexistenttermxyz999', undefined, anon);
 
-  assert(allActive.length >= 10, `Unfiltered search returns all active jobs (got ${allActive.length})`);
-  assert(engineerResults.length > 0 && engineerResults.every((j) => `${j.title} ${j.description} ${(j.tags || []).join(' ')}`.toLowerCase().includes('engineer')), 'Query "engineer" correctly filters matching engineering positions');
-  assert(designerResults.length > 0 && designerResults.every((j) => `${j.title} ${j.description} ${(j.tags || []).join(' ')}`.toLowerCase().includes('design')), 'Query "designer" correctly filters product design positions');
+  assert(allActive.length >= 5, `Unfiltered search returns all active jobs (got ${allActive.length})`);
+  assert(
+    engineerResults.length > 0 && engineerResults.every((j) => `${j.title} ${j.description} ${(j.requiredSkills || []).join(' ')}`.toLowerCase().includes('engineer')),
+    'Query "engineer" correctly filters matching engineering positions'
+  );
+  assert(
+    designerResults.length > 0 && designerResults.every((j) => `${j.title} ${j.description} ${(j.requiredSkills || []).join(' ')}`.toLowerCase().includes('design')),
+    'Query "designer" correctly filters product design positions'
+  );
   assert(emptyResults.length === 0, 'Unmatched query correctly returns 0 results rather than failing');
 
   // --------------------------------------------------------------------------
@@ -235,12 +265,6 @@ async function runAudit() {
   assert(!isPublicIndexableUrl('https://remotematch.com/api/stripe/checkout'), 'IndexNow strictly REJECTS internal API routes');
   assert(!isPublicIndexableUrl('https://malicious-site.com/remote-jobs'), 'IndexNow strictly REJECTS external domains');
 
-  // Internal Authentication
-  // P0 remediation regression test: verifyInternalSecret must fail CLOSED
-  // when INDEXNOW_SECRET isn't set, rather than falling back to a value
-  // committed to source (the pre-remediation behavior — see
-  // src/lib/seo/indexnow.ts and the source-level review's P1 finding on
-  // hardcoded fallback secrets).
   const previousIndexNowSecret = process.env.INDEXNOW_SECRET;
   delete process.env.INDEXNOW_SECRET;
   assert(
@@ -266,8 +290,7 @@ async function runAudit() {
   // --------------------------------------------------------------------------
   console.log('\n--- TEST 9: HTTP-Level Response & Header Verification ---');
 
-  // Spin up a lightweight local test server simulating the public website routes
-  const testServer = http.createServer((req, res) => {
+  async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const pathname = url.pathname;
 
@@ -291,7 +314,7 @@ async function runAudit() {
 
     if (pathname === '/remote-jobs') {
       const q = url.searchParams.get('q');
-      const filtered = searchJobs(q || undefined);
+      const filtered = await searchJobs(q || undefined, undefined, anon);
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Link': '<https://remotematch.com/remote-jobs>; rel="canonical"',
@@ -302,7 +325,7 @@ async function runAudit() {
 
     if (pathname.startsWith('/remote-jobs/view/')) {
       const jobId = pathname.replace('/remote-jobs/view/', '');
-      const job = getJobById(jobId);
+      const job = await getJobById(jobId);
 
       if (!job) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
@@ -338,6 +361,13 @@ async function runAudit() {
 
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('OK');
+  }
+
+  const testServer = http.createServer((req, res) => {
+    handleRequest(req, res).catch((err) => {
+      res.writeHead(500);
+      res.end(String(err));
+    });
   });
 
   await new Promise<void>((resolve) => {
@@ -364,7 +394,7 @@ async function runAudit() {
     assert(rKey.status === 200 && rKey.text === INDEXNOW_KEY && Boolean(rKey.headers.get('content-type')?.includes('text/plain')), 'GET /remotematch-indexnow-key.txt returns 200 text/plain with exact key');
 
     const rDir = await fetchTest('/remote-jobs');
-    assert(rDir.status === 200 && rDir.text.includes('Found 10 jobs'), 'GET /remote-jobs returns 200 with active jobs count');
+    assert(rDir.status === 200 && /Found \d+ jobs/.test(rDir.text), 'GET /remote-jobs returns 200 with active jobs count');
 
     const rSearch = await fetchTest('/remote-jobs?q=engineer');
     assert(rSearch.status === 200 && rSearch.text.includes('jobs'), 'GET /remote-jobs?q=engineer returns 200 with filtered results');
@@ -380,6 +410,54 @@ async function runAudit() {
   } finally {
     testServer.close();
   }
+
+  // --------------------------------------------------------------------------
+  // TEST 10: RLS / public-read gate — explicit, not assumed
+  // --------------------------------------------------------------------------
+  console.log('\n--- TEST 10: RLS Public-Read Gate ---');
+
+  const admin = adminClient();
+  const { data: statusSample } = await admin
+    .from('opportunities')
+    .select('id, source, source_id, status')
+    .in('status', ['unknown', 'expired', 'draft'])
+    .limit(1);
+
+  if (statusSample && statusSample.length > 0) {
+    const row = statusSample[0];
+    const { data: publicRead } = await anon
+      .from('opportunities')
+      .select('id')
+      .eq('source', row.source)
+      .eq('source_id', row.source_id)
+      .maybeSingle();
+    assert(publicRead === null, `A '${row.status}' row is NOT publicly selectable via the anon client (RLS)`);
+  } else {
+    console.log('  – NOTE: no unknown/expired/draft row available to test right now — the negative case (RLS blocking it) could not be exercised this run.');
+  }
+
+  const { data: activeSample } = await admin
+    .from('opportunities')
+    .select('id, source, source_id')
+    .eq('status', 'active')
+    .limit(1);
+  if (activeSample && activeSample.length > 0) {
+    const row = activeSample[0];
+    const { data: publicRead } = await anon
+      .from('opportunities')
+      .select('id')
+      .eq('source', row.source)
+      .eq('source_id', row.source_id)
+      .maybeSingle();
+    assert(publicRead !== null, "An 'active' row IS publicly selectable via the anon client (RLS)");
+  }
+
+  const { error: adminWriteErr } = await admin
+    .from('opportunities')
+    .update({ quality_score: 85 })
+    .eq('source', 'curated')
+    .eq('source_id', 'curated-001');
+  assert(!adminWriteErr, `service_role can manage rows in all states (got ${adminWriteErr ? (adminWriteErr as any).message : 'no error'})`);
 
   // --------------------------------------------------------------------------
   // Summary

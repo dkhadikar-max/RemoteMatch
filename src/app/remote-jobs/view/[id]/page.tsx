@@ -13,34 +13,41 @@ import {
   AlertCircle,
   Clock,
 } from 'lucide-react';
-import { CURATED_JOBS } from '@/lib/providers/curated';
 import {
   getJobById,
   getActiveJobs,
   isJobIndexable,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
+  formatSalaryRange,
   SEO_CATEGORIES,
 } from '@/lib/seo/data';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 interface Props {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * A static list can't stay in sync with a live, changing catalog — Live
+ * Supply Activation. Returning an empty array (rather than trying to
+ * enumerate every currently-active job at build time) relies on Next.js's
+ * default `dynamicParams: true`: any id not in this list is still rendered
+ * correctly, on demand, the first time it's requested. Nothing in this
+ * page opts out of that.
+ */
 export async function generateStaticParams() {
-  return CURATED_JOBS.map((job) => ({
-    id: job.sourceId,
-  }));
+  return [];
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const job = getJobById(id);
+  const job = await getJobById(id);
   if (!job) return {};
 
   const isLive = isJobIndexable(job);
-  const salaryText = job.salaryString ? ` Salary: ${job.salaryString}.` : '';
-  const locText = job.locationString ? ` Location: ${job.locationString}.` : '';
+  const salaryText = formatSalaryRange(job) ? ` Salary: ${formatSalaryRange(job)}.` : '';
+  const locText = job.remoteType ? ` Remote scope: ${job.remoteType}.` : '';
 
   return {
     title: `${job.title} at ${job.company} (Remote) | RemoteMatch`,
@@ -62,19 +69,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PublicJobDetailPage({ params }: Props) {
   const { id } = await params;
-  const job = getJobById(id);
+  const job = await getJobById(id);
   if (!job) notFound();
 
   const isLive = isJobIndexable(job);
-  const activeJobs = getActiveJobs();
+  const supabase = createSupabaseServerClient();
+  const activeJobs = supabase ? await getActiveJobs(supabase) : [];
   const relatedJobs = activeJobs.filter((j) => j.sourceId !== job.sourceId).slice(0, 3);
 
   // Match relevant category for breadcrumb trail
   const matchedCategory = SEO_CATEGORIES.find((cat) => {
     const titleLower = job.title.toLowerCase();
-    const tagsLower = (job.tags || []).map((t) => t.toLowerCase());
+    const skillsLower = (job.requiredSkills || []).map((t) => t.toLowerCase());
     return (
-      cat.tags.some((t) => tagsLower.includes(t.toLowerCase())) ||
+      cat.tags.some((t) => skillsLower.includes(t.toLowerCase())) ||
       titleLower.includes(cat.slug.replace('-', ' '))
     );
   });
@@ -165,11 +173,6 @@ export default async function PublicJobDetailPage({ params }: Props) {
               <span className="tag !text-[10px]">
                 {isLive ? '100% Remote' : 'Closed'}
               </span>
-              {job.status === 'UPDATED' && (
-                <span className="tag !text-[10px] !bg-[#ecfdf5] !text-[#059669] !border-[#a7f3d0]">
-                  Updated
-                </span>
-              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-[var(--ink)]">
               {job.title}
@@ -193,28 +196,28 @@ export default async function PublicJobDetailPage({ params }: Props) {
 
         {/* Factual Metadata Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 pb-3 border-y border-[var(--line)]">
-          {job.jobType && (
+          {job.employmentType && (
             <div className="space-y-0.5">
               <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
                 <Briefcase size={12} /> Employment
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)]">{job.jobType}</p>
+              <p className="text-xs font-semibold text-[var(--ink)]">{job.employmentType}</p>
             </div>
           )}
-          {job.locationString && (
+          {job.remoteType && (
             <div className="space-y-0.5">
               <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
                 <MapPin size={12} /> Remote Scope
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)]">{job.locationString}</p>
+              <p className="text-xs font-semibold text-[var(--ink)]">{job.remoteType}</p>
             </div>
           )}
-          {job.salaryString && (
+          {formatSalaryRange(job) && (
             <div className="space-y-0.5">
               <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
                 <DollarSign size={12} /> Compensation
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)] font-mono">{job.salaryString}</p>
+              <p className="text-xs font-semibold text-[var(--ink)] font-mono">{formatSalaryRange(job)}</p>
             </div>
           )}
           <div className="space-y-0.5">
@@ -222,7 +225,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
               <Calendar size={12} /> Date Posted
             </span>
             <p className="text-xs font-semibold text-[var(--ink)]">
-              {new Date(job.publicationDate).toLocaleDateString('en-US', {
+              {new Date(job.postedAt).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -259,11 +262,11 @@ export default async function PublicJobDetailPage({ params }: Props) {
         </section>
 
         {/* Factual Skills & Tech Stack */}
-        {job.tags && job.tags.length > 0 && (
+        {job.requiredSkills && job.requiredSkills.length > 0 && (
           <section className="space-y-3 pt-2">
             <h2 className="text-base font-semibold text-[var(--ink)]">Required Skills & Technologies</h2>
             <div className="flex flex-wrap gap-2">
-              {job.tags.map((tag, idx) => (
+              {job.requiredSkills.map((tag, idx) => (
                 <span
                   key={idx}
                   className="rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--ink)] font-medium"
@@ -275,11 +278,15 @@ export default async function PublicJobDetailPage({ params }: Props) {
           </section>
         )}
 
-        {/* Freshness & Sourcing Note */}
+        {/* Freshness & Sourcing Note — linkCheckedAt is the one genuinely
+            real freshness fact (Live Supply Activation); never fabricated
+            when the link hasn't actually been checked yet. */}
         <div className="text-[11px] text-[var(--muted)] pt-3 border-t border-[var(--line)] flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1">
             <Clock size={11} />
-            Verified active: {job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : new Date(job.publicationDate).toLocaleDateString()}
+            {job.linkCheckedAt
+              ? `Link verified: ${new Date(job.linkCheckedAt).toLocaleDateString()}`
+              : `Posted: ${new Date(job.postedAt).toLocaleDateString()}`}
           </span>
           {matchedCategory && (
             <Link
@@ -331,7 +338,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
                   {related.title}
                 </h3>
                 <p className="text-[11px] text-[var(--muted)] mt-2 font-mono">
-                  {related.salaryString || related.locationString || 'Worldwide'}
+                  {formatSalaryRange(related) || related.remoteType}
                 </p>
               </Link>
             ))}

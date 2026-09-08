@@ -198,8 +198,17 @@ export interface CanonicalOpportunity {
    *  no location information was found — never conflated with a real
    *  value. */
   explicitRemoteScope?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
-  status: 'active' | 'expired' | 'draft';
+  status: 'active' | 'expired' | 'draft' | 'unknown';
   isActive?: boolean;
+  /** Live Supply Activation — drives the existing 410-vs-noindex SEO
+   *  distinction (src/middleware.ts): true -> 410 Gone, false but expired
+   *  -> 200 with noindex,follow. Set by the ingestion pipeline only; never
+   *  inferred from other fields. */
+  isPermanentlyRemoved?: boolean;
+  /** The one genuinely real freshness fact in this object: when the
+   *  official link was actually last checked, if ever. Undefined means
+   *  never verified — display accordingly, never invent a date. */
+  linkCheckedAt?: string;
   postedAt: string;
   lastVerifiedAt: string;
   expiresAt?: string;

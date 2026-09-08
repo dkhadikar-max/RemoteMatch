@@ -8,7 +8,9 @@ import {
   getJobsForCategory,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
+  formatSalaryRange,
 } from '@/lib/seo/data';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -45,7 +47,8 @@ export default async function RemoteCategoryPage({ params }: Props) {
   const category = SEO_CATEGORIES.find((c) => c.slug === slug);
   if (!category) notFound();
 
-  const jobs = getJobsForCategory(category.slug);
+  const supabase = createSupabaseServerClient();
+  const jobs = supabase ? await getJobsForCategory(category.slug, supabase) : [];
   const otherCategories = SEO_CATEGORIES.filter((c) => c.slug !== category.slug);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
@@ -190,7 +193,7 @@ export default async function RemoteCategoryPage({ params }: Props) {
                       </h3>
                     </div>
                     <span className="tag !text-[11px] whitespace-nowrap">
-                      {job.jobType}
+                      {job.employmentType}
                     </span>
                   </div>
 
@@ -201,12 +204,12 @@ export default async function RemoteCategoryPage({ params }: Props) {
                   <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-[var(--muted)]">
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={13} className="text-[var(--muted)]" />
-                      {job.locationString || 'Worldwide'}
+                      {job.remoteType}
                     </span>
-                    {job.salaryString && (
+                    {formatSalaryRange(job) && (
                       <span className="inline-flex items-center gap-1 font-mono font-medium text-[var(--ink)]">
                         <DollarSign size={13} className="text-[var(--red)]" />
-                        {job.salaryString}
+                        {formatSalaryRange(job)}
                       </span>
                     )}
                   </div>

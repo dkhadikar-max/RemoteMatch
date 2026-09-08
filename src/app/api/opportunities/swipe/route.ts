@@ -4,6 +4,7 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { localStore } from '@/lib/db/mock-seed';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
+import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
 
 const VALID_ACTIONS = ['interested', 'passed'] as const;
 type SwipeAction = (typeof VALID_ACTIONS)[number];
@@ -84,10 +85,12 @@ export async function POST(req: NextRequest) {
   // Opportunity lookup / fit scoring / application-kit generation reuse the
   // frozen matching engine and existing AI materials pipeline unchanged —
   // only their inputs (a verified user + reserved quota) and where the
-  // result is persisted (Supabase, not the in-memory mock) have changed.
-  // `localStore` here supplies only the curated job catalog (non-sensitive,
-  // UI-only fixture data), never entitlement.
-  const opp = localStore.getOpportunityById(opportunityId);
+  // opportunity itself comes from (the persisted `opportunities` catalog,
+  // Live Supply Activation) have changed. RLS-scoped via the user's own
+  // session client, same as every other read in this route — an
+  // opportunity that isn't currently 'active' simply isn't found, exactly
+  // like a bad id would be.
+  const opp = await getActiveOpportunityByCanonicalId(supabase, opportunityId);
   let decisionSnapshot: Record<string, unknown> | null = null;
   let matchResultForClient: ReturnType<typeof generateRuleBasedMatchAnalysis> | null = null;
 

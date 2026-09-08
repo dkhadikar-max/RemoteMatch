@@ -1,13 +1,26 @@
 import type { MetadataRoute } from 'next';
 import { SEO_CATEGORIES, SEO_GUIDE_ARTICLES, getActiveJobs } from '@/lib/seo/data';
+import { createSupabasePublicClient } from '@/lib/supabase/server';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+// Sitemap content is identical for every visitor (RLS's active-only filter
+// is the only access control it needs) and must reflect the live catalog,
+// not a build-time snapshot — force-dynamic makes that explicit rather than
+// leaning on cookies() usage to infer it (see createSupabasePublicClient()'s
+// doc comment for why this route uses that client instead of the
+// cookie-bound one).
+export const dynamic = 'force-dynamic';
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://remotematch.com';
-  const activeJobs = getActiveJobs();
+  const supabase = createSupabasePublicClient();
+  const activeJobs = supabase ? await getActiveJobs(supabase) : [];
 
-  // Determine latest content change date for directory and home
+  // Determine latest content change date for directory and home. `postedAt`
+  // is the closest available "last known change" fact on CanonicalOpportunity
+  // — the old `updatedAt` field was RawJobPayload-specific and never
+  // persisted (Live Supply Activation).
   const latestJobDate = activeJobs.reduce((latest, j) => {
-    const d = new Date(j.updatedAt || j.publicationDate);
+    const d = new Date(j.postedAt);
     return d > latest ? d : latest;
   }, new Date('2026-03-01T00:00:00Z'));
 
@@ -37,11 +50,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     const catJobs = activeJobs.filter((j) => {
       const slugLower = cat.slug.replace('-', ' ');
       const titleLower = j.title.toLowerCase();
-      const tagsLower = (j.tags || []).map((t) => t.toLowerCase());
-      return cat.tags.some((t) => tagsLower.includes(t.toLowerCase())) || titleLower.includes(slugLower);
+      const skillsLower = (j.requiredSkills || []).map((t) => t.toLowerCase());
+      return cat.tags.some((t) => skillsLower.includes(t.toLowerCase())) || titleLower.includes(slugLower);
     });
     const catDate = catJobs.reduce((latest, j) => {
-      const d = new Date(j.updatedAt || j.publicationDate);
+      const d = new Date(j.postedAt);
       return d > latest ? d : latest;
     }, latestJobDate);
 
@@ -53,10 +66,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     };
   });
 
-  // Only index actively available jobs (expired jobs strictly excluded)
+  // Only index actively available jobs (expired jobs strictly excluded —
+  // guaranteed by getActiveJobs()'s RLS-backed read, not by filtering here)
   const jobRoutes: MetadataRoute.Sitemap = activeJobs.map((job) => ({
     url: `${baseUrl}/remote-jobs/view/${job.sourceId}`,
-    lastModified: new Date(job.updatedAt || job.publicationDate),
+    lastModified: new Date(job.postedAt),
     changeFrequency: 'weekly',
     priority: 0.75,
   }));

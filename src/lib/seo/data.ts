@@ -1,5 +1,6 @@
-import { RawJobPayload } from '../providers/types';
-import { CURATED_JOBS } from '../providers/curated';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { CanonicalOpportunity } from '@/types/byn';
+import { getActiveOpportunities, getOpportunityBySourceIdAnyStatus } from '../ingestion/catalog-read';
 
 export interface SeoFaqItem {
   q: string;
@@ -509,87 +510,100 @@ export const SEO_GUIDE_ARTICLES: SeoGuideArticle[] = [
 // ==============================================================================
 
 /**
- * Returns all actively indexable jobs (status is ACTIVE or UPDATED).
- * Confirmed EXPIRED jobs are excluded.
+ * Returns all actively indexable jobs. Live Supply Activation: reads the
+ * persisted `opportunities` catalog via RLS (`opportunities_select_active`,
+ * status = 'active' only) instead of the static CURATED_JOBS array — the
+ * guarantee that unknown/expired/draft rows never appear here comes from
+ * that policy, not from any filtering in this function.
  */
-export function getActiveJobs(): RawJobPayload[] {
-  return CURATED_JOBS.filter((j) => j.status !== 'EXPIRED');
+export async function getActiveJobs(supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
+  return getActiveOpportunities(supabase);
 }
 
 /**
  * Validates whether a job is eligible for search engine indexing.
- * Both ACTIVE and UPDATED jobs remain indexable.
- * EXPIRED jobs are non-indexable.
  */
-export function isJobIndexable(job: RawJobPayload): boolean {
-  return job.status !== 'EXPIRED';
+export function isJobIndexable(job: CanonicalOpportunity): boolean {
+  return job.status === 'active';
 }
 
 /**
  * Checks if an expired job is permanently removed and should return 410 Gone,
  * or if it should return 200 with noindex,follow as a closed-job page.
  */
-export function isJobPermanentlyRemoved(job: RawJobPayload): boolean {
-  return job.status === 'EXPIRED' && Boolean(job.isPermanentlyRemoved);
+export function isJobPermanentlyRemoved(job: CanonicalOpportunity): boolean {
+  return job.status === 'expired' && Boolean(job.isPermanentlyRemoved);
 }
 
 /**
- * Retrieves a job by ID from the inventory.
+ * Retrieves a job by its bare source id — the format the public
+ * `/remote-jobs/view/[id]` URL has always used — REGARDLESS of status, so
+ * the 410-vs-noindex decision above can actually be made. See
+ * getOpportunityBySourceIdAnyStatus()'s own header for why this
+ * deliberately bypasses RLS via the admin client.
  */
-export function getJobById(id: string): RawJobPayload | undefined {
-  return CURATED_JOBS.find((j) => j.sourceId === id);
+export async function getJobById(id: string): Promise<CanonicalOpportunity | undefined> {
+  const job = await getOpportunityBySourceIdAnyStatus(id);
+  return job ?? undefined;
 }
 
 /**
- * Filters active jobs for a category hub.
+ * Filters active jobs for a category hub. Location filtering now reads the
+ * already-classified remoteType/eligibleCountries fields directly (computed
+ * once, at ingestion time, by the frozen classifyRemoteEligibility())
+ * instead of re-parsing a raw location string that Live Supply Activation
+ * doesn't persist — strictly more accurate for the same underlying fact,
+ * not a behavior change for any job that was correctly classified before.
  */
-export function getJobsForCategory(categorySlug: string): RawJobPayload[] {
-  const activeJobs = getActiveJobs();
+export async function getJobsForCategory(categorySlug: string, supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
+  const activeJobs = await getActiveJobs(supabase);
   const cat = SEO_CATEGORIES.find((c) => c.slug === categorySlug);
   if (!cat) return activeJobs;
 
   if (cat.type === 'location') {
     if (cat.slug === 'worldwide') {
-      return activeJobs.filter((j) => (j.locationString || '').toLowerCase().includes('worldwide'));
+      return activeJobs.filter((j) => j.remoteType === 'Worldwide');
     }
     if (cat.slug === 'united-states') {
-      return activeJobs.filter((j) => (j.locationString || '').toLowerCase().includes('us') || (j.locationString || '').toLowerCase().includes('canada'));
+      return activeJobs.filter((j) => j.remoteType === 'US' || j.eligibleCountries.some((c) => c === 'US' || c === 'USA'));
     }
     if (cat.slug === 'europe') {
-      return activeJobs.filter((j) => (j.locationString || '').toLowerCase().includes('europe') || (j.locationString || '').toLowerCase().includes('uk'));
+      return activeJobs.filter((j) => j.remoteType === 'EU/EEA' || j.eligibleCountries.some((c) => c === 'EU' || c === 'UK' || c === 'EEA'));
     }
   }
 
   if (cat.type === 'seniority') {
     if (cat.slug === 'senior') {
-      return activeJobs.filter((j) => j.experienceLevel === '7-10' || j.title.toLowerCase().includes('senior') || j.title.toLowerCase().includes('lead') || j.title.toLowerCase().includes('staff'));
+      return activeJobs.filter((j) => j.experienceRequirement === '7-10' || j.title.toLowerCase().includes('senior') || j.title.toLowerCase().includes('lead') || j.title.toLowerCase().includes('staff'));
     }
     if (cat.slug === 'entry-level') {
-      return activeJobs.filter((j) => j.experienceLevel === '0-1' || j.experienceLevel === '2-3');
+      return activeJobs.filter((j) => j.experienceRequirement === '0-1' || j.experienceRequirement === '2-3');
     }
   }
 
   const slugLower = cat.slug.replace('-', ' ');
   return activeJobs.filter((j) => {
     const titleLower = j.title.toLowerCase();
-    const tagsLower = (j.tags || []).map((t) => t.toLowerCase());
-    const matchesTag = cat.tags.some((t) => tagsLower.includes(t.toLowerCase()));
+    const skillsLower = (j.requiredSkills || []).map((t) => t.toLowerCase());
+    const matchesTag = cat.tags.some((t) => skillsLower.includes(t.toLowerCase()));
     const matchesTitle = titleLower.includes(slugLower) || (slugLower === 'software engineering' && (titleLower.includes('engineer') || titleLower.includes('developer')));
     return matchesTag || matchesTitle;
   });
 }
 
 /**
- * Searches active jobs against a keyword query string (q) and optional category.
- * Performs factual matching against title, company, description, and tags.
+ * Searches active jobs against a keyword query string (q) and optional
+ * category. Performs factual matching against title, company, description,
+ * and required skills. Location terms are matched against remoteType,
+ * since the raw location string isn't persisted (see getJobsForCategory).
  */
-export function searchJobs(query?: string, categorySlug?: string): RawJobPayload[] {
-  let pool = categorySlug ? getJobsForCategory(categorySlug) : getActiveJobs();
+export async function searchJobs(query: string | undefined, categorySlug: string | undefined, supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
+  const pool = categorySlug ? await getJobsForCategory(categorySlug, supabase) : await getActiveJobs(supabase);
   if (!query || !query.trim()) return pool;
 
   const terms = query.toLowerCase().trim().split(/\s+/);
   return pool.filter((job) => {
-    const haystack = `${job.title} ${job.company} ${job.description} ${(job.tags || []).join(' ')} ${job.locationString || ''}`.toLowerCase();
+    const haystack = `${job.title} ${job.company} ${job.description} ${(job.requiredSkills || []).join(' ')} ${job.remoteType}`.toLowerCase();
     return terms.every((t) => haystack.includes(t));
   });
 }
@@ -601,6 +615,23 @@ export function searchJobs(query?: string, categorySlug?: string): RawJobPayload
 /**
  * Builds Schema.org BreadcrumbList.
  */
+/**
+ * Display-only salary range string, e.g. "$120,000–$160,000 USD". Replaces
+ * the old raw `salaryString` field (free text from the provider, e.g.
+ * "$120,000 - $160,000 USD"), which isn't persisted on CanonicalOpportunity
+ * — only the parsed salaryMin/salaryMax/salaryCurrency are. Returns
+ * undefined (never a fabricated range) when no salary was disclosed at all.
+ */
+export function formatSalaryRange(job: CanonicalOpportunity): string | undefined {
+  if (!job.salaryMin) return undefined;
+  const currency = job.salaryCurrency || 'USD';
+  const min = job.salaryMin.toLocaleString('en-US');
+  if (job.salaryMax && job.salaryMax > job.salaryMin) {
+    return `$${min}–$${job.salaryMax.toLocaleString('en-US')} ${currency}`;
+  }
+  return `$${min}+ ${currency}`;
+}
+
 export function buildBreadcrumbSchema(items: Array<{ name: string; url: string }>) {
   return {
     '@context': 'https://schema.org',
@@ -617,13 +648,25 @@ export function buildBreadcrumbSchema(items: Array<{ name: string; url: string }
 /**
  * Builds Schema.org JobPosting.
  * STRICT FACTUAL RULE:
- * - Only output for active jobs (status !== 'EXPIRED').
+ * - Only output for active jobs (status === 'active').
  * - Only output baseSalary when salaryMin is present AND currency is known.
  * - If only minimum exists without max, do NOT invent max.
  * - Do NOT invent validThrough (omit unless supplied).
  * - Do NOT invent missing employment type or applicant location.
+ *
+ * Live Supply Activation note: the raw pay-period text ("/ hour" etc.) that
+ * used to drive unitText isn't persisted on CanonicalOpportunity — only the
+ * parsed salaryMin/salaryMax/salaryCurrency are. unitText now defaults to
+ * 'YEAR' rather than guessing from a string that no longer exists at this
+ * point; this is a real, narrower loss of granularity than before,
+ * flagged here rather than silently changed. Applicant location now comes
+ * from remoteType/eligibleCountries (already-classified, not persisted as
+ * free text either) rather than the old raw locationString — for a
+ * Worldwide role this means correctly omitting
+ * applicantLocationRequirements entirely (per the "do not invent" rule)
+ * rather than force-fitting "Worldwide" into a schema.org Country name.
  */
-export function buildJobPostingSchema(job: RawJobPayload) {
+export function buildJobPostingSchema(job: CanonicalOpportunity) {
   if (!isJobIndexable(job)) {
     return null;
   }
@@ -633,7 +676,7 @@ export function buildJobPostingSchema(job: RawJobPayload) {
     '@type': 'JobPosting',
     title: job.title,
     description: job.description,
-    datePosted: job.publicationDate,
+    datePosted: job.postedAt,
     hiringOrganization: {
       '@type': 'Organization',
       name: job.company,
@@ -646,20 +689,22 @@ export function buildJobPostingSchema(job: RawJobPayload) {
   };
 
   // Employment type only if known
-  if (job.jobType === 'Full-time') {
+  if (job.employmentType === 'Full-time') {
     schema.employmentType = 'FULL_TIME';
-  } else if (job.jobType === 'Contract' || job.jobType === 'Freelance') {
+  } else if (job.employmentType === 'Contract' || job.employmentType === 'Freelance') {
     schema.employmentType = 'CONTRACTOR';
-  } else if (job.jobType === 'Part-time') {
+  } else if (job.employmentType === 'Part-time') {
     schema.employmentType = 'PART_TIME';
   }
 
-  // Applicant location only if specified
-  if (job.locationString) {
-    schema.applicantLocationRequirements = {
+  // Applicant location only if the job is actually scoped to specific
+  // countries — a genuinely borderless Worldwide role has no applicant
+  // location requirement to state, so nothing is invented for it.
+  if (job.eligibleCountries.length > 0) {
+    schema.applicantLocationRequirements = job.eligibleCountries.map((country) => ({
       '@type': 'Country',
-      name: job.locationString,
-    };
+      name: country,
+    }));
   }
 
   // Salary only when actually supplied with valid currency
@@ -667,7 +712,7 @@ export function buildJobPostingSchema(job: RawJobPayload) {
     const valueObj: Record<string, any> = {
       '@type': 'QuantitativeValue',
       minValue: job.salaryMin,
-      unitText: job.salaryString?.includes('/ hour') ? 'HOUR' : job.salaryString?.includes('/ month') ? 'MONTH' : 'YEAR',
+      unitText: 'YEAR',
     };
     if (job.salaryMax && job.salaryMax > job.salaryMin) {
       valueObj.maxValue = job.salaryMax;

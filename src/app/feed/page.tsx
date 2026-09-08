@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
-import { computeScreeningFit } from '@/lib/matching/engine';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
@@ -109,24 +108,31 @@ export default function FeedPage() {
   };
 
   const refreshOpportunities = async () => {
-    const userProfile = await loadProfile();
+    await loadProfile();
 
-    const pool = localStore.getOpportunities();
+    // Opportunity catalog now comes from the persisted, live-supply-backed
+    // /api/opportunities/feed (Live Supply Activation) instead of reading
+    // localStore.getOpportunities() directly — that pool was always the
+    // static CURATED_JOBS array. Fit-scoring already happens server-side in
+    // that route (computeScreeningFit, unchanged); this just consumes the
+    // result instead of duplicating the same computation client-side.
+    // Unswiped-filtering stays exactly where it already was: client-side,
+    // against the local swipe cache — see mock-seed.ts's recordSwipe()
+    // comment for why that cache is display-only, never entitlement.
     const swipes = localStore.getSwipes();
     const swipedIds = new Set(swipes.map((s) => s.opportunityId));
 
-    const unswiped = pool.filter((opp) => !swipedIds.has(opp.id));
-
-    const scored = unswiped.map((opp) => {
-      const fit = computeScreeningFit(userProfile, opp);
-      return {
-        ...opp,
-        fitScore: fit.fitScore,
-        fitBadge: fit.fitBadge,
-      };
-    });
-
-    scored.sort((a, b) => (b.fitScore || 0) - (a.fitScore || 0));
+    let scored: Array<CanonicalOpportunity & { fitScore?: number; fitBadge?: string }> = [];
+    try {
+      const res = await fetch('/api/opportunities/feed');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        scored = (data.opportunities as typeof scored).filter((opp) => !swipedIds.has(opp.id));
+      }
+    } catch {
+      // Network failure: show an empty deck rather than falling back to any
+      // local fixture as if it were live supply.
+    }
 
     setOpportunities(scored);
     setSwipedCount(swipes.length);

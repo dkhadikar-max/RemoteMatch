@@ -27,7 +27,7 @@ export async function middleware(request: NextRequest) {
   // Handle permanently removed jobs with HTTP 410 Gone
   if (pathname.startsWith('/remote-jobs/view/')) {
     const jobId = pathname.replace('/remote-jobs/view/', '').split('/')[0];
-    const job = getJobById(jobId);
+    const job = await getJobById(jobId);
     if (job && isJobPermanentlyRemoved(job)) {
       return new NextResponse(
         `410 Gone: The job listing "${job.title}" at ${job.company} has been permanently removed.`,

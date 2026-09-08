@@ -5,6 +5,7 @@ import { localStore } from '@/lib/db/mock-seed';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { MaterialTone } from '@/types/byn';
+import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
 
 const VALID_TONES: MaterialTone[] = ['confident', 'conversational', 'formal'];
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   }
   const { opportunityId, tone = 'confident' } = body;
 
-  const opp = localStore.getOpportunityById(opportunityId);
+  const opp = await getActiveOpportunityByCanonicalId(supabase, opportunityId);
   if (!opp) {
     return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 });
   }

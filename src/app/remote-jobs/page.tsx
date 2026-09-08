@@ -15,8 +15,10 @@ import {
   searchJobs,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
+  formatSalaryRange,
   SeoFaqItem,
 } from '@/lib/seo/data';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 interface Props {
   searchParams?: Promise<{ q?: string }> | { q?: string };
@@ -42,7 +44,8 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
   const q = resolvedParams.q;
   const searchQuery = (typeof q === 'string' ? q : '')?.trim() || '';
-  const jobs = searchJobs(searchQuery);
+  const supabase = createSupabaseServerClient();
+  const jobs = supabase ? await searchJobs(searchQuery, undefined, supabase) : [];
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
     { name: 'Home', url: 'https://remotematch.com' },
@@ -255,7 +258,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                       </h3>
                     </div>
                     <span className="tag !text-[11px] whitespace-nowrap">
-                      {job.jobType}
+                      {job.employmentType}
                     </span>
                   </div>
 
@@ -266,19 +269,19 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                   <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-[var(--muted)]">
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={13} className="text-[var(--muted)]" />
-                      {job.locationString || 'Worldwide'}
+                      {job.remoteType}
                     </span>
-                    {job.salaryString && (
+                    {formatSalaryRange(job) && (
                       <span className="inline-flex items-center gap-1 font-mono font-medium text-[var(--ink)]">
                         <DollarSign size={13} className="text-[var(--red)]" />
-                        {job.salaryString}
+                        {formatSalaryRange(job)}
                       </span>
                     )}
                   </div>
 
-                  {job.tags && job.tags.length > 0 && (
+                  {job.requiredSkills && job.requiredSkills.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {job.tags.slice(0, 4).map((tag, idx) => (
+                      {job.requiredSkills.slice(0, 4).map((tag, idx) => (
                         <span
                           key={idx}
                           className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)] border border-[var(--line)]"
