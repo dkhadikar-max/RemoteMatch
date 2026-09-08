@@ -114,6 +114,86 @@ export function classifyRemoteEligibility(locationStr?: string, tags: string[] =
   return { remoteType: 'Worldwide', eligibleCountries: [] };
 }
 
+export type ExplicitRemoteScope = 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
+
+/**
+ * P1 (Job-Quality Intelligence) candidate observable attribute:
+ * remote_scope_explicit. Strictly additive — classifyRemoteEligibility()
+ * above is completely untouched, and its `remoteType`/`eligibleCountries`
+ * output (used by matching/eligibility gating, a frozen contract) is not
+ * read or altered here.
+ *
+ * classifyRemoteEligibility() defaults to 'Worldwide' when none of its
+ * patterns match anything — silently turning "no location information
+ * found" into a real-sounding value. That's correct for its own purpose
+ * (matching needs some default), but wrong as an observable fact: this
+ * function keeps "explicitly stated worldwide" and "nothing found"
+ * distinct, because for P1's measurement purposes, `unknown` is missing
+ * information, not evidence about the job — see the P1 scoping document.
+ *
+ * The pattern checks below intentionally duplicate
+ * classifyRemoteEligibility()'s conditions rather than share code with
+ * it, so a future change to one can never silently change the other's
+ * behavior: observe more, change nothing.
+ *
+ * KNOWN TRADEOFF, ACCEPTED DELIBERATELY: this duplication creates pattern
+ * drift risk — someone can edit one classifier's regexes without touching
+ * the other's, and nothing here will catch it automatically. That risk is
+ * accepted in exchange for the guarantee that matters more: neither
+ * classifier can accidentally change the other's behavior as a side
+ * effect of an edit (sharing the pattern logic could, if done carelessly,
+ * alter the frozen eligibility semantics classifyRemoteEligibility()
+ * feeds into). Do not refactor these into a shared implementation to
+ * "fix" the duplication — that would reopen exactly the risk this
+ * isolation exists to avoid. Any change to either classifier's patterns
+ * requires a corresponding review of the other, and a re-run of both
+ * test/gate2-live-supply.ts (frozen eligibility contract) and
+ * test/p1-job-quality-suite.ts (this attribute).
+ */
+export function classifyExplicitRemoteScope(locationStr?: string, tags: string[] = []): ExplicitRemoteScope {
+  const loc = (locationStr || '').trim().toLowerCase();
+  const allText = `${loc} ${tags.join(' ')}`.toLowerCase();
+
+  // Mirrors classifyRemoteEligibility() condition 1.
+  if (
+    /\b(worldwide|anywhere in the world|global remote|anywhere|100% remote worldwide)\b/i.test(loc) &&
+    !/\b(us only|usa only|europe only|eu only)\b/i.test(allText)
+  ) {
+    return 'explicit_worldwide';
+  }
+
+  // Mirrors classifyRemoteEligibility() conditions 2-7 — any of these
+  // matching means the listing said SOMETHING specific about scope, even
+  // if it's not a hard geographic restriction (e.g. "hybrid",
+  // "timezone", "contractor only"). Any explicit statement, restrictive
+  // or not, counts as "explicit" here — this attribute measures whether
+  // scope was stated at all, not what it said.
+  const explicitPatterns = [
+    /\b(us only|usa only|united states only|remote\s*[-—–]\s*us\b|remote\s*[-—–]\s*usa\b|usa|united states|north america)\b/i,
+    /\b(europe only|eu only|uk only|remote\s*in\s*europe|remote\s*\(europe\)|remote\s*[-—–]\s*europe|europe|emea|eu\/eea|uk|germany|france|netherlands|ireland|spain)\b/i,
+    /\b(india only|in only|remote\s*[-—–]\s*india|india|bangalore|delhi|mumbai)\b/i,
+    /\b(remote-friendly|remote friendly|hybrid|office-friendly|flexible location)\b/i,
+  ];
+  if (explicitPatterns.some((re) => re.test(allText))) {
+    return 'explicit_restricted';
+  }
+  if (
+    allText.includes('timezone') ||
+    allText.includes('pst') ||
+    allText.includes('est') ||
+    allText.includes('cet') ||
+    allText.includes('hours overlap') ||
+    allText.includes('contractor only')
+  ) {
+    return 'explicit_restricted';
+  }
+
+  // classifyRemoteEligibility() would default to 'Worldwide' here. This
+  // function reports the honest state instead: nothing in the listing
+  // text matched any known pattern.
+  return 'unknown';
+}
+
 // Calculate Quality Score (0-100)
 export function computeQualityScore(payload: RawJobPayload): number {
   let score = 55;
@@ -149,6 +229,10 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
   const urlHash = createContentHash(cleanUrl);
   const contentHash = createContentHash(`${raw.company}:${raw.title}:${raw.description.slice(0, 300)}`);
   const { remoteType, eligibleCountries } = classifyRemoteEligibility(raw.locationString, raw.tags);
+  // P1 candidate attribute — computed alongside remoteType but does not
+  // feed into it or read its output; see classifyExplicitRemoteScope()'s
+  // own header for why this must stay a separate computation.
+  const explicitRemoteScope = classifyExplicitRemoteScope(raw.locationString, raw.tags);
 
   const empType: EmploymentType =
     raw.jobType.toLowerCase().includes('contract') || raw.title.toLowerCase().includes('contract')
@@ -193,6 +277,7 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     descriptionCompleteness: (raw.description || '').length > 800 ? 'high' : (raw.description || '').length > 300 ? 'medium' : 'low',
     salaryQuality: raw.salaryMin && raw.salaryMin > 0 ? 'verified' : raw.salaryString ? 'estimated' : 'unspecified',
     remotePolicyConfidence: remoteType === 'Worldwide' || eligibleCountries.length > 0 ? 'high' : 'medium',
+    explicitRemoteScope,
     status: status,
     isActive: status === 'active',
     postedAt: raw.publicationDate,

@@ -127,6 +127,17 @@ export async function POST(req: NextRequest) {
       },
       coverLetter: appKit.coverLetter,
       resumeTweaks: appKit.resumeTweaks,
+      // P1 (Job-Quality Intelligence) candidate observable attributes,
+      // frozen at decision time per the approved P1 scoping document —
+      // these do not feed matching/scoring/eligibility, they are captured
+      // purely so a later, separate analysis can check whether they
+      // correlate with downstream outcomes. See
+      // src/lib/ingestion/pipeline.ts for how each is computed.
+      salaryDisclosed: opp.salaryQuality !== 'unspecified',
+      postingAgeDaysAtDecision: Math.floor(
+        (Date.now() - new Date(opp.postedAt).getTime()) / (1000 * 60 * 60 * 24)
+      ),
+      remoteScopeExplicit: opp.explicitRemoteScope ?? 'unknown',
     };
     matchResultForClient = matchResult;
   }

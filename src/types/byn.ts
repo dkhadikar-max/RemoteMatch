@@ -190,6 +190,14 @@ export interface CanonicalOpportunity {
   descriptionCompleteness?: 'high' | 'medium' | 'low';
   salaryQuality?: 'verified' | 'estimated' | 'unspecified';
   remotePolicyConfidence?: 'high' | 'medium' | 'low';
+  /** P1 (Job-Quality Intelligence) candidate observable attribute — see
+   *  classifyExplicitRemoteScope() in src/lib/ingestion/pipeline.ts.
+   *  Distinct from remoteType/eligibleCountries above (which are used by
+   *  matching/eligibility, a frozen contract): this only records whether
+   *  the raw listing text stated a remote scope at all. 'unknown' means
+   *  no location information was found — never conflated with a real
+   *  value. */
+  explicitRemoteScope?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
   status: 'active' | 'expired' | 'draft';
   isActive?: boolean;
   postedAt: string;
@@ -273,6 +281,13 @@ export interface DecisionSnapshot {
     status: 'matched' | 'partial' | 'missing';
   }>;
   scoreBreakdown?: Record<string, number | string>;
+  /** P1 (Job-Quality Intelligence) candidate observable attributes, frozen
+   *  at decision time. See the P1 scoping document — these are inputs to
+   *  a separate, later outcome-correlation analysis, not to matching or
+   *  scoring. */
+  salaryDisclosed?: boolean;
+  postingAgeDaysAtDecision?: number;
+  remoteScopeExplicit?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
 }
 
 export interface ApplicationRecord {
