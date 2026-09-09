@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
+import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
 import { UpgradeModal, UpgradeReason } from '@/components/premium/upgrade-modal';
@@ -146,7 +147,13 @@ export default function FeedPage() {
   };
 
   useEffect(() => {
-    refreshOpportunities();
+    // Decision 7a: onboarding is DB-authoritative; refill the client-local
+    // profile fixture from the server before the feed reads it, so a fresh
+    // device / cleared localStorage shows the real profile.
+    (async () => {
+      await hydrateLocalProfileFromServer();
+      await refreshOpportunities();
+    })();
   }, []);
 
   const filteredOpportunities = useMemo(() => {

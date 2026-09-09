@@ -1,30 +1,23 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { Send, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { requestSignInCode } from '@/lib/auth/auth-flow';
+import { ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { startPasswordlessSignup } from '@/lib/auth/auth-flow';
 import { VerifyCode } from '@/components/auth/VerifyCode';
 
-function LoginContent() {
-  const searchParams = useSearchParams();
-  const verifiedParam = searchParams?.get('verified');
-
+export default function SignupPage() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [pending, setPending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
-    verifiedParam === 'error'
-      ? { type: 'error', text: "That link didn’t work — it may have expired or already been used. Request a code below." }
-      : null,
-  );
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setPending(true);
     setMessage(null);
-    const result = await requestSignInCode(email);
+    const result = await startPasswordlessSignup(name, email);
     setPending(false);
     if (result.success) {
       setSentTo(email);
@@ -38,6 +31,7 @@ function LoginContent() {
       <VerifyCode
         email={sentTo}
         onChangeEmail={() => {
+          // Keep the name; just let them fix the address.
           setSentTo(null);
           setMessage(null);
         }}
@@ -52,14 +46,26 @@ function LoginContent() {
           <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
             <ShieldCheck size={20} />
           </div>
-          <h1 className="text-xl font-bold text-[var(--ink)]">Sign in to RemoteMatch</h1>
+          <h1 className="text-xl font-bold text-[var(--ink)]">Create your account</h1>
           <p className="text-xs text-[var(--muted)]">
-            RemoteMatch is passwordless — enter your email and we&apos;ll send a one-time code.
+            No password. We&apos;ll email you a code, then you set up your profile.
           </p>
         </div>
 
         <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
           <form onSubmit={handleSubmit} className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                className="soft-input py-2 px-3 text-xs"
+                autoComplete="name"
+              />
+            </div>
             <div>
               <label className="text-xs font-medium text-[var(--ink)] block mb-1">Email</label>
               <input
@@ -86,41 +92,22 @@ function LoginContent() {
 
             <button
               type="submit"
-              disabled={pending || !email}
+              disabled={pending || !name.trim() || !email}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
             >
-              <Send size={13} />
-              <span>{pending ? 'Sending…' : 'Email me a code'}</span>
+              <span>{pending ? 'Sending…' : 'Continue'}</span>
+              <ArrowRight size={13} />
             </button>
           </form>
 
           <p className="text-center text-xs text-[var(--muted)]">
-            New here?{' '}
-            <Link href="/signup" className="font-semibold text-[var(--red)] hover:underline">
-              Create an account
+            Already have an account?{' '}
+            <Link href="/login" className="font-semibold text-[var(--red)] hover:underline">
+              Sign in
             </Link>
           </p>
         </div>
-
-        <p className="text-center text-[11px] text-[var(--muted)] leading-relaxed">
-          Used a password before? Those are retired — the code above works for your existing
-          account and verifies your email at the same time.
-        </p>
       </div>
     </div>
-  );
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex-1 flex items-center justify-center p-12">
-          <div className="size-6 animate-spin rounded-full border-2 border-[var(--red)] border-t-transparent" />
-        </div>
-      }
-    >
-      <LoginContent />
-    </Suspense>
   );
 }

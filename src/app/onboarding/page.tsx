@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -21,6 +21,12 @@ import { parseResumeWithGemini } from '@/lib/ai/resume';
 import { analyzeResumeWithAI } from '@/lib/ai/resume-intelligence';
 import { ResumeIntelligenceDashboard } from '@/components/onboarding/resume-intelligence-dashboard';
 import { EmploymentType, ProfileStrengthAnalysis, AIUncertaintyItem } from '@/types/byn';
+import {
+  OnboardingPayload,
+  validateOnboardingPayload,
+  YearsOfExperience,
+  WorkPreference,
+} from '@/lib/onboarding/contract';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -78,6 +84,49 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
 
   // Resume Intelligence Analysis State
   const [intelligenceAnalysis, setIntelligenceAnalysis] = useState<ProfileStrengthAnalysis | null>(null);
+
+  // AFC: onboarding is persisted to the DB (complete_onboarding RPC) before the
+  // feed is reachable. These track that final submit.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Prefill from the server for a returning, not-yet-onboarded user (e.g. they
+  // started onboarding, closed the tab, came back). No-op for a brand-new user.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/onboarding', { cache: 'no-store' });
+        if (!res.ok) return;
+        const d = await res.json();
+        if (cancelled) return;
+        if (d.fullName) setFullName(d.fullName);
+        if (d.headline) setHeadline(d.headline);
+        if (typeof d.rawResumeText === 'string' && d.rawResumeText) setResumeText(d.rawResumeText);
+        if (Array.isArray(d.employmentTypes) && d.employmentTypes.length) setEmploymentTypes(d.employmentTypes);
+        if (Array.isArray(d.targetRoles) && d.targetRoles.length) setTargetRoles(d.targetRoles);
+        if (Array.isArray(d.skills) && d.skills.length) {
+          setSkills(d.skills.map((s: { name: string }) => s.name));
+        }
+        if (['0-1', '2-3', '4-6', '7-10', '10+'].includes(d.yearsOfExperience)) {
+          setYearsOfExperience(d.yearsOfExperience);
+        }
+        if (['worldwide', 'my_country', 'selected_countries'].includes(d.workPreference)) {
+          setWorkPreference(d.workPreference);
+        }
+        if (d.currentCountry) setCurrentCountry(d.currentCountry);
+        if (d.currentTimezone) setCurrentTimezone(d.currentTimezone);
+        if (Array.isArray(d.willingTimezones) && d.willingTimezones.length) {
+          setWillingTimezones(d.willingTimezones);
+        }
+      } catch {
+        /* best-effort prefill */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleEmploymentType = (type: EmploymentType) => {
     if (employmentTypes.includes(type)) {
@@ -160,9 +209,57 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
     }
   };
 
-  // Save everything and redirect to Feed
-  const handleFinalFinish = (improvedScore?: number) => {
+  // Persist onboarding to the DB (server-authoritative), then redirect to Feed.
+  // The localStore write is a client echo so the feed (decision 7a — still
+  // localStore-backed) reflects the new profile immediately.
+  const handleFinalFinish = async (improvedScore?: number) => {
     const finalScore = improvedScore || intelligenceAnalysis?.overallScore || 78;
+
+    const payload: OnboardingPayload = {
+      fullName,
+      headline,
+      employmentTypes,
+      targetRoles,
+      yearsOfExperience: yearsOfExperience as YearsOfExperience,
+      preferredCurrency: 'USD',
+      skills: skills.map((s, idx) => ({ name: s, isPrimary: idx < 4 })),
+      workPreference: workPreference as WorkPreference,
+      currentCountry,
+      currentTimezone,
+      allowedCountries: workPreference === 'worldwide' ? ['Worldwide'] : [currentCountry],
+      willingTimezones,
+      rawResumeText: resumeText,
+    };
+
+    const clientErrors = validateOnboardingPayload(payload);
+    if (clientErrors.length > 0) {
+      setSubmitError(clientErrors[0].message);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch('/api/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as Record<string, unknown>));
+        const fieldMsg = Array.isArray((body as { fields?: { message?: string }[] }).fields)
+          ? (body as { fields: { message?: string }[] }).fields[0]?.message
+          : undefined;
+        setSubmitError(fieldMsg || (body as { error?: string }).error || 'Could not save your profile. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+    } catch {
+      setSubmitError('Could not reach the server. Please try again.');
+      setIsSubmitting(false);
+      return;
+    }
+
     localStore.updateProfile({
       fullName,
       headline,
@@ -170,7 +267,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
       profileStrength: finalScore,
       intent: {
         id: 'intent-user',
-        profileId: 'demo-user-1',
+        profileId: localStore.getProfile().id,
         employmentTypes,
         targetRoles,
         yearsOfExperience,
@@ -182,7 +279,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
         const hasEvidence = resumeText.toLowerCase().includes(s.toLowerCase());
         return {
           id: `s-${idx}`,
-          profileId: 'demo-user-1',
+          profileId: localStore.getProfile().id,
           skillName: s,
           yearsUsed: 3,
           isPrimary: idx < 4,
@@ -191,7 +288,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
       }),
       location: {
         id: 'loc-user',
-        profileId: 'demo-user-1',
+        profileId: localStore.getProfile().id,
         currentCountry,
         currentTimezone,
         workPreference,
@@ -270,6 +367,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
               analysis={intelligenceAnalysis}
               onResolveUncertainty={handleResolveUncertainty}
               onContinue={handleFinalFinish}
+              isSubmitting={isSubmitting}
+              submitError={submitError}
             />
           </div>
         ) : (

@@ -3,119 +3,109 @@
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 /**
- * Replaces src/lib/auth/link-identity.ts entirely. There is no anonymous
- * session to link from anymore — every identity starts from a real sign-up.
- * Three flows, kept structurally separate:
+ * Supabase-native passwordless EMAIL OTP. Supabase Auth remains the identity
+ * and session system — this is the OTP grant, not the password grant (which
+ * was removed in the Auth Flow Change — see docs/auth-flow-change-plan.md and
+ * the OTP-code amendment).
  *
- *   1. SIGN-UP (signUpWithPassword) — creates a brand-new auth.users row
- *      via supabase.auth.signUp(). Email confirmation is required before
- *      the account is treated as active anywhere in the app (enforced
- *      server-side in getAuthenticatedUser() and in middleware, not just
- *      by this function's own behavior).
+ * PRIMARY PATH = a one-time CODE the user reads from the email and types in:
  *
- *   2. SIGN-IN (signInWithPassword / requestMagicLink) — for a returning,
- *      already-verified user. Never creates an account.
+ *   1. startPasswordlessSignup(name, email)  — /signup — MAY create an account
+ *        signInWithOtp({ email, options: { shouldCreateUser: true,
+ *                                          data: { full_name } } })
+ *      No emailRedirectTo. The 014 trigger copies full_name -> profiles.full_name.
  *
- *   3. MAGIC LINK (requestMagicLink) — a single call that Supabase itself
- *      treats as sign-up-or-sign-in depending on whether the email already
- *      has an account (shouldCreateUser: true). The UI still labels the
- *      button contextually ("Sign up" vs "Sign in" tab), but the
- *      underlying call is intentionally the same either way — this is
- *      Supabase's own documented behavior for OTP, not a shortcut taken
- *      here.
+ *   2. requestSignInCode(email)  — /login — EXISTING account only
+ *        signInWithOtp({ email, options: { shouldCreateUser: false } })
+ *      A never-seen email on the login surface gets an error, not an account.
+ *
+ *   3. verifyEmailOtp(email, code)  — the VerifyCode screen
+ *        verifyOtp({ email, token: code, type: 'email' })
+ *      The email here is the one the user just entered on the previous screen —
+ *      it is NOT an identity taken from a URL or a token payload.
+ *
+ * A successful verifyOtp establishes the session in the browser; the caller
+ * then navigates to /feed and middleware routes by onboarding state.
+ *
+ * The Supabase email template must deliver `{{ .Token }}`. It MAY also carry a
+ * link to /auth/confirm — that route is kept as a compatibility fallback
+ * (token_hash / code) but the app's primary path is the entered code.
  */
 
 export interface AuthFlowResult {
   success: boolean;
-  /** True when the account requires clicking the emailed confirmation/magic
-   *  link before it's usable — no session exists yet at this point. */
-  needsConfirmation?: boolean;
+  /** A code was emailed; no session exists yet. */
+  codeSent?: boolean;
   /** User-safe message — never the raw Supabase error text. */
   error?: string;
 }
 
-function confirmRedirectUrl(): string {
-  return `${window.location.origin}/auth/confirm`;
-}
-
-/** SIGN-UP — brand-new account. Requires email confirmation before use. */
-export async function signUpWithPassword(email: string, password: string): Promise<AuthFlowResult> {
+/** SIGN-UP — brand-new account. Name carried in user metadata for the trigger. */
+export async function startPasswordlessSignup(name: string, email: string): Promise<AuthFlowResult> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return { success: false, error: 'Service not configured.' };
 
-  const { data, error } = await supabase.auth.signUp({
+  const fullName = name.trim();
+  if (!fullName) return { success: false, error: 'Please enter your name.' };
+
+  const { error } = await supabase.auth.signInWithOtp({
     email,
-    password,
-    options: { emailRedirectTo: confirmRedirectUrl() },
+    options: {
+      shouldCreateUser: true,
+      data: { full_name: fullName },
+    },
   });
 
-  if (error) {
-    return {
-      success: false,
-      error: "Couldn't create that account. The email may already be in use, or something went wrong.",
-    };
-  }
-
-  // Supabase returns a user with no session when confirmation is required
-  // (the normal case here — Confirm Email is on). If a session IS present,
-  // confirmation is off project-wide; either way, the account is not
-  // considered active until email_confirmed_at is set, which only
-  // getAuthenticatedUser()/middleware ever decide, not this return value.
-  return { success: true, needsConfirmation: !data.session };
+  if (error) return { success: false, error: friendlySendError(error.message) };
+  return { success: true, codeSent: true };
 }
 
-/** SIGN-IN — returning, already-verified user. Never creates an account. */
-export async function signInWithPassword(email: string, password: string): Promise<AuthFlowResult> {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) return { success: false, error: 'Service not configured.' };
-
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    return { success: false, error: 'Incorrect email or password.' };
-  }
-  return { success: true };
-}
-
-/**
- * MAGIC LINK — works for both a brand-new email (creates + sends a
- * confirmation-style sign-up link) and an existing one (sends a sign-in
- * link). Supabase's own `shouldCreateUser` option is what implements this
- * dual behavior; this function does not branch on it itself.
- */
-export async function requestMagicLink(email: string): Promise<AuthFlowResult> {
+/** SIGN-IN — EXISTING account only. `shouldCreateUser: false` so the login
+ *  surface never initiates account creation; a never-used email errors here
+ *  and the person is pointed at /signup. */
+export async function requestSignInCode(email: string): Promise<AuthFlowResult> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return { success: false, error: 'Service not configured.' };
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: confirmRedirectUrl(), shouldCreateUser: true },
+    options: { shouldCreateUser: false },
   });
 
-  if (error) {
-    return { success: false, error: "Couldn't send the link. Please check the address and try again." };
-  }
-  return { success: true, needsConfirmation: true };
+  if (error) return { success: false, error: friendlySendError(error.message) };
+  return { success: true, codeSent: true };
 }
 
 /**
- * Re-sends the signup confirmation email — distinct from requestMagicLink:
- * this re-triggers the same "verify your new account" email signUp() sent,
- * not a passwordless sign-in link. Kept separate so the two concepts
- * (mandatory email verification vs. optional passwordless sign-in for an
- * already-verified account) never get conflated in the UI layer either.
+ * Re-send a fresh code from the VerifyCode screen. Never creates — by the time
+ * this runs the account already exists (the first request created it on
+ * /signup, or it already existed on /login). Same call for both flows.
  */
-export async function resendVerificationEmail(email: string): Promise<AuthFlowResult> {
+export async function resendCode(email: string): Promise<AuthFlowResult> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return { success: false, error: 'Service not configured.' };
 
-  const { error } = await supabase.auth.resend({
-    type: 'signup',
+  const { error } = await supabase.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: confirmRedirectUrl() },
+    options: { shouldCreateUser: false },
   });
 
-  if (error) {
-    return { success: false, error: "Couldn't resend the verification email. Please try again shortly." };
+  if (error) return { success: false, error: friendlySendError(error.message) };
+  return { success: true, codeSent: true };
+}
+
+/** Verify the emailed code. The email is supplied by the current sign-in
+ *  flow (the address the user just typed), never from a URL/token. */
+export async function verifyEmailOtp(email: string, code: string): Promise<AuthFlowResult> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) return { success: false, error: 'Service not configured.' };
+
+  const token = code.replace(/\s+/g, '');
+  if (!token) return { success: false, error: 'Enter the code from your email.' };
+
+  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+  if (error || !data.session) {
+    return { success: false, error: friendlyVerifyError(error?.message ?? '') };
   }
   return { success: true };
 }
@@ -124,4 +114,26 @@ export async function signOutCurrentSession(): Promise<void> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) return;
   await supabase.auth.signOut();
+}
+
+function friendlySendError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('rate') || m.includes('too many') || m.includes('limit')) {
+    return 'Too many attempts — wait a minute and try again.';
+  }
+  if (m.includes('invalid') && m.includes('email')) {
+    return 'That email address doesn’t look valid.';
+  }
+  // shouldCreateUser:false on /login for an address with no account
+  if (m.includes('signups not allowed') || m.includes('not found') || m.includes('otp_disabled')) {
+    return 'No account for that email — create one to get started.';
+  }
+  return 'Couldn’t send the code — check the address and try again.';
+}
+
+function friendlyVerifyError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (m.includes('expired')) return 'That code has expired — request a new one.';
+  if (m.includes('rate') || m.includes('too many')) return 'Too many attempts — wait a minute and try again.';
+  return 'That code isn’t right — check it and try again, or request a new one.';
 }

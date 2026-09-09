@@ -9,22 +9,23 @@ const isSupabaseConfigured = Boolean(
   supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('https://') && supabaseAnonKey.length > 20
 );
 
-// Exactly the private/product surface named in the spec. Everything else —
-// '/', '/remote-jobs/*', '/guide/*', and any other route — stays public,
-// including this list's absence covering them (an allowlist of what's
-// PROTECTED, not a denylist of what's public, so a new public page never
-// needs a middleware change to stay reachable).
-const PROTECTED_PREFIXES = ['/onboarding', '/feed', '/match', '/tracker', '/settings'];
+// An allowlist of what is PROTECTED (not a denylist of what is public), so a new
+// public page never needs a middleware change to stay reachable.
+//
+//   ONBOARDING_PREFIXES — verified account required, onboarding NOT required
+//                          (this is where an un-onboarded user is sent).
+//   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
+const ONBOARDING_PREFIXES = ['/onboarding'];
+const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings'];
 
-function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function matchesAny(pathname: string, prefixes: string[]): boolean {
+  return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // --- Frozen SEO behavior: unchanged from the pre-remediation baseline ---
-  // Handle permanently removed jobs with HTTP 410 Gone
   if (pathname.startsWith('/remote-jobs/view/')) {
     const jobId = pathname.replace('/remote-jobs/view/', '').split('/')[0];
     const job = await getJobById(jobId);
@@ -42,11 +43,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  const inOnboarding = matchesAny(pathname, ONBOARDING_PREFIXES);
+  const inProduct = matchesAny(pathname, PRODUCT_PREFIXES);
+
   // --- Refresh the Supabase auth session cookie on every request ---
-  // Required by @supabase/ssr so a JWT nearing expiry is rotated before an
-  // API route or Server Component reads it.
   let response = NextResponse.next({ request });
   let verified = false;
+  let userId: string | null = null;
 
   if (isSupabaseConfigured) {
     const supabase = createServerClient(supabaseUrl!, supabaseAnonKey!, {
@@ -66,15 +69,35 @@ export async function middleware(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
     verified = Boolean(user && isAccountVerified(user));
+    userId = user?.id ?? null;
+
+    // --- Onboarding-state gate (UX only — the RPC + route auth are the real
+    //     enforcement; this just avoids a broken/empty screen). One indexed
+    //     read, only when it actually affects routing. ---
+    if (verified && userId && (inProduct || inOnboarding)) {
+      let onboarded = false;
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('onboarding_completed_at')
+          .eq('id', userId)
+          .single();
+        onboarded = Boolean(profile?.onboarding_completed_at);
+      } catch {
+        onboarded = false;
+      }
+
+      if (inProduct && !onboarded) {
+        return NextResponse.redirect(new URL('/onboarding', request.url));
+      }
+      if (inOnboarding && onboarded) {
+        return NextResponse.redirect(new URL('/feed', request.url));
+      }
+    }
   }
 
-  // --- Private-route boundary ---
-  // Middleware alone is not sufficient protection (a direct API request
-  // bypasses it entirely) — getAuthenticatedUser() enforces the identical
-  // invariant server-side for every mutation. This redirect exists purely
-  // for UX: an unverified visitor gets sent to sign in instead of seeing a
-  // broken/empty page.
-  if (isProtectedPath(pathname) && !verified) {
+  // --- Private-route boundary (verified) ---
+  if ((inProduct || inOnboarding) && !verified) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);

@@ -25,7 +25,10 @@ interface ResumeIntelligenceDashboardProps {
     resolution: 'added' | 'not_relevant' | 'no',
     whereUsed?: string
   ) => void;
-  onContinue: (improvedScore?: number) => void;
+  onContinue: (improvedScore?: number) => void | Promise<void>;
+  /** AFC: the "Enter feed" step now persists onboarding to the DB first. */
+  isSubmitting?: boolean;
+  submitError?: string | null;
 }
 
 interface ActionableImprovement {
@@ -43,6 +46,8 @@ export function ResumeIntelligenceDashboard({
   analysis,
   onResolveUncertainty,
   onContinue,
+  isSubmitting = false,
+  submitError = null,
 }: ResumeIntelligenceDashboardProps) {
   const [currentScore, setCurrentScore] = useState(analysis.overallScore);
   const [uncertainties, setUncertainties] = useState<AIUncertaintyItem[]>(analysis.uncertainties);
@@ -454,14 +459,20 @@ export function ResumeIntelligenceDashboard({
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onContinue(currentScore)}
-          className="soft-button primary flex items-center justify-center gap-2 whitespace-nowrap self-stretch sm:self-auto"
-        >
-          <span>Enter Remote Job Feed</span>
-          <ArrowRight size={15} />
-        </button>
+        <div className="flex flex-col items-stretch gap-1.5 self-stretch sm:self-auto">
+          <button
+            type="button"
+            onClick={() => onContinue(currentScore)}
+            disabled={isSubmitting}
+            className="soft-button primary flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-50"
+          >
+            <span>{isSubmitting ? 'Saving…' : 'Enter Remote Job Feed'}</span>
+            <ArrowRight size={15} />
+          </button>
+          {submitError && (
+            <p className="text-[11px] font-medium text-[var(--red)] text-center max-w-[240px]">{submitError}</p>
+          )}
+        </div>
       </div>
     </div>
   );
