@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { KeyRound, Send, CheckCircle2 } from 'lucide-react';
 import { verifyEmailOtp, resendCode } from '@/lib/auth/auth-flow';
 
@@ -26,7 +25,6 @@ export function VerifyCode({
   email: string;
   onChangeEmail: () => void;
 }) {
-  const router = useRouter();
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const [resendPending, setResendPending] = useState(false);
@@ -38,8 +36,14 @@ export function VerifyCode({
     setMessage(null);
     const result = await verifyEmailOtp(email, code);
     if (result.success) {
-      // Session is set. Middleware decides /onboarding vs /feed from here.
-      router.push('/feed');
+      // Full-document navigation, NOT router.push: verifyOtp has written the
+      // auth cookie synchronously by the time it resolves, and a top-level
+      // request is guaranteed to carry it — so middleware sees the verified
+      // session on the first hit and routes to /onboarding or /feed. A
+      // client-side push can out-run cookie propagation to the middleware
+      // RSC fetch and briefly bounce the just-verified user through /login.
+      // `replace` so Back doesn't return to this now-spent code screen.
+      window.location.replace('/feed');
       return;
     }
     setPending(false);

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { PersonProfile } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 
 function SettingsContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const initialTab = searchParams?.get('tab') || 'profile';
 
@@ -89,7 +88,12 @@ function SettingsContent() {
   const handleSignOut = async () => {
     setIsSigningOut(true);
     await signOutCurrentSession();
-    router.push('/login');
+    // Full-document navigation, NOT router.push: signOut has cleared the auth
+    // cookie by the time it resolves; a hard load to /login drops all client
+    // state (Router Cache, in-memory profile) so nothing keeps rendering as
+    // signed-in, and any later hit on a protected route is a fresh request
+    // that middleware bounces to /login. `replace` so Back can't re-enter.
+    window.location.replace('/login');
   };
 
   useEffect(() => {
@@ -199,6 +203,30 @@ function SettingsContent() {
       setIsUpgrading(false);
     }
   };
+
+  // One definition, rendered on BOTH the Profile tab (the default landing tab,
+  // so Sign out is one click from the nav's "Profile" link) and the Settings
+  // tab. Passwordless accounts have no other way to end a session.
+  const accountCard = (
+    <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
+      <h2 className="text-lg font-bold text-[var(--ink)] flex items-center gap-2">
+        <ShieldCheck size={18} className="text-[#059669]" />
+        Account
+      </h2>
+      <p className="text-xs text-[var(--muted)]">
+        Signed in as <span className="font-semibold text-[var(--ink)]">{authEmail}</span>.
+      </p>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        disabled={isSigningOut}
+        className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] text-xs font-semibold px-3.5 py-2 transition-colors min-h-[44px] disabled:opacity-50"
+      >
+        <LogOut size={13} />
+        <span>{isSigningOut ? 'Signing out…' : 'Sign out'}</span>
+      </button>
+    </div>
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -525,6 +553,7 @@ function SettingsContent() {
                 </div>
               </div>
 
+              {accountCard}
             </>
           )}
 
@@ -699,24 +728,7 @@ function SettingsContent() {
                   verified-account gate (middleware + getAuthenticatedUser) —
                   there is no "secure your account" prompt anymore because
                   there is no lesser-verified state left to prompt about. */}
-              <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
-                <h2 className="text-lg font-bold text-[var(--ink)] flex items-center gap-2">
-                  <ShieldCheck size={18} className="text-[#059669]" />
-                  Account
-                </h2>
-                <p className="text-xs text-[var(--muted)]">
-                  Signed in as <span className="font-semibold text-[var(--ink)]">{authEmail}</span>.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  disabled={isSigningOut}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] text-xs font-semibold px-3.5 py-2 transition-colors min-h-[44px]"
-                >
-                  <LogOut size={13} />
-                  <span>{isSigningOut ? 'Signing out…' : 'Sign out'}</span>
-                </button>
-              </div>
+              {accountCard}
 
               <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
                 <h2 className="text-lg font-bold text-[var(--ink)]">Account Preferences</h2>

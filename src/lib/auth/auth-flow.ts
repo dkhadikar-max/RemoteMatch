@@ -40,6 +40,10 @@ export interface AuthFlowResult {
   error?: string;
 }
 
+/** The shape we read off a Supabase AuthError without importing the class.
+ *  `code` is present on AuthApiError (the HTTP-boundary errors we care about). */
+type SupabaseAuthErrorLike = { message?: string; code?: string; status?: number } | null | undefined;
+
 /** SIGN-UP — brand-new account. Name carried in user metadata for the trigger. */
 export async function startPasswordlessSignup(name: string, email: string): Promise<AuthFlowResult> {
   const supabase = getSupabaseBrowserClient();
@@ -56,7 +60,7 @@ export async function startPasswordlessSignup(name: string, email: string): Prom
     },
   });
 
-  if (error) return { success: false, error: friendlySendError(error.message) };
+  if (error) return { success: false, error: friendlySendError(error) };
   return { success: true, codeSent: true };
 }
 
@@ -72,7 +76,7 @@ export async function requestSignInCode(email: string): Promise<AuthFlowResult> 
     options: { shouldCreateUser: false },
   });
 
-  if (error) return { success: false, error: friendlySendError(error.message) };
+  if (error) return { success: false, error: friendlySendError(error) };
   return { success: true, codeSent: true };
 }
 
@@ -90,7 +94,7 @@ export async function resendCode(email: string): Promise<AuthFlowResult> {
     options: { shouldCreateUser: false },
   });
 
-  if (error) return { success: false, error: friendlySendError(error.message) };
+  if (error) return { success: false, error: friendlySendError(error) };
   return { success: true, codeSent: true };
 }
 
@@ -102,10 +106,17 @@ export async function verifyEmailOtp(email: string, code: string): Promise<AuthF
 
   const token = code.replace(/\s+/g, '');
   if (!token) return { success: false, error: 'Enter the code from your email.' };
+  // A malformed entry (letters, symbols, a pasted URL, a truncated paste) is
+  // unambiguously a wrong code — say so without a round-trip. Only a
+  // well-formed digit string is worth sending to Supabase, whose rejection
+  // then genuinely means wrong-or-expired (see friendlyVerifyError).
+  if (!/^\d{4,12}$/.test(token)) {
+    return { success: false, error: 'That code should be digits only — check what you pasted from the email.' };
+  }
 
   const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
   if (error || !data.session) {
-    return { success: false, error: friendlyVerifyError(error?.message ?? '') };
+    return { success: false, error: friendlyVerifyError(error) };
   }
   return { success: true };
 }
@@ -116,24 +127,65 @@ export async function signOutCurrentSession(): Promise<void> {
   await supabase.auth.signOut();
 }
 
-function friendlySendError(raw: string): string {
-  const m = raw.toLowerCase();
-  if (m.includes('rate') || m.includes('too many') || m.includes('limit')) {
-    return 'Too many attempts — wait a minute and try again.';
-  }
-  if (m.includes('invalid') && m.includes('email')) {
-    return 'That email address doesn’t look valid.';
+/**
+ * Map a `signInWithOtp` failure to user-safe copy. Branch on `error.code`
+ * first (stable across Supabase message wording), message text only as a
+ * fallback. Verified error shapes (prod, 2026-09):
+ *   - cooldown : status 429, code 'over_email_send_rate_limit',
+ *                "For security purposes, you can only request this after N seconds."
+ *   - unknown email on /login (shouldCreateUser:false):
+ *                status 422, code 'otp_disabled', "Signups not allowed for otp"
+ */
+function friendlySendError(error: SupabaseAuthErrorLike): string {
+  const code = error?.code ?? '';
+  const m = (error?.message ?? '').toLowerCase();
+
+  if (
+    code === 'over_email_send_rate_limit' ||
+    code === 'over_request_rate_limit' ||
+    m.includes('you can only request this') ||
+    m.includes('rate limit')
+  ) {
+    return 'You’re requesting codes too quickly — wait a minute, then request another.';
   }
   // shouldCreateUser:false on /login for an address with no account
-  if (m.includes('signups not allowed') || m.includes('not found') || m.includes('otp_disabled')) {
-    return 'No account for that email — create one to get started.';
+  if (
+    code === 'otp_disabled' ||
+    m.includes('signups not allowed') ||
+    m.includes('not found')
+  ) {
+    return 'No account found for that email — create one to get started.';
+  }
+  if (code === 'validation_failed' || (m.includes('invalid') && m.includes('email'))) {
+    return 'That email address doesn’t look valid.';
   }
   return 'Couldn’t send the code — check the address and try again.';
 }
 
-function friendlyVerifyError(raw: string): string {
-  const m = raw.toLowerCase();
-  if (m.includes('expired')) return 'That code has expired — request a new one.';
-  if (m.includes('rate') || m.includes('too many')) return 'Too many attempts — wait a minute and try again.';
-  return 'That code isn’t right — check it and try again, or request a new one.';
+/**
+ * Map a `verifyOtp` failure to user-safe copy.
+ *
+ * NOTE: Supabase returns the SAME error for a wrong code and an expired one —
+ * status 403, code 'otp_expired', "Token has expired or is invalid" — on
+ * purpose, so a caller can't use the response as a code-guessing oracle.
+ * There is no server signal that separates the two, so one honest message
+ * covers both and always names the recovery action. A genuinely malformed
+ * entry is caught client-side in verifyEmailOtp before we ever get here.
+ */
+function friendlyVerifyError(error: SupabaseAuthErrorLike): string {
+  const code = error?.code ?? '';
+  const m = (error?.message ?? '').toLowerCase();
+
+  if (
+    code === 'over_email_send_rate_limit' ||
+    code === 'over_request_rate_limit' ||
+    m.includes('you can only request this') ||
+    m.includes('rate limit')
+  ) {
+    return 'Too many attempts — wait a minute, then request a new code.';
+  }
+  if (code === 'otp_expired' || m.includes('expired') || m.includes('invalid')) {
+    return 'That code didn’t work — it may be wrong or expired. Request a new one and try again.';
+  }
+  return 'That code didn’t work — request a new one and try again.';
 }

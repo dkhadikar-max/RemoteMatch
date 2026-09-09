@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -29,7 +28,6 @@ import {
 } from '@/lib/onboarding/contract';
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const [step, setStep] = useState(1);
 
   // Step 1: Intent
@@ -209,7 +207,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
     }
   };
 
-  // Persist onboarding to the DB (server-authoritative), then redirect to Feed.
+  // Persist onboarding to the DB (server-authoritative), then redirect to Feed
+  // with a full-document navigation (see the window.location.replace below).
   // The localStore write is a client echo so the feed (decision 7a — still
   // localStore-backed) reflects the new profile immediately.
   const handleFinalFinish = async (improvedScore?: number) => {
@@ -297,7 +296,13 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
       },
     });
 
-    router.push('/feed');
+    // Full-document navigation, NOT router.push: onboarding_completed_at is
+    // committed by the RPC above, but middleware's onboarding-state check for
+    // /feed reads it server-side on a fresh request. A client push can serve
+    // a stale Router Cache entry for /feed (cached while still un-onboarded,
+    // i.e. its own redirect back to /onboarding) and strand the user here.
+    // `replace` so Back doesn't return to the spent review screen.
+    window.location.replace('/feed');
   };
 
   const popularRoles = [

@@ -78,6 +78,39 @@ export async function newVerifiedSession(): Promise<TestSession> {
 }
 
 /**
+ * Middleware (src/middleware.ts) authenticates PAGE routes from the Supabase
+ * auth COOKIE, not the Authorization header (that is only read by /api/* via
+ * getAuthenticatedUser). To exercise the middleware onboarding-state routing
+ * from a test we therefore have to present the session the way @supabase/ssr
+ * writes it: a `sb-<ref>-auth-token` cookie whose value is
+ * `base64-<base64url(JSON.stringify(session))>`, chunked at 3180 chars.
+ * Mirrors @supabase/ssr createBrowserClient storage (cookieEncoding
+ * 'base64url', chunker.MAX_CHUNK_SIZE).
+ */
+export function sessionCookieHeader(session: {
+  access_token: string;
+  refresh_token: string;
+  expires_at?: number;
+  expires_in?: number;
+  token_type?: string;
+  user?: unknown;
+}): string {
+  const ref = new URL(SUPABASE_URL!).host.split('.')[0];
+  const name = `sb-${ref}-auth-token`;
+  const json = JSON.stringify(session);
+  const value = 'base64-' + Buffer.from(json, 'utf8').toString('base64url');
+
+  const MAX = 3180;
+  if (encodeURIComponent(value).length <= MAX) {
+    return `${name}=${value}`;
+  }
+  // base64url is ASCII, so a plain slice is a valid chunk boundary.
+  const chunks: string[] = [];
+  for (let i = 0; i < value.length; i += MAX) chunks.push(value.slice(i, i + MAX));
+  return chunks.map((c, i) => `${name}.${i}=${c}`).join('; ');
+}
+
+/**
  * There is deliberately NO helper here that produces "a valid access token
  * for an unconfirmed user" — verified empirically (see the account-linking
  * conversation history) that no such token is obtainable in practice:

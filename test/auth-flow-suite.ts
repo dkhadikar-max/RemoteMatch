@@ -14,7 +14,7 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { hasRequiredEnv, adminClient, anonKeyClient, uniqueEmail } from './helpers/verified-session';
+import { hasRequiredEnv, adminClient, anonKeyClient, uniqueEmail, sessionCookieHeader } from './helpers/verified-session';
 import { isAccountVerified } from '../src/lib/auth/get-authenticated-user';
 import type { User } from '@supabase/supabase-js';
 
@@ -72,7 +72,48 @@ async function run() {
   assert(!/type="password"/.test(signupPage) && !/type="password"/.test(loginPage), 'no password field on /signup or /login');
 
   const verifyCode = fs.readFileSync(path.resolve(__dirname, '../src/components/auth/VerifyCode.tsx'), 'utf8');
-  assert(/router\.push\('\/feed'\)/.test(verifyCode), 'VerifyCode navigates to /feed on success (middleware then routes by onboarding state)');
+  assert(
+    /window\.location\.replace\('\/feed'\)/.test(verifyCode) && !/router\.push\(/.test(verifyCode),
+    'VerifyCode navigates to /feed via a full-document load on success (no router.push race — A)',
+  );
+
+  // A/B — post-mutation navigation is a hard load, not a client push, so
+  // middleware always sees the fresh cookie / onboarding state on a top-level
+  // request and cannot transiently bounce a just-authenticated user to /login.
+  const onboardingPage = fs.readFileSync(path.resolve(__dirname, '../src/app/onboarding/page.tsx'), 'utf8');
+  assert(
+    /window\.location\.replace\('\/feed'\)/.test(onboardingPage) && !/router\.push\(/.test(onboardingPage),
+    'onboarding page navigates to /feed via a full-document load after a successful complete_onboarding (B)',
+  );
+
+  // C — an accessible Sign out control wired to signOutCurrentSession, with a
+  // hard load to /login so no client state keeps rendering as signed-in.
+  const settingsPage = fs.readFileSync(path.resolve(__dirname, '../src/app/settings/page.tsx'), 'utf8');
+  assert(/signOutCurrentSession\(\)/.test(settingsPage), 'settings calls signOutCurrentSession()');
+  assert(
+    /const accountCard =/.test(settingsPage) &&
+      (settingsPage.match(/\{accountCard\}/g) || []).length >= 2,
+    'settings renders the Sign out card on both the default Profile tab and the Settings tab (C)',
+  );
+  assert(
+    /handleSignOut[\s\S]*?window\.location\.replace\('\/login'\)/.test(settingsPage) && !/router\.push\(/.test(settingsPage),
+    'sign out does a full-document load to /login (C)',
+  );
+
+  // D — friendly copy branches on the Supabase error CODE (stable), and the
+  // resend-cooldown case is distinct from the wrong/expired-code case.
+  assert(
+    /over_email_send_rate_limit/.test(authFlow),
+    'auth-flow maps the cooldown code (over_email_send_rate_limit) to its own message (D)',
+  );
+  assert(
+    /otp_expired/.test(authFlow) && /wrong or expired/.test(authFlow),
+    'auth-flow: wrong vs expired collapse to one honest message (Supabase returns otp_expired for both) (D)',
+  );
+  assert(
+    /\/\^\\d\{4,12\}\$\//.test(authFlow),
+    'verifyEmailOtp rejects a malformed (non-digit) entry client-side before calling Supabase (D)',
+  );
 
   const confirmRoute = fs.readFileSync(path.resolve(__dirname, '../src/app/auth/confirm/route.ts'), 'utf8');
   assert(/verifyOtp\(\{\s*token_hash/.test(confirmRoute) && /exchangeCodeForSession\(code\)/.test(confirmRoute),
@@ -143,11 +184,15 @@ async function run() {
     for (const p of ['/feed', '/onboarding', '/tracker', '/settings', '/match/opp-curated-curated-001']) {
       assert(isRedirectTo(await fetch(`${BASE_URL}${p}`, { redirect: 'manual' }), '/login'), `no session: GET ${p} -> /login`);
     }
+    // API routes read the Bearer header (getAuthenticatedUser); PAGE routes are
+    // gated by middleware which reads the @supabase/ssr auth COOKIE — so page
+    // assertions must present the session as a cookie, not a header.
     const HA = { Authorization: `Bearer ${tokenA}`, 'Content-Type': 'application/json' };
+    const CA = { Cookie: sessionCookieHeader(okCode.data.session!) };
     const getA0 = await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HA })).json();
     assert(getA0.onboardingCompletedAt === null, 'new verified user: onboardingCompletedAt null');
-    assert(isRedirectTo(await fetch(`${BASE_URL}/feed`, { headers: HA, redirect: 'manual' }), '/onboarding'),
-      'new verified user: GET /feed -> /onboarding');
+    assert(isRedirectTo(await fetch(`${BASE_URL}/feed`, { headers: CA, redirect: 'manual' }), '/onboarding'),
+      'new verified user: GET /feed -> /onboarding (middleware, cookie session)');
 
     // incomplete submit
     console.log('\n4. INCOMPLETE ONBOARDING');
@@ -172,9 +217,9 @@ async function run() {
     const getA1 = await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HA })).json();
     assert(getA1.onboardingCompletedAt !== null && getA1.skills.length === 2 && getA1.workPreference === 'worldwide',
       '  ...intent / skills / location / name persisted');
-    assert((await fetch(`${BASE_URL}/feed`, { headers: HA, redirect: 'manual' })).status === 200, 'completed verified user: GET /feed -> 200');
-    assert(isRedirectTo(await fetch(`${BASE_URL}/onboarding`, { headers: HA, redirect: 'manual' }), '/feed'),
-      'completed verified user: GET /onboarding -> /feed');
+    assert((await fetch(`${BASE_URL}/feed`, { headers: CA, redirect: 'manual' })).status === 200, 'completed verified user: GET /feed -> 200 (middleware, cookie session)');
+    assert(isRedirectTo(await fetch(`${BASE_URL}/onboarding`, { headers: CA, redirect: 'manual' }), '/feed'),
+      'completed verified user: GET /onboarding -> /feed (middleware, cookie session)');
 
     // --- 7. /auth/confirm fallback intact ---
     console.log('\n7. /auth/confirm FALLBACK (unchanged)');
