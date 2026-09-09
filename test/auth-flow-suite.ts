@@ -222,6 +222,12 @@ async function run() {
     const CA = { Cookie: sessionCookieHeader(okCode.data.session!) };
     const getA0 = await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HA })).json();
     assert(getA0.onboardingCompletedAt === null, 'new verified user: onboardingCompletedAt null');
+    assert(
+      getA0.currentTimezone === '' && getA0.headline === '' && getA0.rawResumeText === '' &&
+        Array.isArray(getA0.employmentTypes) && getA0.employmentTypes.length === 0 &&
+        getA0.yearsOfExperience === null && getA0.willingTimezones.length === 0,
+      'new verified user: GET /api/onboarding prefill has no fabricated field values (E1)',
+    );
     assert(isRedirectTo(await fetch(`${BASE_URL}/feed`, { headers: CA, redirect: 'manual' }), '/onboarding'),
       'new verified user: GET /feed -> /onboarding (middleware, cookie session)');
 

@@ -50,7 +50,11 @@ export async function GET(req: NextRequest) {
     preferredCurrency: (intent?.preferred_currency as string | null) ?? 'USD',
     workPreference: (location?.work_preference as string | null) ?? null,
     currentCountry: (location?.current_country as string | null) ?? '',
-    currentTimezone: (location?.current_timezone as string | null) ?? 'UTC',
+    // Empty when there is no location row yet — a not-yet-chosen timezone must
+    // stay empty in the onboarding form, not be pre-seeded with 'UTC' (which
+    // the prefill effect would then treat as the user's answer). The RPC still
+    // applies its own 'UTC' fallback when a real submit omits it.
+    currentTimezone: (location?.current_timezone as string | null) ?? '',
     allowedCountries: (location?.allowed_countries as string[] | null) ?? [],
     willingTimezones: (location?.willing_timezones as string[] | null) ?? [],
     skills: (skills ?? []).map((s) => ({ name: s.skill_name as string, isPrimary: Boolean(s.is_primary) })),
