@@ -115,6 +115,37 @@ async function run() {
     'verifyEmailOtp rejects a malformed (non-digit) entry client-side before calling Supabase (D)',
   );
 
+  // E1 — onboarding is the authoritative DB write, so it must not ship
+  // fabricated field defaults that get persisted for a user who never chose
+  // them. Every required field starts empty/unset; workPreference:'worldwide'
+  // is the one intentional product default.
+  assert(
+    !/Alex Chen/.test(onboardingPage) && !/TechFlow Cloud/.test(onboardingPage) && !/PixelCraft Studio/.test(onboardingPage),
+    'onboarding page carries no sample-resume / demo-identity default text (E1)',
+  );
+  assert(
+    /useState<EmploymentType\[\]>\(\[\]\)/.test(onboardingPage) &&
+      /useState<string\[\]>\(\[\]\)/.test(onboardingPage) &&
+      /const \[resumeText, setResumeText\] = useState\(''\)/.test(onboardingPage) &&
+      /const \[headline, setHeadline\] = useState\(''\)/.test(onboardingPage) &&
+      /const \[currentCountry, setCurrentCountry\] = useState\(''\)/.test(onboardingPage) &&
+      /const \[currentTimezone, setCurrentTimezone\] = useState\(''\)/.test(onboardingPage),
+    'onboarding required fields (employmentTypes/targetRoles/skills/resume/headline/country/timezone) start empty (E1)',
+  );
+  assert(
+    /useState<YearsOfExperience \| ''>\(''\)/.test(onboardingPage),
+    "onboarding yearsOfExperience state is representable as unset ('') (E1)",
+  );
+  assert(
+    /willingTimezones, setWillingTimezones\] = useState<string\[\]>\(\[\]\)/.test(onboardingPage) &&
+      !/\['UTC', 'EST', 'PST'\]/.test(onboardingPage),
+    'onboarding overlap-band state starts empty — no phantom EST/PST that no button can clear (E1)',
+  );
+  assert(
+    /const canContinue =/.test(onboardingPage) && /disabled=\{!canContinue\}/.test(onboardingPage),
+    'onboarding gates each stage Continue on the required field being filled (E1)',
+  );
+
   const confirmRoute = fs.readFileSync(path.resolve(__dirname, '../src/app/auth/confirm/route.ts'), 'utf8');
   assert(/verifyOtp\(\{\s*token_hash/.test(confirmRoute) && /exchangeCodeForSession\(code\)/.test(confirmRoute),
     '/auth/confirm KEPT as a fallback — still handles token_hash + code');
@@ -220,6 +251,38 @@ async function run() {
     assert((await fetch(`${BASE_URL}/feed`, { headers: CA, redirect: 'manual' })).status === 200, 'completed verified user: GET /feed -> 200 (middleware, cookie session)');
     assert(isRedirectTo(await fetch(`${BASE_URL}/onboarding`, { headers: CA, redirect: 'manual' }), '/feed'),
       'completed verified user: GET /onboarding -> /feed (middleware, cookie session)');
+
+    // --- 6b. E1 GATE: a required-fields-only submit persists NO fabricated
+    //         residue for the fields the user left untouched. ---
+    console.log('\n6b. E1 — no fabricated onboarding residue');
+    const emailC = uniqueEmail(); emails.push(emailC);
+    const otpC = await issueOtp(emailC);
+    const okC = await anonKeyClient().auth.verifyOtp({ email: emailC, token: otpC, type: 'email' });
+    const HC = { Authorization: `Bearer ${okC.data.session!.access_token}`, 'Content-Type': 'application/json' };
+    const MINIMAL = {
+      fullName: 'Minimal User',
+      employmentTypes: ['Contract'],
+      targetRoles: ['Data Engineer'],
+      yearsOfExperience: '2-3',
+      skills: [{ name: 'Rust', isPrimary: true }],
+      workPreference: 'worldwide',
+      currentCountry: 'Estonia',
+      currentTimezone: 'EET',
+      // deliberately omitted: headline, rawResumeText, minSalary,
+      // willingTimezones, allowedCountries
+    };
+    const okC1 = await (await fetch(`${BASE_URL}/api/onboarding`, { method: 'POST', headers: HC, body: JSON.stringify(MINIMAL), redirect: 'manual' })).json();
+    assert(okC1.ok === true, 'minimal required-only submit -> { ok: true }');
+    const getC = await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HC })).json();
+    assert(getC.headline === null || getC.headline === '', '  ...headline persisted as null/empty (not fabricated)');
+    assert(getC.rawResumeText === null || getC.rawResumeText === '', '  ...resume persisted as null/empty (not the sample resume)');
+    assert(Array.isArray(getC.willingTimezones) && getC.willingTimezones.length === 0, '  ...willing_timezones empty (no phantom EST/PST)');
+    assert(
+      getC.targetRoles.length === 1 && getC.targetRoles[0] === 'Data Engineer' &&
+        getC.skills.length === 1 && getC.skills[0].name === 'Rust',
+      '  ...only the explicitly chosen role/skill persisted',
+    );
+    assert(getC.minSalary === null, '  ...min_salary null');
 
     // --- 7. /auth/confirm fallback intact ---
     console.log('\n7. /auth/confirm FALLBACK (unchanged)');

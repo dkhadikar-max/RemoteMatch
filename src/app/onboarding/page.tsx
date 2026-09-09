@@ -30,54 +30,43 @@ import {
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
 
+  // Onboarding is the authoritative DB write (complete_onboarding RPC). Every
+  // field below therefore starts EMPTY / UNSET — a value the user did not
+  // choose must never be persisted as if they did. The per-stage guards
+  // (canContinue) and the final validateOnboardingPayload() enforce that the
+  // required fields are actually filled before submit. The one intentional
+  // product default is workPreference: 'worldwide' (the least-restrictive
+  // residency scope — a preference, not a claimed fact). fullName is filled
+  // from the signup metadata by the prefill effect below.
+
   // Step 1: Intent
-  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([
-    'Full-time',
-    'Contract',
-  ]);
+  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([]);
 
   // Step 2: Roles
-  const [targetRoles, setTargetRoles] = useState<string[]>([
-    'Full Stack Engineer',
-    'Frontend Engineer',
-  ]);
+  const [targetRoles, setTargetRoles] = useState<string[]>([]);
   const [customRole, setCustomRole] = useState('');
 
   // Step 3: Skills
-  const [skills, setSkills] = useState<string[]>([
-    'React',
-    'TypeScript',
-    'Next.js',
-    'Node.js',
-    'PostgreSQL',
-  ]);
+  const [skills, setSkills] = useState<string[]>([]);
   const [customSkill, setCustomSkill] = useState('');
 
-  // Step 4: Experience
-  const [yearsOfExperience, setYearsOfExperience] = useState<'0-1' | '2-3' | '4-6' | '7-10' | '10+'>('4-6');
+  // Step 4: Experience ('' = not yet chosen)
+  const [yearsOfExperience, setYearsOfExperience] = useState<YearsOfExperience | ''>('');
 
   // Step 5: Location
   const [workPreference, setWorkPreference] = useState<'worldwide' | 'my_country' | 'selected_countries'>('worldwide');
-  const [currentCountry, setCurrentCountry] = useState('Worldwide');
-  const [currentTimezone, setCurrentTimezone] = useState('UTC');
-  const [willingTimezones, setWillingTimezones] = useState<string[]>(['UTC', 'EST', 'PST']);
+  const [currentCountry, setCurrentCountry] = useState('');
+  const [currentTimezone, setCurrentTimezone] = useState('');
+  // Overlap bands: only the values the UI can toggle ('UTC','US EST','US PST',
+  // 'Europe CET','Asia IST'). Starts empty — a stale 'EST'/'PST' seed that no
+  // button could clear used to leak into profile_locations.
+  const [willingTimezones, setWillingTimezones] = useState<string[]>([]);
 
   // Step 6: Resume
-  const [resumeText, setResumeText] = useState(
-    `Alex Chen - Senior Full Stack Engineer
-Experience:
-Senior Software Engineer at TechFlow Cloud (2022 - Present)
-- Architected high-concurrency web applications with Next.js App Router and TypeScript.
-- Scaled distributed Postgres database supporting 200k+ monthly active users.
-- Collaborated across distributed teams using async git-driven workflows.
-
-Frontend Engineer at PixelCraft Studio (2020 - 2022)
-- Built modern client platforms in React, Tailwind CSS, and Node.js.
-- Developed component systems in Figma and React for 15+ web applications.`
-  );
+  const [resumeText, setResumeText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
-  const [fullName, setFullName] = useState('Alex Chen');
-  const [headline, setHeadline] = useState('Senior Full Stack Engineer');
+  const [fullName, setFullName] = useState('');
+  const [headline, setHeadline] = useState('');
   const [hasParsed, setHasParsed] = useState(false);
 
   // Resume Intelligence Analysis State
@@ -168,7 +157,10 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
         profileId: 'demo-user-1',
         employmentTypes,
         targetRoles,
-        yearsOfExperience,
+        // Stage 6 is only reachable once stage 4 is answered (canContinue),
+        // so this is always a real value here; the assertion just narrows the
+        // '' that the initial state allows.
+        yearsOfExperience: yearsOfExperience as YearsOfExperience,
         preferredCurrency: 'USD',
         availabilityStatus: 'immediately',
         updatedAt: new Date().toISOString(),
@@ -269,7 +261,8 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
         profileId: localStore.getProfile().id,
         employmentTypes,
         targetRoles,
-        yearsOfExperience,
+        // reached only after validateOnboardingPayload passed above
+        yearsOfExperience: yearsOfExperience as YearsOfExperience,
         preferredCurrency: 'USD',
         availabilityStatus: 'immediately',
         updatedAt: new Date().toISOString(),
@@ -335,6 +328,17 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
     'PyTorch',
     'LLMs',
   ];
+
+  // Per-stage gate: a required section can't be skipped past. Cheap version of
+  // what validateOnboardingPayload / the RPC enforce anyway — here only so the
+  // user isn't allowed to walk to the end on empty state and hit one error.
+  const canContinue =
+    step === 1 ? employmentTypes.length > 0 :
+    step === 2 ? targetRoles.length > 0 :
+    step === 3 ? skills.length > 0 :
+    step === 4 ? yearsOfExperience !== '' :
+    step === 5 ? currentCountry.trim() !== '' && currentTimezone.trim() !== '' :
+    true;
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)] py-10 px-4 sm:px-6">
@@ -816,8 +820,9 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
               {step < 6 ? (
                 <button
                   type="button"
-                  onClick={() => setStep(step + 1)}
-                  className="soft-button primary flex items-center gap-2"
+                  onClick={() => canContinue && setStep(step + 1)}
+                  disabled={!canContinue}
+                  className="soft-button primary flex items-center gap-2 disabled:opacity-50"
                 >
                   <span>Continue</span>
                   <ArrowRight className="size-3.5" />
@@ -826,7 +831,7 @@ Frontend Engineer at PixelCraft Studio (2020 - 2022)
                 <button
                   type="button"
                   onClick={handleAnalyzeIntelligence}
-                  disabled={isParsing || !resumeText.trim()}
+                  disabled={isParsing || !resumeText.trim() || yearsOfExperience === ''}
                   className="soft-button primary flex items-center gap-2 disabled:opacity-50"
                 >
                   <ShieldCheck className="size-4" />
