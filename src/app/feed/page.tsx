@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
-import { fetchServerEntitlement } from '@/lib/entitlement/client';
+import { fetchServerEntitlement, notifyEntitlementChanged } from '@/lib/entitlement/client';
 import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
@@ -141,16 +141,20 @@ export default function FeedPage() {
     localStore.recordSwipe(opportunityId, action);
 
     setSwipedCount((prev) => prev + 1);
-    setProfile((prev) => {
-      if (!prev) return prev;
-      if (action !== 'interested') return prev;
-      return {
-        ...prev,
-        planTier: data.planTier ?? prev.planTier,
-        dailyRightSwipesCount:
-          typeof data.remaining === 'number' ? data.limit - data.remaining : prev.dailyRightSwipesCount,
-      };
-    });
+    if (action === 'interested') {
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              planTier: data.planTier ?? prev.planTier,
+              dailyRightSwipesCount:
+                typeof data.remaining === 'number' ? data.limit - data.remaining : prev.dailyRightSwipesCount,
+            }
+          : prev
+      );
+      // An interested swipe consumed a daily save — refresh the navbar pill.
+      notifyEntitlementChanged();
+    }
   };
 
   const handleRewind = async (): Promise<string | null> => {
@@ -179,6 +183,8 @@ export default function FeedPage() {
     localStore.rewindLastSwipe();
     setSwipedCount((prev) => Math.max(prev - 1, 0));
     await loadProfile();
+    // A rewind refunds the consumed save — refresh the navbar pill.
+    notifyEntitlementChanged();
     return data.rewoundOpportunityId as string;
   };
 

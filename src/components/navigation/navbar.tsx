@@ -1,28 +1,84 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Compass, BriefcaseBusiness, UserRound } from 'lucide-react';
 import {
-  Compass,
-  BriefcaseBusiness,
-  UserRound,
-  Activity,
-  ArrowUpRight,
-} from 'lucide-react';
+  fetchServerEntitlement,
+  ENTITLEMENT_CHANGED_EVENT,
+  type ServerEntitlement,
+} from '@/lib/entitlement/client';
+
+/** The Supabase auth cookie is NOT httpOnly, so its absence is a reliable
+ *  "definitely no session" signal — lets the navbar skip a guaranteed-401
+ *  /api/profile call on genuinely public visits. */
+function hasAuthCookie(): boolean {
+  try {
+    return document.cookie.split('; ').some((c) => /^sb-.*-auth-token(\.\d+)?=/.test(c));
+  } catch {
+    return false;
+  }
+}
 
 export function Navbar() {
   const pathname = usePathname();
-  const [evaluationCount] = useState(3);
-  const maxFreeSaves = 15;
-  const savesRemaining = Math.max(maxFreeSaves - evaluationCount, 0);
   const isLanding = pathname === '/';
   // /login is reachable with no session by construction (it's where an
   // unauthenticated visitor lands) — showing the authenticated app's nav
   // (Jobs/Applications/Profile, saves badge, avatar) there is misleading,
   // since none of it reflects real state for a signed-out visitor.
   const isAuthPage = pathname === '/login';
-  const isPro = false; // localStore can supply or default to false
+
+  // Server-authoritative entitlement. `null` until it resolves AND whenever
+  // there is no session — the navbar never renders a fabricated quota/plan.
+  const [ent, setEnt] = useState<ServerEntitlement | null>(null);
+  const sessionPossible = !isLanding && !isAuthPage;
+
+  const refresh = useCallback(async () => {
+    if (!sessionPossible || !hasAuthCookie()) {
+      setEnt(null);
+      return;
+    }
+    const next = await fetchServerEntitlement();
+    // A transient fetch failure (network blip, mid-flight token refresh) must
+    // not blank a good pill/badge while the session cookie is still present —
+    // keep the last known-good value; it only clears on a real sign-out
+    // (cookie gone, handled above).
+    setEnt((prev) => (next === null && prev !== null && hasAuthCookie() ? prev : next));
+  }, [sessionPossible]);
+
+  // Resolve on mount and on every route change.
+  useEffect(() => {
+    refresh();
+  }, [refresh, pathname]);
+
+  // Live refresh: same-tab signal (swipe / rewind / upgrade) + stale-tab
+  // recovery on refocus. The event carries no data — we always refetch.
+  useEffect(() => {
+    const onSignal = () => refresh();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener(ENTITLEMENT_CHANGED_EVENT, onSignal);
+    window.addEventListener('focus', onSignal);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener(ENTITLEMENT_CHANGED_EVENT, onSignal);
+      window.removeEventListener('focus', onSignal);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refresh]);
+
+  const isPro = ent?.planTier === 'pro';
+  const savesRemaining = ent
+    ? Math.max(ent.rightSwipeLimit - ent.dailyRightSwipesCount, 0)
+    : null;
+  const avatarInitial = (() => {
+    const email = ent?.email?.trim();
+    const ch = email ? email.match(/[a-z0-9]/i)?.[0] : undefined;
+    return (ch ?? '?').toUpperCase();
+  })();
 
   return (
     <>
@@ -133,11 +189,12 @@ export function Navbar() {
               </>
             ) : (
               <>
-                {isPro ? (
+                {isPro && (
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] shadow-sm">
                     Pro
                   </span>
-                ) : (
+                )}
+                {!isPro && savesRemaining !== null && (
                   <div className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-[var(--muted)] bg-[var(--surface)] border border-[var(--line)] rounded-full px-3 py-1 shadow-sm">
                     <span className="size-1.5 rounded-full bg-[var(--red)]" />
                     <span>{savesRemaining} saves left today</span>
@@ -148,7 +205,7 @@ export function Navbar() {
                   href="/settings"
                   className="grid size-9 place-items-center rounded-full bg-[var(--red-soft-border)] text-xs font-bold text-[var(--red)] border border-[var(--red-soft-border)] shadow-sm hover:bg-[var(--red-soft-border)] transition-colors"
                 >
-                  A
+                  {avatarInitial}
                 </Link>
               </>
             )}

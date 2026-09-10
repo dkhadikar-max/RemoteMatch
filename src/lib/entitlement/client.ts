@@ -35,3 +35,20 @@ export async function fetchServerEntitlement(): Promise<ServerEntitlement | null
     return null;
   }
 }
+
+/**
+ * Name of the window event that signals server-side entitlement/quota may have
+ * just changed (an interested swipe, a rewind, an upgrade). It is a REFRESH
+ * SIGNAL ONLY — it carries no data. Every listener must refetch
+ * `fetchServerEntitlement()` and treat that response as authoritative.
+ */
+export const ENTITLEMENT_CHANGED_EVENT = 'remotematch:entitlement-changed';
+
+/** Fire the refresh signal. No-ops during SSR / when there is no `window`. */
+export function notifyEntitlementChanged(): void {
+  try {
+    window.dispatchEvent(new Event(ENTITLEMENT_CHANGED_EVENT));
+  } catch {
+    /* no window — nothing to notify */
+  }
+}

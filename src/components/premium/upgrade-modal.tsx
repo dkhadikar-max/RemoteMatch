@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
+import { notifyEntitlementChanged } from '@/lib/entitlement/client';
 
 export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition';
 
@@ -85,6 +86,9 @@ export function UpgradeModal({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: 'mock_session_success' }),
           });
+          // Plan just changed server-side — tell the navbar (and any other
+          // listener) to refetch. Carries no data; listeners re-read /api/profile.
+          notifyEntitlementChanged();
           if (onUpgraded) {
             onUpgraded();
           }
