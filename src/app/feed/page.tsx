@@ -204,7 +204,7 @@ export default function FeedPage() {
   const isFree = profile.planTier === 'free';
   const rightSwipesCount = profile.dailyRightSwipesCount || 0;
   const savesRemaining = Math.max(15 - rightSwipesCount, 0);
-  const hasActiveFilters = Object.keys(activeFilters).length > 0;
+  const hasActiveFilters = Object.values(activeFilters).some((v) => v !== undefined);
 
   return (
     <div className="flex-1 flex flex-col items-center px-3 sm:px-4 py-3 sm:py-6 md:py-8 max-w-5xl mx-auto w-full">

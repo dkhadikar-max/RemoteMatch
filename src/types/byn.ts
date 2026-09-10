@@ -399,6 +399,11 @@ export interface OpportunityFilters {
   specificLocation?: string;
   minSalary?: number;
   strictTimezone?: string;
+  /** Job discovery UX (H) — Free. Keep only opportunities whose recorded
+   *  posting date is within this many days. Absent = "Any time". Removal-only:
+   *  never re-ranks, never changes fitScore or eligibility. An opportunity with
+   *  an unparseable `postedAt` is excluded while this filter is active. */
+  postedWithinDays?: number;
   /** Career Transition Matching V1.1 — Pro-only. When true, the feed shows only
    *  opportunities the (server-verified Pro, `change_fields`) user has a
    *  `careerTransition` block for. Removal-only: never re-ranks, never changes

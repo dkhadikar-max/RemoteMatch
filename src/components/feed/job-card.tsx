@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
+import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 
@@ -38,6 +39,16 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
 
   const badgeColor = COMPANY_COLORS[opportunity.company] || 'bg-[var(--ink)] text-white';
 
+  const remoteScope =
+    opportunity.remoteType === 'Worldwide' ? 'Worldwide' : opportunity.remoteType || 'Eligible';
+  // Company identity (H): scope · employment type on one line; honest salary ·
+  // stable posting age on the next. No logos — a colored initial only (never a
+  // third-party / unverified asset). `postedAt` age can be null → omitted.
+  const scopeLine = ['Remote', remoteScope, opportunity.employmentType].filter(Boolean).join(' · ');
+  const metaLine = [formatSalary(opportunity), formatPostedAge(opportunity.postedAt)]
+    .filter(Boolean)
+    .join(' · ');
+
   // V1.1: the job card is deliberately kept clean — no Career Transition
   // framing here. Transition analysis (which uses the user's OWN skills, not
   // the job's requirement names) lives only on the Match Detail page. The
@@ -60,9 +71,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
               <h2 className="text-lg sm:text-xl font-bold tracking-tight text-[var(--ink)] mt-0.5 leading-snug">
                 {opportunity.title}
               </h2>
-              <p className="text-xs text-[var(--muted)] mt-1">
-                Remote · {opportunity.remoteType === 'Worldwide' ? 'Worldwide' : opportunity.remoteType || 'Eligible'}
-              </p>
+              <p className="text-xs text-[var(--muted)] mt-1">{scopeLine}</p>
             </div>
           </div>
 
@@ -77,14 +86,8 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </div>
         </div>
 
-        {/* Salary */}
-        <p className="text-sm font-semibold text-[var(--ink)] mt-3">
-          {opportunity.salaryMin || opportunity.salaryMax
-            ? `$${Math.round((opportunity.salaryMin || 0) / 1000)}k – $${Math.round(
-                (opportunity.salaryMax || 0) / 1000
-              )}k`
-            : '$140k – $180k'}
-        </p>
+        {/* Salary · Posting age — honest: real range or "Salary not listed" */}
+        <p className="text-sm font-medium text-[var(--ink)] mt-3">{metaLine}</p>
 
         {/* Skills Pills */}
         <div className="mt-3.5 flex flex-wrap gap-1.5">

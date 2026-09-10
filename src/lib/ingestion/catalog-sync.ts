@@ -264,7 +264,13 @@ export async function syncOpportunitiesToCatalog(
       description_completeness: opp.descriptionCompleteness ?? null,
       salary_quality: opp.salaryQuality ?? null,
       remote_policy_confidence: opp.remotePolicyConfidence ?? null,
-      posted_at: opp.postedAt,
+      // NOTE: `posted_at` is deliberately NOT in contentFields — it is
+      // INSERT-ONLY (added to each insert payload below alongside
+      // first_seen_at). Re-writing it on every sync made date-less provider
+      // payloads (publicationDate → now() fallback) look perpetually fresh and
+      // let stale jobs dodge the >30d re-verification. Stamped once, never
+      // bumped. Distinct from first_seen_at / last_seen_in_feed_at, which track
+      // our catalog presence, not the posting.
     };
 
     if (weakDescription) {
@@ -282,6 +288,7 @@ export async function syncOpportunitiesToCatalog(
           source_id: opp.sourceId,
           type: opp.type,
           status: 'draft',
+          posted_at: opp.postedAt,
           first_seen_at: new Date().toISOString(),
           last_seen_in_feed_at: new Date().toISOString(),
           consecutive_absences: 0,
@@ -314,6 +321,7 @@ export async function syncOpportunitiesToCatalog(
           type: opp.type,
           status: 'expired',
           is_permanently_removed: override.isPermanentlyRemoved,
+          posted_at: opp.postedAt,
           first_seen_at: new Date().toISOString(),
           last_seen_in_feed_at: new Date().toISOString(),
           consecutive_absences: 0,
@@ -344,6 +352,7 @@ export async function syncOpportunitiesToCatalog(
           type: opp.type,
           status: 'active',
           link_reachable: null,
+          posted_at: opp.postedAt,
           first_seen_at: new Date().toISOString(),
           last_seen_in_feed_at: new Date().toISOString(),
           consecutive_absences: 0,
@@ -361,6 +370,7 @@ export async function syncOpportunitiesToCatalog(
           source_id: opp.sourceId,
           type: opp.type,
           status: 'unknown',
+          posted_at: opp.postedAt,
           first_seen_at: new Date().toISOString(),
           last_seen_in_feed_at: new Date().toISOString(),
           consecutive_absences: 0,

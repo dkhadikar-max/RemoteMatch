@@ -27,6 +27,15 @@ const ROLES = [
 
 const REMOTE_TYPES = ['All Remote', 'Worldwide', 'US', 'EU/EEA'];
 
+const POSTED_OPTIONS: { label: string; days?: number }[] = [
+  { label: 'Any time' },
+  { label: '24 hours', days: 1 },
+  { label: '3 days', days: 3 },
+  { label: '7 days', days: 7 },
+  { label: '14 days', days: 14 },
+  { label: '30 days', days: 30 },
+];
+
 const SENIORITIES = [
   'All Seniorities',
   'Entry / Junior',
@@ -215,6 +224,39 @@ export function FilterModal({
                     }`}
                   >
                     {lvl}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Posted (Free, H) — recorded posting age, removal-only */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[var(--ink)]">Posted</label>
+            <div className="flex flex-wrap gap-1.5">
+              {POSTED_OPTIONS.map((opt) => {
+                const isSelected =
+                  (draft.postedWithinDays === undefined && opt.days === undefined) ||
+                  draft.postedWithinDays === opt.days;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() =>
+                      setDraft((prev) => {
+                        const next = { ...prev };
+                        if (opt.days === undefined) delete next.postedWithinDays;
+                        else next.postedWithinDays = opt.days;
+                        return next;
+                      })
+                    }
+                    className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                      isSelected
+                        ? 'bg-[var(--red)] text-white shadow-sm'
+                        : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    {opt.label}
                   </button>
                 );
               })}

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
+import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import { X, Globe2, DollarSign, Briefcase, Check, ExternalLink } from 'lucide-react';
 
 interface JobDetailsModalProps {
@@ -33,25 +34,25 @@ export function JobDetailsModal({
         {/* Header */}
         <div className="flex items-start justify-between p-6 sm:p-7 border-b border-[var(--line)] bg-[var(--surface)]">
           <div className="flex items-center gap-4">
-            {opportunity.companyLogo ? (
-              <img
-                src={opportunity.companyLogo}
-                alt={opportunity.company}
-                className="size-12 rounded-2xl object-cover border border-[var(--line)] bg-[var(--surface-soft)]"
-              />
-            ) : (
-              <div className="grid size-12 place-items-center rounded-2xl bg-[var(--surface-soft)] text-[var(--ink)] font-bold text-sm">
-                {opportunity.company.slice(0, 2).toUpperCase()}
-              </div>
-            )}
+            {/* No logos (H): a colored initial only — never a third-party or
+                unverified image asserted as an employer's logo. */}
+            <div className="grid size-12 place-items-center rounded-2xl bg-[var(--surface-soft)] text-[var(--ink)] font-bold text-sm">
+              {opportunity.company.slice(0, 2).toUpperCase()}
+            </div>
             <div>
               <h2 className="text-xl font-semibold text-[var(--ink)] tracking-tight">
                 {opportunity.title}
               </h2>
-              <div className="flex items-center gap-2 mt-1 text-xs text-[var(--muted)]">
+              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-[var(--muted)]">
                 <span className="font-semibold text-[var(--ink)]">{opportunity.company}</span>
                 <span>·</span>
                 <span>{opportunity.remoteType}</span>
+                {formatPostedAge(opportunity.postedAt) && (
+                  <>
+                    <span>·</span>
+                    <span>{formatPostedAge(opportunity.postedAt)}</span>
+                  </>
+                )}
                 <span>·</span>
                 <span className="capitalize">{opportunity.source}</span>
               </div>
@@ -83,13 +84,7 @@ export function JobDetailsModal({
               <span className="eyebrow block">Compensation</span>
               <div className="flex items-center gap-1.5 mt-1.5 font-semibold text-xs text-[var(--ink)]">
                 <DollarSign size={13} className="text-[var(--red)]" />
-                <span className="mono">
-                  {opportunity.salaryMin || opportunity.salaryMax
-                    ? `$${Math.round((opportunity.salaryMin || 0) / 1000)}k – $${Math.round(
-                        (opportunity.salaryMax || 0) / 1000
-                      )}k`
-                    : 'Benchmark verified'}
-                </span>
+                <span className="mono">{formatSalary(opportunity)}</span>
               </div>
             </div>
 

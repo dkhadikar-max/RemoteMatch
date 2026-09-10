@@ -21,6 +21,13 @@ export function applyFilters(
     // Career Transition (Pro) — removal-only.
     if (filters.careerTransition && !opp.careerTransition) return false;
 
+    // Freshness (Free, H) — removal-only. Uses the recorded posting date
+    // (opp.postedAt); an unparseable date is excluded while the filter is on.
+    if (filters.postedWithinDays) {
+      const ageDays = (Date.now() - new Date(opp.postedAt).getTime()) / 86_400_000;
+      if (!(ageDays <= filters.postedWithinDays)) return false;
+    }
+
     if (filters.targetRole) {
       const target = filters.targetRole.toLowerCase();
       const title = opp.title.toLowerCase();
