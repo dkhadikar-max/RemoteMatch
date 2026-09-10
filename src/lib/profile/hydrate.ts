@@ -3,7 +3,9 @@
 import { localStore } from '@/lib/db/mock-seed';
 import type { EmploymentType, PersonProfile, ProfileIntent, ProfileLocation } from '@/types/byn';
 
-interface ServerOnboarding {
+/** The exact shape of `GET /api/onboarding` (see src/app/api/onboarding/route.ts).
+ *  Exported so /settings (F — data-source alignment) reads the same contract. */
+export interface ServerOnboarding {
   onboardingCompletedAt: string | null;
   fullName: string;
   headline: string;
