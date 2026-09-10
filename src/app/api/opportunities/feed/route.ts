@@ -4,6 +4,7 @@ import { scoreOpportunitiesForFeed, checkHardEligibility } from '@/lib/matching/
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
+import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 
 /**
  * The opportunity catalog comes from the persisted `opportunities` table
@@ -27,16 +28,43 @@ import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
  *        a shared demo fixture — this route has no dependency on the
  *        client-local profile store at all.
  *
- *        Career Transition Matching V1 is ADDITIVE and EXPLANATION-ONLY: when
- *        `profile.careerDirection === 'change_fields'`, each item that passes
- *        the UNMODIFIED hard-eligibility gate AND aligns with a target role
- *        gets a `careerTransition` block attached. The scored list's ORDER is
- *        never changed, the fitScore is never changed, and eligibility is
- *        never changed — `scoreOpportunitiesForFeed` runs exactly as before.
+ *        Career Transition Matching V1.1 is ADDITIVE, EXPLANATION-ONLY, and
+ *        Pro-gated at the SERVER boundary. The `careerTransition` block layer
+ *        runs only when BOTH facts are established server-side (never from the
+ *        request body): the authenticated caller's `plan_tier === 'pro'` AND
+ *        their `profile_intents.career_direction === 'change_fields'`. For any
+ *        other caller (anon, Free, `continue`, unverified) the block layer is
+ *        skipped entirely — a Free client cannot obtain the transition payload
+ *        by asserting `careerDirection` in the body. The scored list's ORDER,
+ *        fitScore, and eligibility are never changed for ANY caller —
+ *        `scoreOpportunitiesForFeed` runs exactly as before; the gate only
+ *        decides whether the additive block layer runs.
  */
 
 function isScorableProfile(p: unknown): p is PersonProfile {
   return Boolean(p) && typeof p === 'object' && Array.isArray((p as { skills?: unknown }).skills);
+}
+
+/**
+ * Establishes — SERVER-SIDE, from the verified session only — whether the
+ * additive Career Transition block layer is allowed for this caller. Both
+ * facts come from the database, never the request body. Fails closed: any
+ * auth/lookup problem yields `false`.
+ */
+async function transitionLayerAllowed(req: NextRequest): Promise<boolean> {
+  try {
+    const { user, supabase } = await getAuthenticatedUser(req);
+    const [{ data: prof }, { data: intent }] = await Promise.all([
+      supabase.from('profiles').select('plan_tier').eq('id', user.id).single(),
+      supabase.from('profile_intents').select('career_direction').eq('profile_id', user.id).maybeSingle(),
+    ]);
+    return (
+      (prof?.plan_tier as string | undefined) === 'pro' &&
+      (intent?.career_direction as string | null) === 'change_fields'
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function loadActiveCatalog() {
@@ -76,15 +104,21 @@ export async function POST(req: NextRequest) {
       // v1 scoring + ranking — completely unchanged.
       const scored = scoreOpportunitiesForFeed(profile, opportunities);
 
-      // Additive, order-preserving transition-explanation layer.
-      const withTransition =
-        profile.careerDirection === 'change_fields'
-          ? scored.map((opp) => {
-              const isEligible = checkHardEligibility(profile, opp).isEligible;
-              const careerTransition = classifyCareerTransition(profile, opp, isEligible);
-              return careerTransition ? { ...opp, careerTransition } : opp;
-            })
-          : scored;
+      // Additive, order-preserving transition-explanation layer — gated
+      // server-side on a verified Pro + change_fields caller (see
+      // transitionLayerAllowed). The request body's `careerDirection` is NOT
+      // trusted for this decision.
+      const allowed = await transitionLayerAllowed(req);
+      const withTransition = allowed
+        ? scored.map((opp) => {
+            // classifyCareerTransition still self-checks careerDirection; feed
+            // it the server-established fact so a body without it still works.
+            const gatedProfile: PersonProfile = { ...profile, careerDirection: 'change_fields' };
+            const isEligible = checkHardEligibility(gatedProfile, opp).isEligible;
+            const careerTransition = classifyCareerTransition(gatedProfile, opp, isEligible);
+            return careerTransition ? { ...opp, careerTransition } : opp;
+          })
+        : scored;
 
       return NextResponse.json({ success: true, opportunities: withTransition, scored: true });
     }

@@ -8,6 +8,7 @@ import {
   TailoredResumeSuggestions,
   MaterialTone,
   CareerTransitionResult,
+  ProfileIntent,
 } from '@/types/byn';
 import { CAREER_TRANSITION_COPY } from '@/lib/matching/career-transition';
 import {
@@ -27,12 +28,26 @@ import {
 } from 'lucide-react';
 import { DidYouApplyModal } from '../feedback/did-you-apply-modal';
 
+/** Human phrasing for the years-of-experience bucket, for the "Your direction"
+ *  line only. Never invents a number — mirrors the onboarding buckets. */
+const YOE_PHRASE: Record<ProfileIntent['yearsOfExperience'], string> = {
+  '0-1': 'under 2 years',
+  '2-3': '2–3 years',
+  '4-6': '4–6 years',
+  '7-10': '7–10 years',
+  '10+': '10+ years',
+};
+
 interface MatchAnalysisViewProps {
   opportunity: CanonicalOpportunity;
   match: MatchAnalysisResult;
   /** Career Transition Matching — present only for a `change_fields` user on an
-   *  eligible, target-role-aligned role. Additive: does not change `match`. */
+   *  eligible, target-role-aligned role. Additive: does not change `match`.
+   *  This analysis is FREE (V1.1); only discovering/filtering transition jobs
+   *  in the feed is Pro. */
   careerTransition?: CareerTransitionResult | null;
+  /** The user's years-of-experience bucket, for the "Your direction" line. */
+  yearsOfExperience?: ProfileIntent['yearsOfExperience'];
   initialResumeTweaks: TailoredResumeSuggestions;
   initialCoverLetter: string;
   onToneChange?: (tone: MaterialTone) => Promise<string>;
@@ -55,6 +70,7 @@ export function MatchAnalysisView({
   opportunity,
   match,
   careerTransition,
+  yearsOfExperience,
   initialResumeTweaks,
   initialCoverLetter,
   onToneChange,
@@ -387,9 +403,11 @@ ${initialResumeTweaks.bulletRewrites
                 </div>
               </div>
 
-              {/* Career Transition — additive explanation for a career changer.
-                  Uses only real transferable skills / gaps; never restates the
-                  fit score as a qualification. */}
+              {/* Career Transition — additive, FREE explanation for a career
+                  changer. "Why this could fit" shows the USER's own confirmed
+                  skills (never the job's requirement names); gaps are listed
+                  requirements the profile doesn't demonstrate. Never restates
+                  the fit score as a qualification. */}
               {careerTransition && (
                 <div className="mt-4 rounded-3xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-bold text-[var(--red)] uppercase tracking-wider">
@@ -397,15 +415,16 @@ ${initialResumeTweaks.bulletRewrites
                     <span>Career transition · {CAREER_TRANSITION_COPY[careerTransition.classification].label}</span>
                   </div>
                   <p className="text-xs text-[var(--ink)] leading-relaxed">
-                    {CAREER_TRANSITION_COPY[careerTransition.classification].blurb} You told us you want to move
-                    into <span className="font-semibold">{careerTransition.targetRole}</span> roles.
+                    {CAREER_TRANSITION_COPY[careerTransition.classification].blurb}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-3 space-y-1.5">
                       <span className="text-[11px] font-bold text-[#059669] uppercase tracking-wider">Why this could fit</span>
-                      {careerTransition.transferableExperience.length > 0 ? (
+                      {careerTransition.transferableSkills.length > 0 ? (
                         <p className="text-xs text-[var(--ink)] leading-snug">
-                          Transferable experience: {careerTransition.transferableExperience.join(', ')}
+                          Your experience with{' '}
+                          <span className="font-semibold">{careerTransition.transferableSkills.join(', ')}</span>{' '}
+                          carries into this role.
                         </p>
                       ) : (
                         <p className="text-xs text-[var(--muted)] leading-snug">
@@ -422,6 +441,16 @@ ${initialResumeTweaks.bulletRewrites
                       )}
                     </div>
                   </div>
+                  <div className="rounded-2xl bg-[var(--surface)] border border-[var(--red-soft-border)] p-3 space-y-1">
+                    <span className="text-[11px] font-bold text-[var(--red)] uppercase tracking-wider">Your direction</span>
+                    <p className="text-xs text-[var(--ink)] leading-snug">
+                      You&rsquo;re moving into <span className="font-semibold">{careerTransition.targetRole}</span> roles
+                      {yearsOfExperience ? `, with ${YOE_PHRASE[yearsOfExperience]} of experience in your current field` : ''}.
+                    </p>
+                  </div>
+                  <p className="text-[11px] text-[var(--muted)] leading-snug">
+                    Based on the skills and experience in your profile.
+                  </p>
                 </div>
               )}
 

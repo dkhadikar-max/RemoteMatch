@@ -285,7 +285,13 @@ export interface CareerTransitionResult {
   classification: CareerTransitionClass;
   /** The target role this opportunity aligned to. */
   targetRole: string;
-  /** Job required-skills the user has as confirmed profile skills. */
+  /** The USER's own confirmed profile-skill names that each covered at least
+   *  one of the job's required skills (deduped, original profile casing). This
+   *  is what the Match Detail UI presents as "your experience" — never the
+   *  job's requirement names. */
+  transferableSkills: string[];
+  /** Job required-skills the user has as confirmed profile skills. Retained as
+   *  the provenance for `overlapRatio`; NEVER rendered in the UI (V1.1). */
   transferableExperience: string[];
   /** Job required-skills the user has no confirmed profile evidence for. */
   potentialGaps: string[];
@@ -393,4 +399,10 @@ export interface OpportunityFilters {
   specificLocation?: string;
   minSalary?: number;
   strictTimezone?: string;
+  /** Career Transition Matching V1.1 — Pro-only. When true, the feed shows only
+   *  opportunities the (server-verified Pro, `change_fields`) user has a
+   *  `careerTransition` block for. Removal-only: never re-ranks, never changes
+   *  fitScore or eligibility. Only ever set for a server-verified Pro user;
+   *  a Free user tapping the control gets the upgrade gate instead. */
+  careerTransition?: boolean;
 }

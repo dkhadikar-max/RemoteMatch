@@ -14,15 +14,20 @@ import type {
  * explain how their proven experience transfers to an opportunity that already
  * aligns with a role they want.
  *
- * Anti-fabrication: `transferableExperience` is strictly the intersection of
- * the job's required skills with the user's CONFIRMED profile skills (a skill
- * the user listed in onboarding — `evidenceLevel` is not persisted for real
- * users, so a listed skill counts unless it is explicitly marked 'missing',
- * a tier only fixtures/tests can produce). Raw résumé text is NOT scanned —
- * substring presence ("no experience with Kubernetes") is not evidence.
+ * Anti-fabrication: a required skill counts as covered only when it intersects
+ * the user's CONFIRMED profile skills (a skill the user listed in onboarding —
+ * `evidenceLevel` is not persisted for real users, so a listed skill counts
+ * unless it is explicitly marked 'missing', a tier only fixtures/tests can
+ * produce). Raw résumé text is NOT scanned — substring presence ("no experience
+ * with Kubernetes") is not evidence.
+ *
+ * V1.1: `transferableSkills` holds the USER's own skill names that did the
+ * covering (what the Match Detail UI shows as "your experience");
+ * `transferableExperience` holds the job's requirement names and is kept only
+ * as the provenance for `overlapRatio` — it is never rendered.
  */
 
-export const CAREER_TRANSITION_RULES_VERSION = 'career-transition-2026.09-v1';
+export const CAREER_TRANSITION_RULES_VERSION = 'career-transition-2026.09-v1.1';
 
 // Classification thresholds on the proven-skill overlap ratio. Preconditions
 // (change_fields + eligible + title-aligned) are checked before these apply.
@@ -113,9 +118,17 @@ export function classifyCareerTransition(
 
   const transferableExperience: string[] = [];
   const potentialGaps: string[] = [];
+  // The user's OWN skill names that did the covering — presented in the UI as
+  // "your experience", deduped, first-seen order, original profile casing.
+  const transferableSkillsSet = new Set<string>();
   for (const req of required) {
-    if (confirmed.some((c) => skillMatches(c, req))) transferableExperience.push(req);
-    else potentialGaps.push(req);
+    const covering = confirmed.filter((c) => skillMatches(c, req));
+    if (covering.length > 0) {
+      transferableExperience.push(req);
+      covering.forEach((c) => transferableSkillsSet.add(c));
+    } else {
+      potentialGaps.push(req);
+    }
   }
 
   const overlapRatio = Math.round((transferableExperience.length / Math.max(required.length, 1)) * 100) / 100;
@@ -123,6 +136,7 @@ export function classifyCareerTransition(
   return {
     classification: classify(overlapRatio),
     targetRole,
+    transferableSkills: Array.from(transferableSkillsSet),
     transferableExperience,
     potentialGaps,
     overlapRatio,

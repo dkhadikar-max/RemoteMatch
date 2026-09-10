@@ -1,19 +1,31 @@
 /**
- * Career Transition Matching V1.
+ * Career Transition Matching V1.1.
  * ==============================================================================
  * An ADDITIVE, explanation-only layer for a user who has EXPLICITLY chosen
  * `change_fields`. It must never change the v1 matcher, hard eligibility, the
  * fit-score formula, feed ranking, or the decision snapshot.
  *
+ * V1.1 changes covered here:
+ *   - `transferableSkills` carries the USER's own skill names (never the job's
+ *     requirement names — the "PostgreSQL" correction).
+ *   - The feed `careerTransition` block layer is Pro-gated at the SERVER
+ *     boundary: it runs only for a verified `plan_tier === 'pro'` +
+ *     `career_direction === 'change_fields'` caller, established server-side,
+ *     never from the request body.
+ *   - `applyFilters` (extracted to src/lib/feed/apply-filters.ts) gains a
+ *     removal-only `careerTransition` filter.
+ *
  * Sections:
  *   1. Pure classifier — deterministic Direct/Transition/Stretch, honest
- *      transferable/gaps, no fabrication, no classification for a continue user.
+ *      transferable/gaps, no fabrication, no classification for a continue user,
+ *      user-owned transferableSkills.
  *   2. Engine isolation — checkHardEligibility / computeScreeningFit /
  *      scoreOpportunitiesForFeed byte-identical regardless of careerDirection.
- *   3. HTTP — set via POST /api/profile/career-direction, read via GET
- *      /api/profile, survives a fresh session; RLS-scoped; feed attaches the
- *      block without reordering.
- *   4. Historical immutability — flipping direction / target role does not
+ *   3. Filter — applyFilters careerTransition clause is removal-only.
+ *   4. HTTP — set via POST /api/profile/career-direction, read via GET
+ *      /api/profile, survives a fresh session; RLS-scoped; feed block layer
+ *      Pro-gated server-side and never reorders.
+ *   5. Historical immutability — flipping direction / target role does not
  *      touch swipes / applications / decision snapshots.
  *
  * DB-dependent sections skip cleanly (with a clear message) until migration
@@ -28,6 +40,7 @@ import ws from 'ws';
 import type { PersonProfile, CanonicalOpportunity, ProfileSkill } from '../src/types/byn';
 import { classifyCareerTransition, CAREER_TRANSITION_RULES_VERSION } from '../src/lib/matching/career-transition';
 import { checkHardEligibility, computeScreeningFit, scoreOpportunitiesForFeed } from '../src/lib/matching/engine';
+import { applyFilters } from '../src/lib/feed/apply-filters';
 import { hasRequiredEnv, newVerifiedSession, adminClient } from './helpers/verified-session';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
@@ -73,7 +86,7 @@ function job(over: Partial<CanonicalOpportunity>): CanonicalOpportunity {
 
 async function run() {
   console.log('='.repeat(78));
-  console.log('CAREER TRANSITION MATCHING V1');
+  console.log('CAREER TRANSITION MATCHING V1.1');
   console.log('='.repeat(78));
 
   // ==========================================================================
@@ -105,6 +118,12 @@ async function run() {
     assert(strong?.classification === 'direct', `strong transferable -> direct (got ${strong?.classification}, ratio ${strong?.overlapRatio})`);
     assert(strong?.transferableExperience.length === 4 && strong.potentialGaps.length === 1, `transferable=4, gaps=1 (got ${strong?.transferableExperience.length}/${strong?.potentialGaps.length})`);
     assert(strong?.potentialGaps[0] === 'SQL', `the one gap is exactly the unmatched required skill "SQL" (got ${strong?.potentialGaps[0]})`);
+    assert(
+      Boolean(strong) &&
+        strong!.transferableSkills.length === 4 &&
+        strong!.transferableSkills.every((s) => ['Product Discovery', 'Roadmapping', 'Stakeholder Management', 'Analytics'].includes(s)),
+      `transferableSkills are the USER's 4 skill names (got ${JSON.stringify(strong?.transferableSkills)})`,
+    );
 
     // 1e — MEANINGFUL transferable -> transition (25%..60%)
     const mid = classifyCareerTransition(profile({
@@ -154,6 +173,39 @@ async function run() {
     );
 
     assert(strong?.rulesVersion === CAREER_TRANSITION_RULES_VERSION, 'result carries the rules version');
+    assert(CAREER_TRANSITION_RULES_VERSION === 'career-transition-2026.09-v1.1', `rules version bumped to v1.1 (got ${CAREER_TRANSITION_RULES_VERSION})`);
+
+    // 1i — V1.1: transferableSkills carries the USER's skill, not the job's requirement name
+    const pgJob = job({ title: 'Data Analyst', requiredSkills: ['PostgreSQL', 'Reporting'] });
+    const pgUser = classifyCareerTransition(profile({
+      careerDirection: 'change_fields',
+      intent: { ...profile({}).intent!, targetRoles: ['Data Analyst'] },
+      skills: [skill('SQL')],
+    }), pgJob, true);
+    assert(
+      Boolean(pgUser) && pgUser!.transferableSkills.includes('SQL') && !pgUser!.transferableSkills.includes('PostgreSQL'),
+      `transferableSkills = the user's "SQL", never the job's "PostgreSQL" (got ${JSON.stringify(pgUser?.transferableSkills)})`,
+    );
+    assert(
+      Boolean(pgUser) && pgUser!.transferableExperience.includes('PostgreSQL'),
+      'transferableExperience still records the covered requirement name (internal overlap provenance)',
+    );
+    assert(
+      Boolean(pgUser) && pgUser!.potentialGaps.includes('Reporting'),
+      'an uncovered requirement is still listed as a potential gap',
+    );
+
+    // 1j — transferableSkills deduped when one profile skill covers several requirements
+    const multiJob = job({ title: 'Data Analyst', requiredSkills: ['SQL', 'SQL reporting', 'Postgres SQL'] });
+    const multiUser = classifyCareerTransition(profile({
+      careerDirection: 'change_fields',
+      intent: { ...profile({}).intent!, targetRoles: ['Data Analyst'] },
+      skills: [skill('SQL')],
+    }), multiJob, true);
+    assert(
+      Boolean(multiUser) && multiUser!.transferableSkills.length === 1 && multiUser!.transferableSkills[0] === 'SQL',
+      `transferableSkills deduped to ["SQL"] (got ${JSON.stringify(multiUser?.transferableSkills)})`,
+    );
   }
 
   // ==========================================================================
@@ -179,6 +231,45 @@ async function run() {
     assert(JSON.stringify(rankContinue) === JSON.stringify(rankChange), `scoreOpportunitiesForFeed order+scores identical (${rankContinue.join(', ')})`);
   }
 
+  // ==========================================================================
+  console.log('\n3. FEED FILTER (careerTransition clause is removal-only)');
+  // ==========================================================================
+  {
+    const withBlock = job({
+      id: 'opp-ct-with',
+      title: 'Data Analyst',
+      fitScore: 71,
+      careerTransition: {
+        classification: 'transition', targetRole: 'Data Analyst',
+        transferableSkills: ['SQL'], transferableExperience: ['SQL'], potentialGaps: ['Reporting'],
+        overlapRatio: 0.5, rulesVersion: CAREER_TRANSITION_RULES_VERSION,
+      },
+    }) as CanonicalOpportunity & { fitScore: number };
+    const noBlock = job({ id: 'opp-ct-none', title: 'Backend Engineer', fitScore: 88 }) as CanonicalOpportunity & { fitScore: number };
+    const deck = [noBlock, withBlock];
+
+    const unfiltered = applyFilters(deck, {});
+    assert(unfiltered.length === 2, 'no filter -> deck unchanged');
+
+    const filtered = applyFilters(deck, { careerTransition: true });
+    assert(filtered.length === 1 && filtered[0].id === 'opp-ct-with',
+      'careerTransition filter keeps ONLY opps carrying a transition block');
+
+    // removal-only: never reorders, never mutates fitScore
+    const twoWith = [
+      { ...withBlock, id: 'a', fitScore: 40 },
+      { ...withBlock, id: 'b', fitScore: 95 },
+    ] as Array<CanonicalOpportunity & { fitScore: number }>;
+    const out = applyFilters(twoWith, { careerTransition: true });
+    assert(out.map((o) => `${o.id}:${o.fitScore}`).join(',') === 'a:40,b:95',
+      'filter preserves order + fitScores exactly (removal-only)');
+
+    // a continue feed (no blocks anywhere) + the filter -> empty deck, not a transition deck
+    const continueDeck = [noBlock, { ...noBlock, id: 'opp-ct-none-2' }];
+    assert(applyFilters(continueDeck, { careerTransition: true }).length === 0,
+      'careerTransition filter on a blockless feed yields an empty deck');
+  }
+
   if (!hasRequiredEnv()) {
     console.log('\n(Skipping HTTP + DB sections — Supabase env not set.)');
     console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped.`);
@@ -187,7 +278,7 @@ async function run() {
   }
 
   // ==========================================================================
-  console.log('\n3+4. HTTP — set/read/persist career direction, RLS, feed, immutability');
+  console.log('\n4+5. HTTP — set/read/persist direction, RLS, Pro-gated feed layer, immutability');
   // ==========================================================================
   const admin = adminClient();
   const session = await newVerifiedSession();
@@ -260,30 +351,51 @@ async function run() {
       await admin.auth.admin.deleteUser(other.userId).catch(() => {});
     }
 
-    // feed attaches careerTransition WITHOUT reordering
+    // ---- Career Transition feed: Pro-gated at the SERVER boundary ----------
+    // session user right now: career_direction = change_fields (set above), plan_tier = free
     const feedProfile: PersonProfile = {
       ...profile({ careerDirection: 'change_fields', intent: { ...profile({}).intent!, targetRoles: ['Engineer'] }, skills: [skill('React'), skill('TypeScript')] }),
     };
-    const feedRes = await fetch(`${BASE_URL}/api/opportunities/feed`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.token}` },
-      body: JSON.stringify({ profile: feedProfile }),
-    });
-    const feed = await feedRes.json();
-    const feedContinue = await (await fetch(`${BASE_URL}/api/opportunities/feed`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profile: { ...feedProfile, careerDirection: 'continue' } }),
-    })).json();
-    assert(feed.success && feedContinue.success, 'both feed calls succeed');
-    const orderChange = (feed.opportunities as any[]).map((o) => `${o.id}:${o.fitScore}`);
-    const orderContinue = (feedContinue.opportunities as any[]).map((o) => `${o.id}:${o.fitScore}`);
-    assert(JSON.stringify(orderChange) === JSON.stringify(orderContinue), 'feed ORDER + fitScores identical for change_fields vs continue (no re-rank)');
-    const anyTransition = (feed.opportunities as any[]).some((o) => o.careerTransition);
-    const continueHasNone = (feedContinue.opportunities as any[]).every((o) => !o.careerTransition);
-    assert(continueHasNone, 'a continue-in-field feed carries NO careerTransition blocks');
-    console.log(`   change_fields feed: ${(feed.opportunities as any[]).filter((o) => o.careerTransition).length}/${feed.opportunities.length} items got a transition block`);
+    const postFeed = (token: string | null, over: Partial<PersonProfile> = {}) =>
+      fetch(`${BASE_URL}/api/opportunities/feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ profile: { ...feedProfile, ...over } }),
+      }).then((r) => r.json());
+
+    const freeChange = await postFeed(session.token);
+    assert(freeChange.success, 'feed responds for a free change_fields caller');
+    assert((freeChange.opportunities as any[]).every((o) => !o.careerTransition),
+      'FREE + change_fields: feed returns ZERO careerTransition blocks (Pro-gated server-side)');
+
+    // body-spoof: an anon caller asserting change_fields in the body gets nothing
+    const spoof = await postFeed(null);
+    assert((spoof.opportunities as any[]).every((o) => !o.careerTransition),
+      'anon body-spoof (careerDirection in the body, no session) gets ZERO transition blocks');
+
+    // elevate this user to Pro, server-side
+    await admin.from('profiles').update({ plan_tier: 'pro' }).eq('id', session.userId);
+    const proChange = await postFeed(session.token);
+    assert(proChange.success, 'feed responds for a pro change_fields caller');
+
+    // the gate only toggles the additive layer — order + fitScores are identical
+    const oFree = (freeChange.opportunities as any[]).map((o) => `${o.id}:${o.fitScore}`);
+    const oPro = (proChange.opportunities as any[]).map((o) => `${o.id}:${o.fitScore}`);
+    assert(JSON.stringify(oFree) === JSON.stringify(oPro),
+      'feed ORDER + fitScores identical for free vs pro (transition gate never re-ranks)');
+    console.log(`   pro change_fields feed: ${(proChange.opportunities as any[]).filter((o) => o.careerTransition).length}/${proChange.opportunities.length} items got a transition block`);
+
+    // Pro + continue (server-side) -> still no blocks
+    await uc.rpc('set_career_direction', { p_direction: 'continue' });
+    const proContinue = await postFeed(session.token);
+    assert((proContinue.opportunities as any[]).every((o) => !o.careerTransition),
+      'PRO + continue (server): feed returns ZERO transition blocks');
+
+    // restore change_fields for the immutability check below
+    await uc.rpc('set_career_direction', { p_direction: 'change_fields' });
 
     // historical immutability: a swipe row + snapshot are unchanged by a direction/target flip
-    const feedForSwipe = feed.opportunities as any[];
+    const feedForSwipe = proChange.opportunities as any[];
     if (feedForSwipe.length > 0) {
       const oppId = feedForSwipe[0].id;
       const sw = await fetch(`${BASE_URL}/api/opportunities/swipe`, {

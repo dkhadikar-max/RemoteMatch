@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
 
-export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters';
+export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -36,6 +36,12 @@ const REASON_COPY: Record<
     subtitle: 'Filter by specific location, minimum salary, and strict timezone requirements.',
     badge: 'Advanced filters',
   },
+  careerTransition: {
+    title: 'Find roles for your career transition',
+    subtitle:
+      'Your transition analysis is free. Upgrade to Pro to discover and filter the jobs that match your transition.',
+    badge: 'Career transition',
+  },
 };
 
 const PRO_FEATURES = [
@@ -43,6 +49,7 @@ const PRO_FEATURES = [
   'Unlimited proposal materials',
   'Rewind',
   'Precision location, salary & timezone filters',
+  'Career transition job discovery',
 ];
 
 export function UpgradeModal({

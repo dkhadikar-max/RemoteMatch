@@ -161,6 +161,7 @@ export default function MatchDetailPage() {
         opportunity={opportunity}
         match={match}
         careerTransition={careerTransition}
+        yearsOfExperience={profile.intent?.yearsOfExperience}
         initialResumeTweaks={resumeTweaks}
         initialCoverLetter={coverLetter}
         onToneChange={handleToneChange}

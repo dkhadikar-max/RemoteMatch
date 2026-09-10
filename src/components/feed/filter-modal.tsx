@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Check, Lock, RotateCcw, MapPin } from 'lucide-react';
-import { OpportunityFilters } from '@/types/byn';
+import { X, Check, Lock, RotateCcw, MapPin, Compass } from 'lucide-react';
+import { OpportunityFilters, CareerDirection } from '@/types/byn';
 
 interface FilterModalProps {
   isOpen: boolean;
@@ -10,7 +10,10 @@ interface FilterModalProps {
   filters: OpportunityFilters;
   onApplyFilters: (filters: OpportunityFilters) => void;
   planTier: 'free' | 'pro';
-  onRequireUpgrade: (reason: 'filters') => void;
+  /** Server-authoritative (from /api/profile). The Career transition filter is
+   *  shown only for a `change_fields` user; it is absent for `continue`. */
+  careerDirection?: CareerDirection;
+  onRequireUpgrade: (reason: 'filters' | 'careerTransition') => void;
 }
 
 const ROLES = [
@@ -58,6 +61,7 @@ export function FilterModal({
   filters,
   onApplyFilters,
   planTier,
+  careerDirection,
   onRequireUpgrade,
 }: FilterModalProps) {
   const [draft, setDraft] = useState<OpportunityFilters>(filters);
@@ -217,6 +221,57 @@ export function FilterModal({
             </div>
           </div>
         </div>
+
+        {/* Career Transition (Pro) — shown only for a `change_fields` user.
+            Analysis is free (Match Detail); discovering/filtering the jobs is Pro. */}
+        {careerDirection === 'change_fields' && (
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider flex items-center gap-1.5">
+                <Compass size={13} className="text-[var(--red)]" />
+                Career Transition
+              </span>
+              <span className="text-[10px] font-bold text-[var(--red)] bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full flex items-center gap-1">
+                {!isPro && <Lock size={10} />}
+                <span>PRO</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isPro) {
+                  onRequireUpgrade('careerTransition');
+                  return;
+                }
+                setDraft((prev) => ({
+                  ...prev,
+                  careerTransition: prev.careerTransition ? undefined : true,
+                }));
+              }}
+              className={`w-full flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl text-xs transition-colors text-left ${
+                draft.careerTransition
+                  ? 'bg-[var(--red)] text-white shadow-sm'
+                  : 'bg-[var(--surface)] border border-[var(--line)] text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
+              }`}
+            >
+              <span>
+                <span className="block font-semibold">Career transition roles</span>
+                <span
+                  className={`block text-[11px] ${
+                    draft.careerTransition ? 'text-white/80' : 'text-[var(--muted)]'
+                  }`}
+                >
+                  Show roles outside your current field that your experience could transfer into.
+                </span>
+              </span>
+              {draft.careerTransition ? (
+                <Check size={14} strokeWidth={3} className="shrink-0" />
+              ) : (
+                !isPro && <Lock size={12} className="shrink-0" />
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Section 2: Precision Targeting (Pro Only) */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-4">

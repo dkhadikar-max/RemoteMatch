@@ -2,9 +2,8 @@
 
 import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
-import { CAREER_TRANSITION_COPY } from '@/lib/matching/career-transition';
 import Link from 'next/link';
-import { ArrowUpRight, ArrowRight, Check, AlertCircle, Compass } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 interface JobCardProps {
   opportunity: CanonicalOpportunity;
@@ -39,13 +38,11 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
 
   const badgeColor = COMPANY_COLORS[opportunity.company] || 'bg-[var(--ink)] text-white';
 
-  // Career Transition Matching — an ADDITIVE explanation for a career changer.
-  // When present it reframes the "why / what's missing" blocks with the REAL,
-  // data-derived transferable skills and gaps (never fabricated), and never
-  // touches the fit score or ordering.
-  const ct = opportunity.careerTransition;
-  const ctCopy = ct ? CAREER_TRANSITION_COPY[ct.classification] : null;
-
+  // V1.1: the job card is deliberately kept clean — no Career Transition
+  // framing here. Transition analysis (which uses the user's OWN skills, not
+  // the job's requirement names) lives only on the Match Detail page. The
+  // `opportunity.careerTransition` payload, when present, is consumed only by
+  // the Pro-gated feed filter, never rendered on the card.
   return (
     <div className="soft-card relative flex flex-col h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-5 sm:p-7 select-none justify-between bg-[var(--surface)] text-[var(--ink)] rounded-3xl border border-[var(--line)] shadow-[0_4px_24px_rgba(76,44,30,0.04)] transition-all duration-200">
       {/* Top Details */}
@@ -103,71 +100,36 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           )}
         </div>
 
-        {ct && ctCopy ? (
-          /* Career-transition framing — real transferable skills / gaps only */
-          <div className="mt-4 sm:mt-5 space-y-2 text-xs">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[var(--red)]">
-              <Compass size={13} className="shrink-0" />
-              <span>Career transition · {ctCopy.label}</span>
+        {/* Why it matches & What may be missing — standard v1 card view */}
+        <div className="mt-4 sm:mt-5 space-y-2 text-xs">
+          <div>
+            <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
+              Why it matches
+            </span>
+            <div className="flex items-center gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
+              <Check size={14} className="stroke-[3] shrink-0" />
+              <span>{metCount} skills match your experience</span>
             </div>
-            <p className="text-[11px] text-[var(--muted)] leading-relaxed">{ctCopy.blurb}</p>
+          </div>
 
-            <div>
-              <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">Why this could fit</span>
-              <div className="flex items-start gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
-                <Check size={14} className="stroke-[3] shrink-0 mt-0.5" />
+          <div>
+            <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
+              What may be missing
+            </span>
+            <div className="flex flex-col gap-1 text-[#b45309] font-medium bg-[#fffbeb] border border-[#fde68a] px-3.5 py-2 rounded-xl">
+              <div className="flex items-center gap-2">
+                <span className="grid size-4 place-items-center rounded-full bg-[#fef3c7] text-[10px] font-bold text-[#b45309] shrink-0">
+                  !
+                </span>
                 <span>
-                  {ct.transferableExperience.length > 0
-                    ? `Transferable experience: ${ct.transferableExperience.slice(0, 4).join(', ')}`
-                    : 'Your target field aligns — build the direct skills below to strengthen this.'}
+                  {opportunity.requiredSkills.length > metCount
+                    ? `The role asks for ${opportunity.requiredSkills[metCount]}.`
+                    : 'Check specific domain requirements before applying.'}
                 </span>
               </div>
             </div>
-
-            {ct.potentialGaps.length > 0 && (
-              <div>
-                <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">Potential gaps</span>
-                <div className="flex items-start gap-2 text-[#b45309] font-medium bg-[#fffbeb] border border-[#fde68a] px-3.5 py-2 rounded-xl">
-                  <span className="grid size-4 place-items-center rounded-full bg-[#fef3c7] text-[10px] font-bold text-[#b45309] shrink-0 mt-0.5">
-                    !
-                  </span>
-                  <span>{ct.potentialGaps.slice(0, 4).join(', ')}</span>
-                </div>
-              </div>
-            )}
           </div>
-        ) : (
-          /* Why it matches & What may be missing — existing v1 continue-in-field view */
-          <div className="mt-4 sm:mt-5 space-y-2 text-xs">
-            <div>
-              <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
-                Why it matches
-              </span>
-              <div className="flex items-center gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
-                <Check size={14} className="stroke-[3] shrink-0" />
-                <span>{metCount} skills match your experience</span>
-              </div>
-            </div>
-
-            <div>
-              <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
-                What may be missing
-              </span>
-              <div className="flex flex-col gap-1 text-[#b45309] font-medium bg-[#fffbeb] border border-[#fde68a] px-3.5 py-2 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <span className="grid size-4 place-items-center rounded-full bg-[#fef3c7] text-[10px] font-bold text-[#b45309] shrink-0">
-                    !
-                  </span>
-                  <span>
-                    {opportunity.requiredSkills.length > metCount
-                      ? `The role asks for ${opportunity.requiredSkills[metCount]}.`
-                      : 'Check specific domain requirements before applying.'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
