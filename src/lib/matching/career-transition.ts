@@ -130,7 +130,11 @@ export function classifyCareerTransition(
   };
 }
 
-/** UI copy — never "qualified". Exposed so the client and tests share one source. */
+/**
+ * UI copy — never "qualified". Exposed so the client and tests share one source.
+ * `label` is shown after a "Career transition · " prefix, so it must NOT itself
+ * be "Career transition".
+ */
 export const CAREER_TRANSITION_COPY: Record<CareerTransitionClass, { label: string; blurb: string }> = {
   direct: {
     label: 'Potential fit',
@@ -141,7 +145,7 @@ export const CAREER_TRANSITION_COPY: Record<CareerTransitionClass, { label: stri
     blurb: 'Your existing experience overlaps with some requirements for this role.',
   },
   stretch: {
-    label: 'Career transition',
+    label: 'Bigger step',
     blurb: 'This role is a bigger step from your current experience — see what transfers and what may be missing.',
   },
 };
