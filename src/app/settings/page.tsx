@@ -10,6 +10,7 @@ import { computeProfileCompleteness } from '@/lib/profile/completeness';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
+import { GrowYourMatches } from '@/components/settings/grow-your-matches';
 import {
   User,
   CheckCircle2,
@@ -440,7 +441,33 @@ function SettingsContent() {
                     </div>
                   </div>
                 </div>
+
+                {/* Your skills — the actual list, server-authoritative (I) */}
+                <div className="pt-1 space-y-2">
+                  <p className="text-xs font-semibold text-[var(--ink)]">Your skills</p>
+                  {(srv?.skills.length ?? 0) === 0 ? (
+                    <p className="text-[11px] italic text-[var(--muted)]">
+                      {loading ? '' : 'None added yet — add them in onboarding.'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {srv?.skills.map((s) => (
+                        <span
+                          key={s.name}
+                          className="tag bg-[var(--surface-soft)] border-[var(--line)] text-[#5c5550]"
+                        >
+                          {s.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Grow your matches — skills requested across the user's relevant
+                  jobs that they can confirm (I). Adding one changes only this
+                  user's own profile; the frozen matcher is untouched. */}
+              <GrowYourMatches onSkillAdded={refreshServer} />
 
               {/* Plan / usage — server entitlement only */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
