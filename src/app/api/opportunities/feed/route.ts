@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { PersonProfile } from '@/types/byn';
-import { scoreOpportunitiesForFeed } from '@/lib/matching/engine';
+import { scoreOpportunitiesForFeed, checkHardEligibility } from '@/lib/matching/engine';
+import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
 
@@ -25,6 +26,13 @@ import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
  *        profile the catalog is returned UNSCORED rather than scored against
  *        a shared demo fixture — this route has no dependency on the
  *        client-local profile store at all.
+ *
+ *        Career Transition Matching V1 is ADDITIVE and EXPLANATION-ONLY: when
+ *        `profile.careerDirection === 'change_fields'`, each item that passes
+ *        the UNMODIFIED hard-eligibility gate AND aligns with a target role
+ *        gets a `careerTransition` block attached. The scored list's ORDER is
+ *        never changed, the fitScore is never changed, and eligibility is
+ *        never changed — `scoreOpportunitiesForFeed` runs exactly as before.
  */
 
 function isScorableProfile(p: unknown): p is PersonProfile {
@@ -65,11 +73,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (isScorableProfile(profile)) {
-      return NextResponse.json({
-        success: true,
-        opportunities: scoreOpportunitiesForFeed(profile, opportunities),
-        scored: true,
-      });
+      // v1 scoring + ranking — completely unchanged.
+      const scored = scoreOpportunitiesForFeed(profile, opportunities);
+
+      // Additive, order-preserving transition-explanation layer.
+      const withTransition =
+        profile.careerDirection === 'change_fields'
+          ? scored.map((opp) => {
+              const isEligible = checkHardEligibility(profile, opp).isEligible;
+              const careerTransition = classifyCareerTransition(profile, opp, isEligible);
+              return careerTransition ? { ...opp, careerTransition } : opp;
+            })
+          : scored;
+
+      return NextResponse.json({ success: true, opportunities: withTransition, scored: true });
     }
 
     return NextResponse.json({ success: true, opportunities, scored: false });

@@ -102,6 +102,10 @@ export default function FeedPage() {
           dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
           dailyProposalsCount: entitlement.dailyProposalsCount,
           usageDate: entitlement.usageDate,
+          // Career Transition Matching — server-authoritative, from /api/profile.
+          // Only ever affects the additive transition-explanation layer, never
+          // eligibility / fit score / ranking / the decision snapshot.
+          careerDirection: entitlement.careerDirection,
         }
       : localProfile;
     setProfile(merged);

@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { CanonicalOpportunity, PersonProfile, MatchAnalysisResult, TailoredResumeSuggestions, MaterialTone } from '@/types/byn';
+import { CanonicalOpportunity, PersonProfile, MatchAnalysisResult, TailoredResumeSuggestions, MaterialTone, CareerTransitionResult } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
-import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
+import { generateRuleBasedMatchAnalysis, checkHardEligibility } from '@/lib/matching/engine';
+import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { generateJobSpecificResumeAnalysis } from '@/lib/ai/resume-intelligence';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
@@ -19,6 +20,7 @@ export default function MatchDetailPage() {
   const [opportunity, setOpportunity] = useState<CanonicalOpportunity | null>(null);
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [match, setMatch] = useState<MatchAnalysisResult | null>(null);
+  const [careerTransition, setCareerTransition] = useState<CareerTransitionResult | null>(null);
   const [resumeTweaks, setResumeTweaks] = useState<TailoredResumeSuggestions | null>(null);
   const [coverLetter, setCoverLetter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -48,16 +50,21 @@ export default function MatchDetailPage() {
             dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
             dailyProposalsCount: entitlement.dailyProposalsCount,
             usageDate: entitlement.usageDate,
+            careerDirection: entitlement.careerDirection,
           }
         : localProfile;
       setProfile(userProfile);
 
-      // Compute or retrieve match
+      // Compute or retrieve match — v1 engine, unchanged.
       const matchRes = generateRuleBasedMatchAnalysis(userProfile, opp);
 
       // Attach job-specific resume improvements
       matchRes.jobSpecificResumeImprovements = generateJobSpecificResumeAnalysis(userProfile, opp);
       setMatch(matchRes);
+
+      // Additive Career Transition explanation (change_fields users only).
+      const isEligible = checkHardEligibility(userProfile, opp).isEligible;
+      setCareerTransition(classifyCareerTransition(userProfile, opp, isEligible));
 
       // Initial kit loaded for viewing without consuming daily proposal generation quota
       const kit = await generateApplicationKit(userProfile, opp, matchRes, 'confident');
@@ -153,6 +160,7 @@ export default function MatchDetailPage() {
       <MatchAnalysisView
         opportunity={opportunity}
         match={match}
+        careerTransition={careerTransition}
         initialResumeTweaks={resumeTweaks}
         initialCoverLetter={coverLetter}
         onToneChange={handleToneChange}

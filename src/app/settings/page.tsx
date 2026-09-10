@@ -100,6 +100,12 @@ function SettingsContent() {
   const [linksSaved, setLinksSaved] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
+  // Career direction (Career Transition Matching). Server-authoritative via
+  // /api/profile; written by POST /api/profile/career-direction.
+  const [savingDirection, setSavingDirection] = useState<'continue' | 'change_fields' | null>(null);
+  const [directionError, setDirectionError] = useState<string | null>(null);
+  const careerDirection = ent?.careerDirection ?? 'continue';
+
   /** Refresh both server snapshots. Returns the onboarding snapshot (or null). */
   const refreshServer = async (): Promise<ServerOnboarding | null> => {
     let entitlement: ServerEntitlement | null = null;
@@ -139,6 +145,29 @@ function SettingsContent() {
     setIsSigningOut(true);
     await signOutCurrentSession();
     window.location.replace('/login');
+  };
+
+  const handleSetCareerDirection = async (next: 'continue' | 'change_fields') => {
+    if (next === careerDirection || savingDirection) return;
+    setDirectionError(null);
+    setSavingDirection(next);
+    try {
+      const res = await fetch('/api/profile/career-direction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction: next }),
+      });
+      if (!res.ok) {
+        setDirectionError('Could not update that just now. Try again.');
+        return;
+      }
+      // Repaint from the authoritative server value, not the local click.
+      await refreshServer();
+    } catch {
+      setDirectionError('Could not update that just now. Try again.');
+    } finally {
+      setSavingDirection(null);
+    }
   };
 
   useEffect(() => {
@@ -519,6 +548,57 @@ function SettingsContent() {
                   )}
                   {profileSaveError && <span className="text-xs font-medium text-[var(--red)]">{profileSaveError}</span>}
                 </div>
+              </div>
+
+              {/* Career direction — drives Career Transition Matching. Saved to
+                  profile_intents server-side; affects only the additive
+                  transition-explanation layer, never eligibility or fit score. */}
+              <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--ink)] uppercase tracking-wider">Career direction</h3>
+                  <p className="text-[11px] text-[var(--muted)] mt-1">
+                    Tell RemoteMatch whether you want to keep building on your experience or move into a new field.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {([
+                    ['continue', 'Continue in my field', 'Find roles that build on my existing experience.'],
+                    ['change_fields', 'Change fields', 'Find roles I could realistically transition into.'],
+                  ] as const).map(([value, title, sub]) => {
+                    const selected = careerDirection === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleSetCareerDirection(value)}
+                        disabled={loading || savingDirection !== null}
+                        className={`text-left rounded-2xl border p-4 transition-colors disabled:opacity-60 ${
+                          selected
+                            ? 'border-[var(--red)] bg-[var(--red-soft)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-[var(--ink)]">{title}</span>
+                          {selected && <CheckCircle2 size={14} className="text-[var(--red)] shrink-0" />}
+                          {savingDirection === value && (
+                            <span className="size-3.5 animate-spin rounded-full border-2 border-[var(--red)] border-t-transparent shrink-0" />
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[var(--muted)] mt-1 leading-relaxed">{sub}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {careerDirection === 'change_fields' && (
+                  <p className="text-[11px] text-[var(--muted)]">
+                    Your feed now also shows how your experience could transfer to roles in your target field —
+                    what fits, and what may be missing.
+                  </p>
+                )}
+                {directionError && <p className="text-[11px] text-[var(--red)]">{directionError}</p>}
               </div>
 
               {/* Professional links — already server-backed (migration 005) */}

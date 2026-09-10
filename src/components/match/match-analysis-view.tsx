@@ -7,7 +7,9 @@ import {
   MatchAnalysisResult,
   TailoredResumeSuggestions,
   MaterialTone,
+  CareerTransitionResult,
 } from '@/types/byn';
+import { CAREER_TRANSITION_COPY } from '@/lib/matching/career-transition';
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,12 +23,16 @@ import {
   CircleCheck,
   AlertCircle,
   Bookmark,
+  Compass,
 } from 'lucide-react';
 import { DidYouApplyModal } from '../feedback/did-you-apply-modal';
 
 interface MatchAnalysisViewProps {
   opportunity: CanonicalOpportunity;
   match: MatchAnalysisResult;
+  /** Career Transition Matching — present only for a `change_fields` user on an
+   *  eligible, target-role-aligned role. Additive: does not change `match`. */
+  careerTransition?: CareerTransitionResult | null;
   initialResumeTweaks: TailoredResumeSuggestions;
   initialCoverLetter: string;
   onToneChange?: (tone: MaterialTone) => Promise<string>;
@@ -48,6 +54,7 @@ const COMPANY_COLORS: Record<string, string> = {
 export function MatchAnalysisView({
   opportunity,
   match,
+  careerTransition,
   initialResumeTweaks,
   initialCoverLetter,
   onToneChange,
@@ -379,6 +386,44 @@ ${initialResumeTweaks.bulletRewrites
                   </div>
                 </div>
               </div>
+
+              {/* Career Transition — additive explanation for a career changer.
+                  Uses only real transferable skills / gaps; never restates the
+                  fit score as a qualification. */}
+              {careerTransition && (
+                <div className="mt-4 rounded-3xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[var(--red)] uppercase tracking-wider">
+                    <Compass size={15} />
+                    <span>Career transition · {CAREER_TRANSITION_COPY[careerTransition.classification].label}</span>
+                  </div>
+                  <p className="text-xs text-[var(--ink)] leading-relaxed">
+                    {CAREER_TRANSITION_COPY[careerTransition.classification].blurb} You told us you want to move
+                    into <span className="font-semibold">{careerTransition.targetRole}</span> roles.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-3 space-y-1.5">
+                      <span className="text-[11px] font-bold text-[#059669] uppercase tracking-wider">Why this could fit</span>
+                      {careerTransition.transferableExperience.length > 0 ? (
+                        <p className="text-xs text-[var(--ink)] leading-snug">
+                          Transferable experience: {careerTransition.transferableExperience.join(', ')}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-[var(--muted)] leading-snug">
+                          Your target field aligns with this role — the skills below are where to focus.
+                        </p>
+                      )}
+                    </div>
+                    <div className="rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-3 space-y-1.5">
+                      <span className="text-[11px] font-bold text-[#b45309] uppercase tracking-wider">What may be missing</span>
+                      {careerTransition.potentialGaps.length > 0 ? (
+                        <p className="text-xs text-[var(--ink)] leading-snug">{careerTransition.potentialGaps.join(', ')}</p>
+                      ) : (
+                        <p className="text-xs text-[var(--muted)] leading-snug">No obvious skill gaps against the listed requirements.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 3-Column Decision Grid (Screen 3) */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4">

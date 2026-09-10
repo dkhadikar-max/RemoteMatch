@@ -1,3 +1,5 @@
+import type { CareerDirection } from '@/types/byn';
+
 export interface ServerEntitlement {
   planTier: 'free' | 'pro';
   dailyRightSwipesCount: number;
@@ -9,6 +11,8 @@ export interface ServerEntitlement {
   isAnonymous: boolean;
   linkedinUrl: string | null;
   githubUrl: string | null;
+  /** Career Transition Matching. Defaults to 'continue' server-side. */
+  careerDirection: CareerDirection;
 }
 
 /**

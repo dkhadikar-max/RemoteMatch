@@ -38,6 +38,17 @@ export type MaterialTone = 'confident' | 'conversational' | 'formal';
 export type SkillEvidenceLevel = 'strong' | 'moderate' | 'missing';
 
 // 1. PERSON & PROFILE LAYER
+
+/**
+ * Career Transition Matching. `continue` (default) = the user wants roles that
+ * build on their proven experience — the v1 matcher is used verbatim.
+ * `change_fields` = the user has explicitly said they want to switch fields —
+ * an ADDITIVE, explanation-only layer then classifies eligible target-role
+ * opportunities. Persisted server-side in `profile_intents.career_direction`
+ * (migration 015), read via GET /api/profile, set from /settings only.
+ */
+export type CareerDirection = 'continue' | 'change_fields';
+
 export interface PersonProfile {
   id: string;
   email: string;
@@ -46,6 +57,9 @@ export interface PersonProfile {
   avatarUrl?: string;
   rawResumeText?: string;
   resumeFileUrl?: string;
+  /** Server-authoritative (profile_intents.career_direction). Undefined =
+   *  treat as 'continue'. Never sourced from localStorage. */
+  careerDirection?: CareerDirection;
   profileStrength?: number; // 0-100 (Separate from Job Fit!)
   planTier: 'free' | 'pro';
   dailyEvaluationsCount: number;
@@ -226,6 +240,10 @@ export interface CanonicalOpportunity {
   fitScore?: number; // Pre-computed Screening Fit %
   fitBadge?: 'Strong Fit' | 'Good Fit' | 'Moderate Fit' | 'Low Fit';
   isEligible?: boolean;
+  /** Career Transition Matching — present only for a `change_fields` user on
+   *  an eligible, target-role-aligned opportunity. Additive/explanatory: never
+   *  affects fitScore, eligibility, or feed order. */
+  careerTransition?: CareerTransitionResult;
 }
 
 // 5. HARD ELIGIBILITY GATE & SCREENING FIT
@@ -250,6 +268,30 @@ export interface RequirementCheckItem {
   requirement: string;
   status: 'matched' | 'partial' | 'missing';
   note: string;
+}
+
+/**
+ * Career Transition Matching V1 — an ADDITIVE explanation layer. Only produced
+ * for a `change_fields` user, and only for an opportunity that (a) passes the
+ * existing hard-eligibility gate and (b) aligns with one of the user's target
+ * roles. It NEVER changes the fit score, eligibility, ranking, or the decision
+ * snapshot — it explains the existing match. `transferableExperience` /
+ * `potentialGaps` are drawn only from data actually present (confirmed profile
+ * skills vs. the job's required skills); nothing is inferred or invented.
+ */
+export type CareerTransitionClass = 'direct' | 'transition' | 'stretch';
+
+export interface CareerTransitionResult {
+  classification: CareerTransitionClass;
+  /** The target role this opportunity aligned to. */
+  targetRole: string;
+  /** Job required-skills the user has as confirmed profile skills. */
+  transferableExperience: string[];
+  /** Job required-skills the user has no confirmed profile evidence for. */
+  potentialGaps: string[];
+  /** provenOverlap.length / max(job.requiredSkills.length, 1), rounded to 2dp. */
+  overlapRatio: number;
+  rulesVersion: string;
 }
 
 export interface MatchAnalysisResult {
