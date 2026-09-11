@@ -38,17 +38,30 @@ export interface ActionableSkillGap {
 
 /** Same cap `generateRuleBasedMatchAnalysis` applies to `strengths`/`gaps`,
  *  so "What may be missing" never grows unbounded on a role with a long
- *  requirements list. */
+ *  requirements list. Applied only to the DISPLAY list below — never to the
+ *  card's honest count (L-adjacent-1), which must reflect every distinct
+ *  requirement, not just the first 5. */
 const MAX_GAPS = 5;
 
-export function deriveActionableSkillGaps(
+/**
+ * The single, shared, UNCAPPED coverage computation — every distinct
+ * required skill for this opportunity (`total`, deduped by
+ * `normalizeSkillKey`, in encounter order), and the subset the profile does
+ * not demonstrate (`gaps`). Both `deriveActionableSkillGaps` (L's capped
+ * display list) and `deriveSkillMatchSummary` (L-adjacent-1's honest job-
+ * card count) are thin views over this ONE matching pass — never two
+ * separately-maintained implementations of the same fuzzy-match/dedup
+ * rule.
+ */
+function computeSkillCoverage(
   profile: Pick<PersonProfile, 'skills'>,
   opportunity: Pick<CanonicalOpportunity, 'requiredSkills'>,
-): ActionableSkillGap[] {
+): { total: ActionableSkillGap[]; gaps: ActionableSkillGap[] } {
   const profileSkillNames = (profile.skills || []).map((s) => s.skillName).filter(Boolean);
 
   const seenKeys = new Set<string>();
-  const out: ActionableSkillGap[] = [];
+  const total: ActionableSkillGap[] = [];
+  const gaps: ActionableSkillGap[] = [];
 
   for (const raw of opportunity.requiredSkills || []) {
     if (typeof raw !== 'string' || !raw.trim()) continue;
@@ -56,11 +69,51 @@ export function deriveActionableSkillGaps(
     if (seenKeys.has(key)) continue; // dedupe variants within this one job
     seenKeys.add(key);
 
+    const entry: ActionableSkillGap = { skill: raw.trim(), skillKey: key };
+    total.push(entry);
+
     const covered = profileSkillNames.some((ps) => fuzzyMatches(ps, raw));
     if (!covered) {
-      out.push({ skill: raw.trim(), skillKey: key });
+      gaps.push(entry);
     }
   }
 
-  return out.slice(0, MAX_GAPS);
+  return { total, gaps };
+}
+
+export function deriveActionableSkillGaps(
+  profile: Pick<PersonProfile, 'skills'>,
+  opportunity: Pick<CanonicalOpportunity, 'requiredSkills'>,
+): ActionableSkillGap[] {
+  return computeSkillCoverage(profile, opportunity).gaps.slice(0, MAX_GAPS);
+}
+
+/**
+ * L-adjacent-1 — the job card's honest replacement for the old
+ * back-calculated-from-fitScore `metCount` (which reflected the WHOLE
+ * scoring formula — role alignment, seniority, geography — never actual
+ * skill overlap) and the arbitrary `requiredSkills[metCount]` array-index
+ * "missing skill". `totalCount` is deliberately UNCAPPED — a role with 6+
+ * genuine gaps must report all 6+ as required, not silently truncate to 5
+ * the way the display-only `deriveActionableSkillGaps` does.
+ */
+export interface SkillMatchSummary {
+  /** Distinct required skills the profile demonstrates (fuzzy-matched). */
+  matchedCount: number;
+  /** Every distinct required skill for this opportunity — uncapped. */
+  totalCount: number;
+  /** The first genuinely unmatched requirement, or null when there are none. */
+  firstMissingSkill: string | null;
+}
+
+export function deriveSkillMatchSummary(
+  profile: Pick<PersonProfile, 'skills'>,
+  opportunity: Pick<CanonicalOpportunity, 'requiredSkills'>,
+): SkillMatchSummary {
+  const { total, gaps } = computeSkillCoverage(profile, opportunity);
+  return {
+    matchedCount: total.length - gaps.length,
+    totalCount: total.length,
+    firstMissingSkill: gaps[0]?.skill ?? null,
+  };
 }

@@ -5,6 +5,7 @@ import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement, notifyEntitlementChanged } from '@/lib/entitlement/client';
 import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
+import { deriveSkillMatchSummary } from '@/lib/match/actionable-skill-gaps';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
 import { UpgradeModal, UpgradeReason } from '@/components/premium/upgrade-modal';
@@ -82,7 +83,24 @@ export default function FeedPage() {
       // local fixture as if it were live supply.
     }
 
-    setOpportunities(scored);
+    // L-adjacent-1 — attach the job card's real skill-match summary here,
+    // page-side, using the same real profile just used to score the feed.
+    // Never inside engine.ts, never a fabricated fallback when currentProfile
+    // is somehow absent (the fields simply stay undefined and job-card.tsx
+    // renders its own honest no-data fallback).
+    const withSkillMatch = currentProfile
+      ? scored.map((opp) => {
+          const summary = deriveSkillMatchSummary(currentProfile, opp);
+          return {
+            ...opp,
+            skillsMatchedCount: summary.matchedCount,
+            skillsTotalCount: summary.totalCount,
+            firstMissingSkill: summary.firstMissingSkill,
+          };
+        })
+      : scored;
+
+    setOpportunities(withSkillMatch);
     setSwipedCount(swipes.length);
     setIsLoading(false);
   };

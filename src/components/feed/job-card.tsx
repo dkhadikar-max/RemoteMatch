@@ -27,11 +27,16 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
     opportunity.fitBadge ??
     (fitScore >= 80 ? 'Strong fit' : fitScore >= 65 ? 'Competitive' : 'Moderate fit');
 
-  const metCount = Math.min(
-    opportunity.requiredSkills.length,
-    Math.max(2, Math.round((fitScore / 100) * opportunity.requiredSkills.length))
-  );
-  const gapsCount = Math.max(1, opportunity.requiredSkills.length - metCount);
+  // L-adjacent-1 — real skill-match summary (deriveSkillMatchSummary,
+  // computed page-side in feed/page.tsx from the user's actual
+  // profile.skills). Replaces the old metCount, which was back-calculated
+  // from fitScore (the WHOLE scoring formula — role alignment, seniority,
+  // geography — never actual skill overlap) and requiredSkills[metCount],
+  // an arbitrary array index presented as if it were a determined gap.
+  // undefined only if the summary hasn't been computed yet (e.g. profile
+  // not loaded) — never a fabricated fallback number in that case.
+  const hasSkillMatch =
+    typeof opportunity.skillsMatchedCount === 'number' && typeof opportunity.skillsTotalCount === 'number';
 
   // Top skills for tags
   const displayTags = opportunity.requiredSkills.slice(0, 3);
@@ -111,7 +116,11 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
             </span>
             <div className="flex items-center gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
               <Check size={14} className="stroke-[3] shrink-0" />
-              <span>{metCount} skills match your experience</span>
+              <span>
+                {hasSkillMatch
+                  ? `${opportunity.skillsMatchedCount} skills match your experience`
+                  : `${opportunity.requiredSkills.length} skills required for this role`}
+              </span>
             </div>
           </div>
 
@@ -125,8 +134,8 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
                   !
                 </span>
                 <span>
-                  {opportunity.requiredSkills.length > metCount
-                    ? `The role asks for ${opportunity.requiredSkills[metCount]}.`
+                  {opportunity.firstMissingSkill
+                    ? `The role asks for ${opportunity.firstMissingSkill}.`
                     : 'Check specific domain requirements before applying.'}
                 </span>
               </div>

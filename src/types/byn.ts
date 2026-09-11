@@ -244,6 +244,16 @@ export interface CanonicalOpportunity {
    *  an eligible, target-role-aligned opportunity. Additive/explanatory: never
    *  affects fitScore, eligibility, or feed order. */
   careerTransition?: CareerTransitionResult;
+  /** L-adjacent-1 — real skill-match summary, computed page-side (never
+   *  inside engine.ts) from the user's confirmed profile.skills vs this
+   *  opportunity's requiredSkills, via
+   *  src/lib/match/actionable-skill-gaps.ts's deriveSkillMatchSummary().
+   *  Replaces the job card's previous back-calculated-from-fitScore
+   *  `metCount` fabrication. undefined when not yet computed (e.g. profile
+   *  not loaded) — the card must never fabricate a fallback number. */
+  skillsMatchedCount?: number;
+  skillsTotalCount?: number;
+  firstMissingSkill?: string | null;
 }
 
 // 5. HARD ELIGIBILITY GATE & SCREENING FIT
