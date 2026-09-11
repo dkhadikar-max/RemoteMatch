@@ -11,6 +11,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
 import { GrowYourMatches } from '@/components/settings/grow-your-matches';
+import { SearchProfile } from '@/components/settings/search-profile';
 import {
   User,
   CheckCircle2,
@@ -336,15 +337,6 @@ function SettingsContent() {
     </div>
   );
 
-  const prefRow = (label: string, value: string | null | undefined) => (
-    <div className="flex items-baseline justify-between gap-4 py-2 border-b border-[var(--line)] last:border-0">
-      <span className="text-xs font-semibold text-[var(--muted)]">{label}</span>
-      <span className={`text-xs text-right ${value ? 'text-[var(--ink)] font-medium' : 'text-[var(--muted)] italic'}`}>
-        {value || NOT_SET}
-      </span>
-    </div>
-  );
-
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-8 items-start">
@@ -577,56 +569,10 @@ function SettingsContent() {
                 </div>
               </div>
 
-              {/* Career direction — drives Career Transition Matching. Saved to
-                  profile_intents server-side; affects only the additive
-                  transition-explanation layer, never eligibility or fit score. */}
-              <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
-                <div>
-                  <h3 className="text-sm font-semibold text-[var(--ink)] uppercase tracking-wider">Career direction</h3>
-                  <p className="text-[11px] text-[var(--muted)] mt-1">
-                    Tell RemoteMatch whether you want to keep building on your experience or move into a new field.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {([
-                    ['continue', 'Continue in my field', 'Find roles that build on my existing experience.'],
-                    ['change_fields', 'Change fields', 'Find roles I could realistically transition into.'],
-                  ] as const).map(([value, title, sub]) => {
-                    const selected = careerDirection === value;
-                    return (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => handleSetCareerDirection(value)}
-                        disabled={loading || savingDirection !== null}
-                        className={`text-left rounded-2xl border p-4 transition-colors disabled:opacity-60 ${
-                          selected
-                            ? 'border-[var(--red)] bg-[var(--red-soft)]'
-                            : 'border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)]'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-[var(--ink)]">{title}</span>
-                          {selected && <CheckCircle2 size={14} className="text-[var(--red)] shrink-0" />}
-                          {savingDirection === value && (
-                            <span className="size-3.5 animate-spin rounded-full border-2 border-[var(--red)] border-t-transparent shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-[11px] text-[var(--muted)] mt-1 leading-relaxed">{sub}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {careerDirection === 'change_fields' && (
-                  <p className="text-[11px] text-[var(--muted)]">
-                    Your feed now also shows how your experience could transfer to roles in your target field —
-                    what fits, and what may be missing.
-                  </p>
-                )}
-                {directionError && <p className="text-[11px] text-[var(--red)]">{directionError}</p>}
-              </div>
+              {/* Career direction moved to Settings → Preferences → "Search
+                  profile" (J — Unified Search Profile), grouped with the rest
+                  of the search-facing preferences. Same state/RPC, UI
+                  relocation only. */}
 
               {/* Professional links — already server-backed (migration 005) */}
               <div className="soft-card p-6 sm:p-8 space-y-5 border border-[var(--line)]">
@@ -694,35 +640,17 @@ function SettingsContent() {
             </>
           )}
 
-          {/* PREFERENCES — read-only view of the server onboarding snapshot */}
+          {/* PREFERENCES — the editable, server-backed Search Profile (J) */}
           {activeTab === 'preferences' && (
-            <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
-              <div>
-                <h2 className="text-lg font-bold text-[var(--ink)]">Search &amp; matching preferences</h2>
-                <p className="text-xs text-[var(--muted)] mt-1">
-                  Set during onboarding. Editing preferences from here is coming soon.
-                </p>
-              </div>
-
-              {loading ? (
-                <p className="text-xs text-[var(--muted)]">Loading…</p>
-              ) : (
-                <div className="text-xs">
-                  {prefRow('Target roles', srv?.targetRoles.length ? srv.targetRoles.join(', ') : null)}
-                  {prefRow('Employment type', srv?.employmentTypes.length ? srv.employmentTypes.join(', ') : null)}
-                  {prefRow('Work preference', humanWorkPreference(srv?.workPreference))}
-                  {prefRow('Years of experience', srv?.yearsOfExperience ? `${srv.yearsOfExperience} yrs` : null)}
-                  {prefRow('Location', srv?.currentCountry || null)}
-                  {prefRow('Timezone', srv?.currentTimezone || null)}
-                  {srv?.minSalary
-                    ? prefRow(
-                        'Minimum salary',
-                        `${srv.minSalary.toLocaleString('en-US')} ${srv.preferredCurrency || 'USD'}`
-                      )
-                    : null}
-                </div>
-              )}
-            </div>
+            <SearchProfile
+              srv={srv}
+              loading={loading}
+              onSaved={refreshServer}
+              careerDirection={careerDirection}
+              savingDirection={savingDirection}
+              directionError={directionError}
+              onSetCareerDirection={handleSetCareerDirection}
+            />
           )}
 
           {/* BILLING */}

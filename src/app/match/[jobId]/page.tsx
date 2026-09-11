@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CanonicalOpportunity, PersonProfile, MatchAnalysisResult, TailoredResumeSuggestions, MaterialTone, CareerTransitionResult } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
+import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
 import { generateRuleBasedMatchAnalysis, checkHardEligibility } from '@/lib/matching/engine';
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { generateApplicationKit } from '@/lib/ai/materials';
@@ -38,9 +39,16 @@ export default function MatchDetailPage() {
     setOpportunity(opp);
 
     (async () => {
-      // Profile CONTENT (skills/experience) stays on the local fixture;
-      // planTier/dailyProposalsCount are overlaid from the server and are
-      // the only fields this page ever gates on.
+      // J4 — Unified Search Profile: this page used to read localStore
+      // directly, with no guarantee it had ever been hydrated (feed/page.tsx
+      // is the only other caller of hydrateLocalProfileFromServer, and a
+      // direct/bookmarked link here could skip it entirely) — silently
+      // falling back to DEFAULT_DEMO_PROFILE. Hydrate first, same function
+      // feed/page.tsx already uses, so Match Detail reflects the real server
+      // profile whenever one exists. planTier/dailyProposalsCount are still
+      // overlaid from the server below and are the only fields this page
+      // ever gates on.
+      await hydrateLocalProfileFromServer();
       const localProfile = localStore.getProfile();
       const entitlement = await fetchServerEntitlement();
       const userProfile: PersonProfile = entitlement
