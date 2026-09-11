@@ -35,15 +35,35 @@ export default function MatchDetailPage() {
   useEffect(() => {
     if (!jobId) return;
 
-    const opp = localStore.getOpportunityById(jobId);
-
-    if (!opp) {
-      router.push('/feed');
-      return;
-    }
-    setOpportunity(opp);
-
     (async () => {
+      // M-adj-2(a) — Data-source/navigation integrity: resolves the
+      // opportunity from the real, live, active catalog
+      // (GET /api/opportunities/feed — existing, public, unscored; no new
+      // API route). NEVER falls back to CURATED_JOBS/localStore — that
+      // static fixture is no longer the authoritative resolver for this
+      // page at all, for any source, curated included (a curated id now
+      // resolves through the exact same path as a remotive/arbeitnow/
+      // jobicy one). A fetch failure and a genuinely absent/inactive id
+      // both fall through to the SAME existing not-found redirect below,
+      // unchanged from before this fix.
+      let opp: CanonicalOpportunity | null = null;
+      try {
+        const res = await fetch('/api/opportunities/feed');
+        const data = await res.json();
+        if (res.ok && data.success) {
+          opp = (data.opportunities as CanonicalOpportunity[]).find((o) => o.id === jobId) ?? null;
+        }
+      } catch {
+        // network failure -> opp stays null; falls through to the same
+        // redirect as "not found", never to any local fixture.
+      }
+
+      if (!opp) {
+        router.push('/feed');
+        return;
+      }
+      setOpportunity(opp);
+
       // J4 — Unified Search Profile: this page used to read localStore
       // directly, with no guarantee it had ever been hydrated (feed/page.tsx
       // is the only other caller of hydrateLocalProfileFromServer, and a
