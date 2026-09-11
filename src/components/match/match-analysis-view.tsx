@@ -66,7 +66,17 @@ interface MatchAnalysisViewProps {
   actionableGaps?: ActionableSkillGap[];
   initialResumeTweaks: TailoredResumeSuggestions;
   initialCoverLetter: string;
-  onToneChange?: (tone: MaterialTone) => Promise<string>;
+  /** O3 — where each piece of material actually came from. Bullet rewrites
+   *  never regenerate after the initial load (only the cover letter does,
+   *  via tone changes), so they're tracked separately: 'ai' only when a
+   *  real, anti-fabrication-checked model response is displayed; 'template'
+   *  (the default) for the deterministic generator, including when an AI
+   *  attempt existed but was rejected. Drives whether the panel claims
+   *  "based strictly on your experience" or is honestly framed as generic
+   *  guidance (see O3's copy split below). */
+  resumeTweaksSource?: 'ai' | 'template';
+  initialCoverLetterSource?: 'ai' | 'template';
+  onToneChange?: (tone: MaterialTone) => Promise<{ coverLetter: string; source: 'ai' | 'template' }>;
   onRecordFeedback?: (didApply: any, notes?: string) => void;
   planTier?: 'free' | 'pro';
   dailyProposalsCount?: number;
@@ -90,6 +100,8 @@ export function MatchAnalysisView({
   actionableGaps = [],
   initialResumeTweaks,
   initialCoverLetter,
+  resumeTweaksSource = 'template',
+  initialCoverLetterSource = 'template',
   onToneChange,
   onRecordFeedback,
   planTier = 'free',
@@ -99,6 +111,7 @@ export function MatchAnalysisView({
   const [activeTab, setActiveTab] = useState<'analysis' | 'materials' | 'details' | 'company' | 'similar'>('analysis');
   const [activeTone, setActiveTone] = useState<MaterialTone>('confident');
   const [coverLetter, setCoverLetter] = useState(initialCoverLetter);
+  const [coverLetterSource, setCoverLetterSource] = useState<'ai' | 'template'>(initialCoverLetterSource);
   const [copiedCoverLetter, setCopiedCoverLetter] = useState(false);
   const [copiedBulletIdx, setCopiedBulletIdx] = useState<number | null>(null);
   const [showApplyFeedbackModal, setShowApplyFeedbackModal] = useState(false);
@@ -139,10 +152,11 @@ export function MatchAnalysisView({
 
     if (onToneChange) {
       try {
-        const newLetter = await onToneChange(tone);
-        if (newLetter) {
+        const result = await onToneChange(tone);
+        if (result?.coverLetter) {
           setActiveTone(tone);
-          setCoverLetter(newLetter);
+          setCoverLetter(result.coverLetter);
+          setCoverLetterSource(result.source);
         }
       } catch (err: any) {
         if (err?.message === 'limit_reached' || err?.upgradeRequired) {
@@ -686,11 +700,21 @@ ${initialResumeTweaks.bulletRewrites
                 <h2 className="text-sm font-bold text-[var(--ink)] uppercase tracking-wider">
                   Tailored Application Materials
                 </h2>
+                {/* O3 — this claim is only true when resumeTweaksSource is
+                    'ai' (a real, anti-fabrication-checked model response).
+                    The deterministic template — the default for every user,
+                    and the only content free users without a real resume on
+                    file will ever see — is honestly framed as generic
+                    guidance, never as evidence drawn from the user. */}
                 <p className="text-xs text-[var(--muted)] mt-0.5">
-                  Tailored suggestions based strictly on your experience
+                  {resumeTweaksSource === 'ai'
+                    ? 'Tailored suggestions based strictly on your experience'
+                    : 'General guidance based on this role’s requirements — personalize it with your own real experience before sending'}
                 </p>
               </div>
-              <span className="status good text-[11px]">Tailored for you</span>
+              <span className={`status text-[11px] ${resumeTweaksSource === 'ai' ? 'good' : ''}`}>
+                {resumeTweaksSource === 'ai' ? 'Tailored for you' : 'Generic guidance'}
+              </span>
             </div>
 
             {/* Bullet Rewrites */}
@@ -729,8 +753,13 @@ ${initialResumeTweaks.bulletRewrites
                     <p className="bg-[var(--surface)] p-3 rounded-xl border border-[var(--line)] text-xs text-[var(--ink)] leading-relaxed font-mono">
                       "{bullet.suggestedRewrite}"
                     </p>
+                    {/* O3 — never labeled "Source Fact" for generic template
+                        content: originalContext there is a hardcoded example,
+                        not anything drawn from this user. */}
                     <span className="text-[11px] text-[var(--muted)] block">
-                      Source Fact: {bullet.originalContext}
+                      {resumeTweaksSource === 'ai'
+                        ? `Source Fact: ${bullet.originalContext}`
+                        : 'Typical starting point — replace with specifics from your own background.'}
                     </span>
                   </div>
                 ))}
@@ -744,6 +773,14 @@ ${initialResumeTweaks.bulletRewrites
                   <h3 className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
                     Tailored Proposal Letter
                   </h3>
+                  {/* O3 — the cover letter can independently be 'ai' or
+                      'template' after a tone change, regardless of the
+                      bullets' source above. */}
+                  {coverLetterSource !== 'ai' && (
+                    <span className="text-[10px] font-semibold text-[var(--muted)] ml-2 bg-[var(--surface-soft)] border border-[var(--line)] rounded-full px-1.5 py-0.5">
+                      Generic starting point
+                    </span>
+                  )}
                   {planTier === 'free' ? (
                     <span className="text-[11px] text-[var(--muted)] ml-2">
                       ({dailyProposalsCount} of 5 used today)

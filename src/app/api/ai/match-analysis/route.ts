@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
-import { localStore } from '@/lib/db/mock-seed';
+import { loadServerProfile } from '@/lib/profile/server-profile';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { MaterialTone } from '@/types/byn';
@@ -78,18 +78,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Profile CONTENT (skills/experience) is out of scope for this pass and
-    // still comes from the local fixture; only the quota gate above and the
-    // plan tier are Supabase-authoritative.
-    const localProfile = localStore.getProfile();
-    const match = generateRuleBasedMatchAnalysis(localProfile, opp);
-    const kit = await generateApplicationKit(localProfile, opp, match, tone as MaterialTone);
+    // O1 — profile CONTENT now comes from the real, server-authoritative
+    // profile (loadServerProfile, O9), never the client-local demo fixture.
+    // That fixture is a module-level singleton with no relationship to any
+    // specific request — calling it from a server route returned the same
+    // static demo data for every user, every time. This route already
+    // authenticates the caller (auth.user/auth.supabase above); loading
+    // their real profile here is the fix.
+    const profile = await loadServerProfile(auth.supabase, auth.user);
+    const match = generateRuleBasedMatchAnalysis(profile, opp);
+    const kit = await generateApplicationKit(profile, opp, match, tone as MaterialTone);
 
     return NextResponse.json({
       success: true,
       match,
       resumeTweaks: kit.resumeTweaks,
       coverLetter: kit.coverLetter,
+      source: kit.source,
       planTier: reservationResult.planTier,
       limit: reservationResult.limit,
       remaining: reservationResult.remaining,

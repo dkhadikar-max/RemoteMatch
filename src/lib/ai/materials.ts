@@ -6,6 +6,15 @@ import {
   TailoredResumeSuggestions,
   MaterialTone,
 } from '@/types/byn';
+import { deriveActionableSkillGaps } from '@/lib/match/actionable-skill-gaps';
+import { isGeneratedKitSupported } from '@/lib/ai/anti-fabrication';
+
+/** Where the returned material actually came from (ticket O3). 'template'
+ *  means the deterministic, hand-authored generator — including when an
+ *  AI attempt was made but rejected by the anti-fabrication check (O4).
+ *  Never persisted (kept OUT of TailoredResumeSuggestions itself, which is
+ *  also the shape stored in the frozen decision_snapshot — O2). */
+export type ApplicationKitSource = 'ai' | 'template';
 
 // Fallback high-quality template generator
 function generateFallbackApplicationKit(
@@ -16,6 +25,7 @@ function generateFallbackApplicationKit(
 ): {
   resumeTweaks: TailoredResumeSuggestions;
   coverLetter: string;
+  source: ApplicationKitSource;
 } {
   const candidateName = profile.fullName || 'Candidate';
   const roleTitle = opportunity.title;
@@ -93,7 +103,7 @@ Sincerely,
 ${candidateName}`;
   }
 
-  return { resumeTweaks, coverLetter };
+  return { resumeTweaks, coverLetter, source: 'template' };
 }
 
 // Generate application kit with Gemini Flash or intelligent fallback
@@ -105,6 +115,7 @@ export async function generateApplicationKit(
 ): Promise<{
   resumeTweaks: TailoredResumeSuggestions;
   coverLetter: string;
+  source: ApplicationKitSource;
 }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -176,9 +187,27 @@ Output ONLY valid JSON with this exact schema:
     const responseText = result.response.text();
     const parsed = JSON.parse(responseText);
 
+    // O4 — a conservative claim screen, not proof of factual accuracy: it
+    // catches a small, enumerable set of unsupported-claim shapes (a gap
+    // skill claimed as demonstrated, an unstated metric, an unstated
+    // employer). It does NOT verify every sentence is true — the
+    // deterministic fallback below is the actual safety mechanism whenever
+    // a known violation fires. Never a partial edit of the LLM's text:
+    // on failure, the entire generated result is discarded.
+    const gapSkills = deriveActionableSkillGaps(profile, opportunity).map((g) => g.skill);
+    const supported = isGeneratedKitSupported(
+      { coverLetter: parsed.coverLetter, resumeTweaks: parsed.resumeTweaks },
+      { gapSkills, rawResumeText: profile.rawResumeText || '', opportunityCompany: opportunity.company },
+    );
+    if (!supported) {
+      console.warn('Gemini Flash output failed the anti-fabrication check, falling back to rule-based generator.');
+      return generateFallbackApplicationKit(profile, opportunity, match, tone);
+    }
+
     return {
       resumeTweaks: parsed.resumeTweaks,
       coverLetter: parsed.coverLetter,
+      source: 'ai',
     };
   } catch (err) {
     console.warn('Gemini Flash call failed, falling back to rule-based generator:', err);

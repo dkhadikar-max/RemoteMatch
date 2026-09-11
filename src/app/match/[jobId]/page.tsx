@@ -26,7 +26,9 @@ export default function MatchDetailPage() {
   const [careerTransition, setCareerTransition] = useState<CareerTransitionResult | null>(null);
   const [actionableGaps, setActionableGaps] = useState<ActionableSkillGap[]>([]);
   const [resumeTweaks, setResumeTweaks] = useState<TailoredResumeSuggestions | null>(null);
+  const [resumeTweaksSource, setResumeTweaksSource] = useState<'ai' | 'template'>('template');
   const [coverLetter, setCoverLetter] = useState<string>('');
+  const [coverLetterSource, setCoverLetterSource] = useState<'ai' | 'template'>('template');
   const [isLoading, setIsLoading] = useState(true);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
 
@@ -82,16 +84,23 @@ export default function MatchDetailPage() {
       // is already computed page-side and passed down as a prop.
       setActionableGaps(deriveActionableSkillGaps(userProfile, opp));
 
-      // Initial kit loaded for viewing without consuming daily proposal generation quota
+      // Initial kit loaded for viewing without consuming daily proposal generation quota.
+      // O3: this always runs client-side, where GEMINI_API_KEY is never
+      // available (Next.js only inlines NEXT_PUBLIC_-prefixed vars into
+      // client bundles) — kit.source is therefore always 'template' here.
+      // Kept as a real field (not hardcoded) so this stays correct even if
+      // that execution boundary ever changes.
       const kit = await generateApplicationKit(userProfile, opp, matchRes, 'confident');
       setResumeTweaks(kit.resumeTweaks);
+      setResumeTweaksSource(kit.source);
       setCoverLetter(kit.coverLetter);
+      setCoverLetterSource(kit.source);
       setIsLoading(false);
     })();
   }, [jobId, router]);
 
-  const handleToneChange = async (tone: MaterialTone): Promise<string> => {
-    if (!profile || !opportunity || !match) return '';
+  const handleToneChange = async (tone: MaterialTone): Promise<{ coverLetter: string; source: 'ai' | 'template' }> => {
+    if (!profile || !opportunity || !match) return { coverLetter: '', source: 'template' };
 
     // The server is the only entitlement authority here: it atomically
     // reserves one proposal-generation unit BEFORE calling the AI, and
@@ -122,7 +131,14 @@ export default function MatchDetailPage() {
       throw new Error(data.error || 'generation_failed');
     }
 
+    // O1: this now reflects generation against the real, server-loaded
+    // profile (loadServerProfile), not the demo fixture. O4: `data.source`
+    // is 'ai' only when the model's response passed the anti-fabrication
+    // check; otherwise the route already fell back to the deterministic
+    // template and reports that honestly.
+    const source: 'ai' | 'template' = data.source === 'ai' ? 'ai' : 'template';
     setCoverLetter(data.coverLetter);
+    setCoverLetterSource(source);
     const entitlement = await fetchServerEntitlement();
     if (entitlement) {
       setProfile((prev) =>
@@ -137,7 +153,7 @@ export default function MatchDetailPage() {
           : prev
       );
     }
-    return data.coverLetter;
+    return { coverLetter: data.coverLetter, source };
   };
 
   const handleRecordFeedback = (didApply: any, notes?: string) => {
@@ -181,6 +197,8 @@ export default function MatchDetailPage() {
         actionableGaps={actionableGaps}
         initialResumeTweaks={resumeTweaks}
         initialCoverLetter={coverLetter}
+        resumeTweaksSource={resumeTweaksSource}
+        initialCoverLetterSource={coverLetterSource}
         onToneChange={handleToneChange}
         onRecordFeedback={handleRecordFeedback}
         planTier={profile.planTier}
