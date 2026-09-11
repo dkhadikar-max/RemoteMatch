@@ -195,10 +195,21 @@ async function run() {
     });
     assert(ob.status === 200, `onboarding -> 200 (got ${ob.status})`);
 
-    // Any active catalog job works — we only need a real opportunityId.
+    // Target a job whose requiredSkills deliberately overlap the CLIENT
+    // DEMO FIXTURE's skill set (React/TypeScript/Node.js/PostgreSQL — see
+    // DEFAULT_DEMO_PROFILE in mock-seed.ts) but NOT our onboarded profile
+    // (which has only `distinctiveSkill`). This makes O1's fix positively
+    // provable, not just "a match object exists": under the pre-fix bug
+    // (localStore.getProfile() server-side), the response would show
+    // "Core capability in React/TypeScript/..." strengths even though
+    // THIS profile never claimed them. With the fix, those must appear as
+    // gaps instead, and never as strengths.
+    const DEMO_FIXTURE_SKILLS = ['React', 'TypeScript', 'Next.js', 'Node.js', 'PostgreSQL', 'Tailwind CSS', 'Docker', 'GraphQL'];
     const catRes = await fetch(`${BASE_URL}/api/opportunities/feed`);
     const catData = await catRes.json();
-    const opp = (catData.opportunities || [])[0];
+    const opp =
+      (catData.opportunities || []).find((o: any) => o.id === 'opp-curated-curated-001') ||
+      (catData.opportunities || [])[0];
     if (!opp) {
       skip('no active opportunity available — HTTP tone-regeneration check skipped');
     } else {
@@ -210,14 +221,22 @@ async function run() {
       const data = await res.json();
       assert(typeof data.source === 'string' && ['ai', 'template'].includes(data.source), `response reports a valid source (got "${data.source}")`);
       assert(typeof data.remaining !== 'undefined' && typeof data.limit === 'number', 'O8: the existing 5/day quota fields are present, unchanged');
-      // O1's real proof: the distinctive skill we just onboarded reaches
-      // generateRuleBasedMatchAnalysis (via the real profile), so the
-      // returned match reflects OUR skill set, never the static demo
-      // fixture's (React/TypeScript/Next.js/...).
       assert(
         Array.isArray(data.match?.strengths) || Array.isArray(data.match?.gaps),
         'the response includes a real match computed against a real profile (not silently omitted)',
       );
+
+      const strengthsText = (data.match?.strengths || []).join(' | ');
+      const demoSkillOverlap = opp.requiredSkills?.filter((s: string) => DEMO_FIXTURE_SKILLS.includes(s)) || [];
+      if (demoSkillOverlap.length > 0) {
+        const claimedADemoSkill = demoSkillOverlap.some((s: string) => strengthsText.includes(s));
+        assert(
+          !claimedADemoSkill,
+          `O1 POSITIVE PROOF: none of this job's demo-fixture-overlapping requirements (${demoSkillOverlap.join(', ')}) are claimed as a strength for a profile that never listed them — proves the server route used the REAL profile, not localStore's demo fixture (strengths: "${strengthsText}")`,
+        );
+      } else {
+        skip(`target opportunity has no demo-fixture skill overlap to test against (requiredSkills: ${(opp.requiredSkills || []).join(', ')})`);
+      }
     }
 
     // Quota exhaustion still returns the standard shape (O8 unchanged).
