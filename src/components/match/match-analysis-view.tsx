@@ -13,6 +13,14 @@ import {
 import { CAREER_TRANSITION_COPY } from '@/lib/matching/career-transition';
 import type { ActionableSkillGap } from '@/lib/match/actionable-skill-gaps';
 import { WhatYouCanDo } from './what-you-can-do';
+import { formatSalary } from '@/lib/feed/job-card-format';
+import {
+  sourceDisplayName,
+  remoteScopeCaveat,
+  salaryQualifierLabel,
+  linkVerifiedLabel,
+  employerDirectApplyLabel,
+} from '@/lib/feed/trust-signals';
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,6 +35,7 @@ import {
   AlertCircle,
   Bookmark,
   Compass,
+  ShieldCheck,
 } from 'lucide-react';
 import { DidYouApplyModal } from '../feedback/did-you-apply-modal';
 
@@ -261,13 +270,44 @@ ${initialResumeTweaks.bulletRewrites
                   </h1>
                   <span className="text-xs text-[var(--muted)]">({opportunity.title})</span>
                 </div>
-                <p className="text-xs text-[var(--muted)] mt-1 font-mono font-medium">
-                  {opportunity.salaryMin || opportunity.salaryMax
-                    ? `$${Math.round((opportunity.salaryMin || 0) / 1000)}k – $${Math.round(
-                        (opportunity.salaryMax || 0) / 1000
-                      )}k · Full-time`
-                    : '$140k – $180k · Full-time'}
+                {/* M10.2 — this line used to fabricate "$140k – $180k ·
+                    Full-time" whenever salary was missing, the exact class of
+                    fabrication H removed from job-card.tsx / job-details-modal.tsx.
+                    Fixed here using H's own shared formatSalary() (no new
+                    formatter, no new computation) and the opportunity's real
+                    employmentType. M3's salary qualifier is attached inline. */}
+                <p className="text-xs text-[var(--muted)] mt-1 font-mono font-medium flex items-center gap-1.5 flex-wrap">
+                  <span>{formatSalary(opportunity)} · {opportunity.employmentType}</span>
+                  {salaryQualifierLabel(opportunity) && (
+                    <span className="text-[10px] font-sans font-semibold text-[var(--muted)] bg-[var(--surface-soft)] border border-[var(--line)] rounded-full px-1.5 py-0.5">
+                      {salaryQualifierLabel(opportunity)}
+                    </span>
+                  )}
                 </p>
+                {/* M — Job Trust Layer: provenance, remote-scope honesty,
+                    link freshness, employer-direct reassurance. Same helpers
+                    and same facts as job-details-modal.tsx; additive, applies
+                    across every tab (placed above the tab bar). */}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-[10px] text-[var(--muted)]">
+                  <span>{sourceDisplayName(opportunity.source)}</span>
+                  {linkVerifiedLabel(opportunity.linkCheckedAt) && (
+                    <>
+                      <span>·</span>
+                      <span>{linkVerifiedLabel(opportunity.linkCheckedAt)}</span>
+                    </>
+                  )}
+                  <span>·</span>
+                  <span>{remoteScopeCaveat(opportunity.explicitRemoteScope)}</span>
+                  {employerDirectApplyLabel(opportunity.source) && (
+                    <>
+                      <span>·</span>
+                      <span className="inline-flex items-center gap-1">
+                        <ShieldCheck size={10} className="text-[#059669]" />
+                        {employerDirectApplyLabel(opportunity.source)}
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 

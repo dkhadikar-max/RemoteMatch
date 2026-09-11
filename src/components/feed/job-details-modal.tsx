@@ -3,7 +3,14 @@
 import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
 import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
-import { X, Globe2, DollarSign, Briefcase, Check, ExternalLink } from 'lucide-react';
+import {
+  sourceDisplayName,
+  remoteScopeCaveat,
+  salaryQualifierLabel,
+  linkVerifiedLabel,
+  employerDirectApplyLabel,
+} from '@/lib/feed/trust-signals';
+import { X, Globe2, DollarSign, Briefcase, Check, ExternalLink, ShieldCheck } from 'lucide-react';
 
 interface JobDetailsModalProps {
   opportunity: CanonicalOpportunity | null;
@@ -53,8 +60,15 @@ export function JobDetailsModal({
                     <span>{formatPostedAge(opportunity.postedAt)}</span>
                   </>
                 )}
-                <span>·</span>
-                <span className="capitalize">{opportunity.source}</span>
+                {/* M1 — the one genuinely real freshness fact beyond posting
+                    age: when we last confirmed the link itself. Additive —
+                    never replaces postedAge, never shown when absent. */}
+                {linkVerifiedLabel(opportunity.linkCheckedAt) && (
+                  <>
+                    <span>·</span>
+                    <span>{linkVerifiedLabel(opportunity.linkCheckedAt)}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -78,6 +92,12 @@ export function JobDetailsModal({
                 <Globe2 size={13} className="text-[var(--red)]" />
                 <span>{opportunity.remoteType}</span>
               </div>
+              {/* M4 — explicitRemoteScope is a separate, honest signal from
+                  remoteType (which defaults unmatched input to 'Worldwide'
+                  for matching purposes). Never phrased as a negative claim. */}
+              <p className="text-[10px] text-[var(--muted)] mt-1 leading-snug">
+                {remoteScopeCaveat(opportunity.explicitRemoteScope)}
+              </p>
             </div>
 
             <div className="p-3.5 border border-[var(--line)] bg-[var(--bg)] rounded-xl">
@@ -85,14 +105,31 @@ export function JobDetailsModal({
               <div className="flex items-center gap-1.5 mt-1.5 font-semibold text-xs text-[var(--ink)]">
                 <DollarSign size={13} className="text-[var(--red)]" />
                 <span className="mono">{formatSalary(opportunity)}</span>
+                {/* M3 — only ever attached when a real salary IS shown;
+                    "Salary not listed" never gets a qualifier. */}
+                {salaryQualifierLabel(opportunity) && (
+                  <span className="text-[10px] font-semibold text-[var(--muted)] normal-case bg-[var(--surface-soft)] border border-[var(--line)] rounded-full px-1.5 py-0.5">
+                    {salaryQualifierLabel(opportunity)}
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className="p-3.5 border border-[var(--line)] bg-[var(--bg)] col-span-2 sm:col-span-1 rounded-xl">
+            <div className="p-3.5 border border-[var(--line)] bg-[var(--bg)] rounded-xl">
               <span className="eyebrow block">Role Type</span>
               <div className="flex items-center gap-1.5 mt-1.5 font-semibold text-xs text-[var(--ink)]">
                 <Briefcase size={13} className="text-[var(--muted)]" />
                 <span>{opportunity.employmentType}</span>
+              </div>
+            </div>
+
+            {/* M2 — provenance label only, never the underlying editorial
+                sourceQuality number (would imply unsupported precision). */}
+            <div className="p-3.5 border border-[var(--line)] bg-[var(--bg)] rounded-xl">
+              <span className="eyebrow block">Source</span>
+              <div className="flex items-center gap-1.5 mt-1.5 font-semibold text-xs text-[var(--ink)]">
+                <ShieldCheck size={13} className="text-[var(--muted)]" />
+                <span>{sourceDisplayName(opportunity.source)}</span>
               </div>
             </div>
           </div>
@@ -122,6 +159,16 @@ export function JobDetailsModal({
               {opportunity.description}
             </div>
           </div>
+
+          {/* M9/M10.1 — only asserted where the data actually establishes it
+              (see employerDirectApplyLabel's own doc comment). Silent, not a
+              negative claim, for every other source today. */}
+          {employerDirectApplyLabel(opportunity.source) && (
+            <p className="text-[11px] text-[var(--muted)] flex items-center gap-1.5">
+              <ShieldCheck size={12} className="text-[#059669]" />
+              {employerDirectApplyLabel(opportunity.source)}
+            </p>
+          )}
         </div>
 
         {/* Modal Actions Footer */}
