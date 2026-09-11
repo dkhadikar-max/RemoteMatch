@@ -7,6 +7,8 @@ import { localStore } from '@/lib/db/mock-seed';
 import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
 import { generateRuleBasedMatchAnalysis, checkHardEligibility } from '@/lib/matching/engine';
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
+import { deriveActionableSkillGaps } from '@/lib/match/actionable-skill-gaps';
+import type { ActionableSkillGap } from '@/lib/match/actionable-skill-gaps';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { generateJobSpecificResumeAnalysis } from '@/lib/ai/resume-intelligence';
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
@@ -22,6 +24,7 @@ export default function MatchDetailPage() {
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [match, setMatch] = useState<MatchAnalysisResult | null>(null);
   const [careerTransition, setCareerTransition] = useState<CareerTransitionResult | null>(null);
+  const [actionableGaps, setActionableGaps] = useState<ActionableSkillGap[]>([]);
   const [resumeTweaks, setResumeTweaks] = useState<TailoredResumeSuggestions | null>(null);
   const [coverLetter, setCoverLetter] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
@@ -73,6 +76,11 @@ export default function MatchDetailPage() {
       // Additive Career Transition explanation (change_fields users only).
       const isEligible = checkHardEligibility(userProfile, opp).isEligible;
       setCareerTransition(classifyCareerTransition(userProfile, opp, isEligible));
+
+      // L3 — actionable skill gaps, derived independently of engine.ts
+      // (no import of/into engine.ts), mirroring how careerTransition above
+      // is already computed page-side and passed down as a prop.
+      setActionableGaps(deriveActionableSkillGaps(userProfile, opp));
 
       // Initial kit loaded for viewing without consuming daily proposal generation quota
       const kit = await generateApplicationKit(userProfile, opp, matchRes, 'confident');
@@ -170,6 +178,7 @@ export default function MatchDetailPage() {
         match={match}
         careerTransition={careerTransition}
         yearsOfExperience={profile.intent?.yearsOfExperience}
+        actionableGaps={actionableGaps}
         initialResumeTweaks={resumeTweaks}
         initialCoverLetter={coverLetter}
         onToneChange={handleToneChange}

@@ -11,6 +11,8 @@ import {
   ProfileIntent,
 } from '@/types/byn';
 import { CAREER_TRANSITION_COPY } from '@/lib/matching/career-transition';
+import type { ActionableSkillGap } from '@/lib/match/actionable-skill-gaps';
+import { WhatYouCanDo } from './what-you-can-do';
 import {
   ArrowLeft,
   ArrowRight,
@@ -48,6 +50,11 @@ interface MatchAnalysisViewProps {
   careerTransition?: CareerTransitionResult | null;
   /** The user's years-of-experience bucket, for the "Your direction" line. */
   yearsOfExperience?: ProfileIntent['yearsOfExperience'];
+  /** L3 — skill-shaped gaps derived independently of engine.ts (structured,
+   *  never parsed from `match.gaps` sentence strings). Drives both "What may
+   *  be missing" (column 2) and "What you can do". Additive; defaults to
+   *  empty so this prop is optional for any other future caller. */
+  actionableGaps?: ActionableSkillGap[];
   initialResumeTweaks: TailoredResumeSuggestions;
   initialCoverLetter: string;
   onToneChange?: (tone: MaterialTone) => Promise<string>;
@@ -71,6 +78,7 @@ export function MatchAnalysisView({
   match,
   careerTransition,
   yearsOfExperience,
+  actionableGaps = [],
   initialResumeTweaks,
   initialCoverLetter,
   onToneChange,
@@ -87,6 +95,19 @@ export function MatchAnalysisView({
   const [showApplyFeedbackModal, setShowApplyFeedbackModal] = useState(false);
   const [showApplicationReview, setShowApplicationReview] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  // L3/L2 — one shared source of truth for "which actionable gaps the user
+  // has already answered this session" (either "Yes, add it" or "I don't
+  // have this"), so "What may be missing" drops a row the instant the
+  // sibling "What you can do" panel resolves it. `actionableGaps` itself is
+  // still passed to <WhatYouCanDo> unfiltered — it tracks add/dismiss
+  // per-row display (e.g. the dismissed reassurance line) independently.
+  const [resolvedGapKeys, setResolvedGapKeys] = useState<Set<string>>(new Set());
+  const remainingGaps = actionableGaps.filter((g) => !resolvedGapKeys.has(g.skillKey));
+  // L1/L6(b) — the only "(Verified)" claim in the app is generated inside the
+  // frozen engine.ts; engine.ts stays byte-for-byte untouched (this was an
+  // explicit boundary), so the honest wording is substituted here, at render
+  // time only, never at the source.
+  const displayStrength = (s: string) => s.replace('(Verified)', '(from your profile)');
 
   const fitScore = match.fitScore;
   const fitLabel =
@@ -403,6 +424,16 @@ ${initialResumeTweaks.bulletRewrites
                 </div>
               </div>
 
+              {/* L4 — whyThisJob already existed on the returned
+                  MatchAnalysisResult, computed by the frozen engine, and was
+                  never rendered anywhere. Zero new computation: shown
+                  verbatim. */}
+              {match.whyThisJob && (
+                <div className="rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] px-4 py-3">
+                  <p className="text-xs text-[var(--ink)] leading-relaxed">{match.whyThisJob}</p>
+                </div>
+              )}
+
               {/* Career Transition — additive, FREE explanation for a career
                   changer. "Why this could fit" shows the USER's own confirmed
                   skills (never the job's requirement names); gaps are listed
@@ -470,7 +501,7 @@ ${initialResumeTweaks.bulletRewrites
                         className="flex items-start gap-2.5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-3 text-xs"
                       >
                         <Check size={14} className="text-[#059669] stroke-[3] shrink-0 mt-0.5" />
-                        <span className="font-medium text-[var(--ink)] leading-snug">{item}</span>
+                        <span className="font-medium text-[var(--ink)] leading-snug">{displayStrength(item)}</span>
                       </div>
                     ))}
                   </div>
@@ -484,19 +515,33 @@ ${initialResumeTweaks.bulletRewrites
                   </div>
 
                   <div className="space-y-2.5">
-                    {match.gaps.length > 0 ? (
-                      match.gaps.slice(0, 3).map((gap, idx) => (
-                        <div
-                          key={idx}
-                          className="rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-3 text-xs space-y-1"
-                        >
-                          <p className="font-semibold text-[#b45309]">{gap}</p>
-                          <p className="text-[#92400e] text-[11px] leading-relaxed">
-                            {gap} isn't clear from your profile.
-                          </p>
-                        </div>
-                      ))
-                    ) : (
+                    {/* L3 — structured, skill-shaped gaps derived independently of
+                        engine.ts (never parsed from match.gaps sentence strings).
+                        A row disappears here the moment "What you can do" below
+                        resolves it, either way. */}
+                    {remainingGaps.map((gap) => (
+                      <div
+                        key={gap.skillKey}
+                        className="rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-3 text-xs space-y-1"
+                      >
+                        <p className="font-semibold text-[#b45309]">{gap.skill}</p>
+                        <p className="text-[#92400e] text-[11px] leading-relaxed">
+                          {gap.skill} isn&rsquo;t currently part of your profile.
+                        </p>
+                      </div>
+                    ))}
+                    {/* Structural (non-actionable — nothing to "add") caveat,
+                        derived from the same booleans engine.ts already returns. */}
+                    {(!match.isCountryEligible || !match.isRemoteEligible) && (
+                      <div className="rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-3 text-xs space-y-1">
+                        <p className="font-semibold text-[#b45309]">Location or remote-eligibility restriction</p>
+                        <p className="text-[#92400e] text-[11px] leading-relaxed">
+                          This role has a {opportunity.remoteType || 'remote-eligibility'} restriction that may
+                          affect your eligibility.
+                        </p>
+                      </div>
+                    )}
+                    {remainingGaps.length === 0 && match.isCountryEligible && match.isRemoteEligible && (
                       <div className="rounded-2xl bg-[var(--surface-soft)] p-4 text-xs text-[var(--muted)]">
                         All core requirements match your profile.
                       </div>
@@ -536,6 +581,25 @@ ${initialResumeTweaks.bulletRewrites
                   </button>
                 </div>
               </div>
+
+              {/* L2/L3 — "What you can do": the same confirm-before-add
+                  contract as ticket I ("Do you have X? Yes, add it / I don't
+                  have this"), wired to I's exact two existing routes. No new
+                  skills/dismissal mechanism. */}
+              {actionableGaps.length > 0 && (
+                <div className="pt-1">
+                  <WhatYouCanDo
+                    gaps={actionableGaps}
+                    onResolved={(skillKey) =>
+                      setResolvedGapKeys((prev) => {
+                        const next = new Set(prev);
+                        next.add(skillKey);
+                        return next;
+                      })
+                    }
+                  />
+                </div>
+              )}
             </>
           )}
 
