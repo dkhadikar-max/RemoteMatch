@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { PersonProfile } from '@/types/byn';
 import { scoreOpportunitiesForFeed, checkHardEligibility } from '@/lib/matching/engine';
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
+import { deriveEffectiveDecisions, applyBehavioralPersonalization, type SwipeRow, type EffectiveDecision } from '@/lib/feed/behavioral-personalization';
 
 /**
  * The opportunity catalog comes from the persisted `opportunities` table
@@ -39,10 +41,33 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
  *        fitScore, and eligibility are never changed for ANY caller —
  *        `scoreOpportunitiesForFeed` runs exactly as before; the gate only
  *        decides whether the additive block layer runs.
+ *
+ *        Behavioral Feed Personalization (N) is a further additive,
+ *        ORDER-ONLY post-processing layer, applied after the transition
+ *        layer above. It never changes `fitScore`/`fitBadge`, never
+ *        changes eligibility, and never changes the opportunity SET except
+ *        to exclude jobs the caller has already made an effective decision
+ *        on (server `swipes` is the only authoritative source for that —
+ *        see behavioral-personalization.ts). Below 5 effective decisions,
+ *        or for any anon/unauthenticated/unscorable-profile caller, this
+ *        layer is a no-op and ordering is byte-identical to before.
  */
 
 function isScorableProfile(p: unknown): p is PersonProfile {
   return Boolean(p) && typeof p === 'object' && Array.isArray((p as { skills?: unknown }).skills);
+}
+
+type ResolvedAuth = { user: User; supabase: SupabaseClient } | null;
+
+/** Resolves the caller's identity once per request, for every layer below
+ *  that needs it. Fails closed to `null` (anonymous/unauthenticated) —
+ *  never throws past this point. */
+async function resolveAuth(req: NextRequest): Promise<ResolvedAuth> {
+  try {
+    return await getAuthenticatedUser(req);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -51,12 +76,12 @@ function isScorableProfile(p: unknown): p is PersonProfile {
  * facts come from the database, never the request body. Fails closed: any
  * auth/lookup problem yields `false`.
  */
-async function transitionLayerAllowed(req: NextRequest): Promise<boolean> {
+async function transitionLayerAllowed(auth: ResolvedAuth): Promise<boolean> {
+  if (!auth) return false;
   try {
-    const { user, supabase } = await getAuthenticatedUser(req);
     const [{ data: prof }, { data: intent }] = await Promise.all([
-      supabase.from('profiles').select('plan_tier').eq('id', user.id).single(),
-      supabase.from('profile_intents').select('career_direction').eq('profile_id', user.id).maybeSingle(),
+      auth.supabase.from('profiles').select('plan_tier').eq('id', auth.user.id).single(),
+      auth.supabase.from('profile_intents').select('career_direction').eq('profile_id', auth.user.id).maybeSingle(),
     ]);
     return (
       (prof?.plan_tier as string | undefined) === 'pro' &&
@@ -64,6 +89,28 @@ async function transitionLayerAllowed(req: NextRequest): Promise<boolean> {
     );
   } catch {
     return false;
+  }
+}
+
+/**
+ * N2/N3/N6 — the caller's own effective decision history, straight from
+ * the authoritative server `swipes` table (RLS already scopes SELECT to
+ * the owner; the explicit `.eq` is defense-in-depth, matching this
+ * codebase's existing style of never relying on RLS alone). Fails closed
+ * to an empty map — a lookup problem never blocks the feed, it just means
+ * no exclusion/personalization happens this request.
+ */
+async function loadEffectiveDecisions(auth: ResolvedAuth): Promise<Map<string, EffectiveDecision>> {
+  if (!auth) return new Map();
+  try {
+    const { data, error } = await auth.supabase
+      .from('swipes')
+      .select('id, opportunity_id, action, created_at, rewound_decision_id')
+      .eq('profile_id', auth.user.id);
+    if (error || !data) return new Map();
+    return deriveEffectiveDecisions(data as SwipeRow[]);
+  } catch {
+    return new Map();
   }
 }
 
@@ -104,11 +151,15 @@ export async function POST(req: NextRequest) {
       // v1 scoring + ranking — completely unchanged.
       const scored = scoreOpportunitiesForFeed(profile, opportunities);
 
+      // Authenticate once for every layer below that needs identity —
+      // never re-validates the token twice per request.
+      const auth = await resolveAuth(req);
+
       // Additive, order-preserving transition-explanation layer — gated
       // server-side on a verified Pro + change_fields caller (see
       // transitionLayerAllowed). The request body's `careerDirection` is NOT
       // trusted for this decision.
-      const allowed = await transitionLayerAllowed(req);
+      const allowed = await transitionLayerAllowed(auth);
       const withTransition = allowed
         ? scored.map((opp) => {
             // classifyCareerTransition still self-checks careerDirection; feed
@@ -120,7 +171,16 @@ export async function POST(req: NextRequest) {
           })
         : scored;
 
-      return NextResponse.json({ success: true, opportunities: withTransition, scored: true });
+      // Behavioral Feed Personalization (N) — a further additive, order-only
+      // post-processing layer. Excludes jobs the caller has an effective
+      // decision on (unconditional) and, only once 5+ effective decisions
+      // exist, applies a capped positive-only reorder toward liked patterns.
+      // fitScore/fitBadge are never mutated; the opportunity set is never
+      // changed except by that exclusion. See behavioral-personalization.ts.
+      const effectiveDecisions = await loadEffectiveDecisions(auth);
+      const personalized = applyBehavioralPersonalization(withTransition, effectiveDecisions);
+
+      return NextResponse.json({ success: true, opportunities: personalized, scored: true });
     }
 
     return NextResponse.json({ success: true, opportunities, scored: false });
