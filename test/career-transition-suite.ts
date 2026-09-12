@@ -175,19 +175,27 @@ async function run() {
     assert(strong?.rulesVersion === CAREER_TRANSITION_RULES_VERSION, 'result carries the rules version');
     assert(CAREER_TRANSITION_RULES_VERSION === 'career-transition-2026.09-v1.1', `rules version bumped to v1.1 (got ${CAREER_TRANSITION_RULES_VERSION})`);
 
-    // 1i — V1.1: transferableSkills carries the USER's skill, not the job's requirement name
-    const pgJob = job({ title: 'Data Analyst', requiredSkills: ['PostgreSQL', 'Reporting'] });
+    // 1i — V1.1: transferableSkills carries the USER's skill, not the job's
+    // requirement name. Short-Skill Matching (approved remediation): this
+    // used to use "SQL" (user) / "PostgreSQL" (job) as its example — a pair
+    // the approved decision table explicitly rules a NO-match (no semantic
+    // exception added for that containment relationship). Swapped to
+    // "React" / "React Native": both sides are longer than the short-skill
+    // threshold, so this is a genuine, unaffected tier-3 substring match —
+    // the test's actual purpose (display-name provenance on a real match)
+    // is unchanged, only the example pair.
+    const pgJob = job({ title: 'Data Analyst', requiredSkills: ['React Native', 'Reporting'] });
     const pgUser = classifyCareerTransition(profile({
       careerDirection: 'change_fields',
       intent: { ...profile({}).intent!, targetRoles: ['Data Analyst'] },
-      skills: [skill('SQL')],
+      skills: [skill('React')],
     }), pgJob, true);
     assert(
-      Boolean(pgUser) && pgUser!.transferableSkills.includes('SQL') && !pgUser!.transferableSkills.includes('PostgreSQL'),
-      `transferableSkills = the user's "SQL", never the job's "PostgreSQL" (got ${JSON.stringify(pgUser?.transferableSkills)})`,
+      Boolean(pgUser) && pgUser!.transferableSkills.includes('React') && !pgUser!.transferableSkills.includes('React Native'),
+      `transferableSkills = the user's "React", never the job's "React Native" (got ${JSON.stringify(pgUser?.transferableSkills)})`,
     );
     assert(
-      Boolean(pgUser) && pgUser!.transferableExperience.includes('PostgreSQL'),
+      Boolean(pgUser) && pgUser!.transferableExperience.includes('React Native'),
       'transferableExperience still records the covered requirement name (internal overlap provenance)',
     );
     assert(

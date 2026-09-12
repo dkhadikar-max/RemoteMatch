@@ -4,15 +4,22 @@ import type {
   CareerTransitionResult,
   CareerTransitionClass,
 } from '@/types/byn';
+import { skillMatches } from './skill-match';
 
 /**
  * Career Transition Matching V1 — a PURE, DETERMINISTIC, ADDITIVE layer.
  *
- * It does NOT import from or modify src/lib/matching/engine.ts. It does NOT
- * change eligibility, the fit-score formula, feed ranking, or the decision
- * snapshot. Its only job: for a user who has EXPLICITLY chosen `change_fields`,
- * explain how their proven experience transfers to an opportunity that already
- * aligns with a role they want.
+ * It does NOT import from or modify src/lib/matching/engine.ts itself. It
+ * does NOT change eligibility, the fit-score formula, feed ranking, or the
+ * decision snapshot. Its only job: for a user who has EXPLICITLY chosen
+ * `change_fields`, explain how their proven experience transfers to an
+ * opportunity that already aligns with a role they want.
+ *
+ * Short-Skill Matching (approved remediation) — this module DOES now import
+ * the shared `skillMatches()` predicate from ./skill-match (a sibling
+ * module of engine.ts, not engine.ts itself), replacing what used to be a
+ * locally-reimplemented, independently-buggy copy of the same matching
+ * rule. See src/lib/matching/skill-match.ts for the full contract.
  *
  * Anti-fabrication: a required skill counts as covered only when it intersects
  * the user's CONFIRMED profile skills (a skill the user listed in onboarding —
@@ -41,12 +48,6 @@ const GENERIC_ROLE_TOKENS = new Set([
   'junior', 'staff', 'principal', 'architect', 'associate', 'head', 'director',
   'vp', 'officer', 'intern', 'contractor', 'consultant', 'expert', 'role',
 ]);
-
-function skillMatches(a: string, b: string): boolean {
-  const x = a.toLowerCase().trim();
-  const y = b.toLowerCase().trim();
-  return x === y || x.includes(y) || y.includes(x);
-}
 
 /** A profile skill counts as confirmed evidence unless explicitly 'missing'. */
 function confirmedSkillNames(profile: PersonProfile): string[] {
@@ -77,8 +78,10 @@ function alignedTargetRole(profile: PersonProfile, opp: CanonicalOpportunity): s
     if (substantive.length > 0) {
       if (substantive.some((t) => oppText.includes(t))) return role;
     } else {
-      // Purely generic target title → fall back to skill overlap, same as the gate.
-      if (confirmed.some((sk) => oppSkillsLower.some((o) => o.includes(sk) || sk.includes(o)))) {
+      // Purely generic target title → fall back to skill overlap, same as the
+      // gate. Short-Skill Matching (approved remediation): shared
+      // skillMatches() predicate.
+      if (confirmed.some((sk) => oppSkillsLower.some((o) => skillMatches(o, sk)))) {
         return role;
       }
     }

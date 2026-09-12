@@ -1,32 +1,31 @@
 import type { CanonicalOpportunity, PersonProfile } from '@/types/byn';
 import { normalizeSkillKey } from '@/lib/resume/skill-opportunities';
+import { skillMatches } from '@/lib/matching/skill-match';
 
 /**
  * Actionable Skill Gaps (ticket L, "What may be missing" / "What you can do").
  *
- * Pure, deterministic, isolated from `src/lib/matching/engine.ts` — it never
- * imports engine.ts and engine.ts never imports it. It independently
- * re-derives which of a specific opportunity's `requiredSkills` the profile
- * does not demonstrate, using the SAME two-way fuzzy-match rule already used
- * in two other places in this codebase (`engine.ts`'s
- * `generateRuleBasedMatchAnalysis` and `career-transition.ts`'s
- * `skillCovers`): case-insensitive equality or substring either direction.
- * Re-implemented locally on purpose (this project's established pattern —
- * see `career-transition.ts` / `skill-opportunities.ts`) rather than
- * imported, so the frozen matcher stays untouched and unaffected by this
- * ticket even indirectly.
+ * Pure, deterministic, isolated from `src/lib/matching/engine.ts` itself —
+ * it never imports engine.ts and engine.ts never imports it. It
+ * independently re-derives which of a specific opportunity's
+ * `requiredSkills` the profile does not demonstrate.
+ *
+ * Short-Skill Matching (approved remediation) — this module now imports the
+ * shared `skillMatches()` predicate from `@/lib/matching/skill-match` (a
+ * sibling module of engine.ts, not engine.ts itself), replacing what used
+ * to be a locally-reimplemented `fuzzyMatches()` — one of six independent,
+ * independently-buggy copies of the same two-way substring rule found
+ * across this codebase (a bare required skill like "C" trivially
+ * false-matched almost any real profile). Fixing only engine.ts's copies
+ * would have left THIS module's copy — the one that feeds L-adjacent-1's
+ * honest job-card counts — silently exposed to the identical defect. See
+ * src/lib/matching/skill-match.ts for the full contract.
  *
  * Anti-fabrication guarantee, same as ticket I: this only ever says "the
  * profile doesn't show this skill" — it never asserts the user LACKS the
  * skill. The caller is responsible for phrasing that stays a question
  * ("Do you have X experience?"), never an assertion.
  */
-
-function fuzzyMatches(a: string, b: string): boolean {
-  const x = a.toLowerCase().trim();
-  const y = b.toLowerCase().trim();
-  return x === y || x.includes(y) || y.includes(x);
-}
 
 export interface ActionableSkillGap {
   /** Display name, taken verbatim from `opportunity.requiredSkills`. */
@@ -72,7 +71,7 @@ function computeSkillCoverage(
     const entry: ActionableSkillGap = { skill: raw.trim(), skillKey: key };
     total.push(entry);
 
-    const covered = profileSkillNames.some((ps) => fuzzyMatches(ps, raw));
+    const covered = profileSkillNames.some((ps) => skillMatches(ps, raw));
     if (!covered) {
       gaps.push(entry);
     }

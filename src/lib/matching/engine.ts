@@ -6,6 +6,7 @@ import {
   MatchAnalysisResult,
   RequirementCheckItem,
 } from '@/types/byn';
+import { skillMatches } from './skill-match';
 
 // ==============================================================================
 // 1. HARD ELIGIBILITY GATE
@@ -111,8 +112,11 @@ export function checkHardEligibility(
       }
 
       // If target title was purely generic (e.g. 'Software Engineer'), check skill overlap
+      // Short-Skill Matching (approved remediation): shared skillMatches()
+      // predicate — never a free substring on a short skill string. See
+      // src/lib/matching/skill-match.ts for the full contract.
       return candidateSkillNames.some((sk) =>
-        oppSkillsLower.some((oppSk) => oppSk.includes(sk) || sk.includes(oppSk))
+        oppSkillsLower.some((oppSk) => skillMatches(oppSk, sk))
       );
     });
 
@@ -164,9 +168,11 @@ export function computeScreeningFit(
   let evidenceScoreBonus = 0;
 
   for (const sk of oppSkills) {
-    const matchedProfileSkill = candidateSkills.find(
-      (cs) => cs.skillName.toLowerCase().includes(sk) || sk.includes(cs.skillName.toLowerCase())
-    );
+    // Short-Skill Matching (approved remediation): shared skillMatches()
+    // predicate. This is the site that feeds fitScore itself (via
+    // overlapSkills/evidenceScoreBonus below) — the scoring FORMULA and
+    // its weights are unchanged; only this match classification changes.
+    const matchedProfileSkill = candidateSkills.find((cs) => skillMatches(cs.skillName, sk));
 
     if (matchedProfileSkill) {
       overlapSkills.push(matchedProfileSkill.skillName);
@@ -259,8 +265,12 @@ export function generateRuleBasedMatchAnalysis(
   const gaps: string[] = [];
 
   for (const req of oppSkills) {
+    // Short-Skill Matching (approved remediation): shared skillMatches()
+    // predicate — this is the exact site that produced the fabricated
+    // "Core capability in C (Verified)" strength for a profile whose only
+    // skill was React.
     const matchedProfileSkill = candidateSkills.find(
-      (cs) => cs.skillName.toLowerCase().includes(req.toLowerCase()) || req.toLowerCase().includes(cs.skillName.toLowerCase())
+      (cs) => skillMatches(cs.skillName, req)
     );
 
     if (matchedProfileSkill) {
