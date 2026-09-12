@@ -255,7 +255,14 @@ async function run() {
 
     const route = readFileSync(join(__dirname, '../src/app/api/opportunities/feed/route.ts'), 'utf8');
     assert(route.includes('applyBehavioralPersonalization'), 'feed route wires the personalization layer');
-    assert(route.includes('scoreOpportunitiesForFeed(profile, opportunities)'), 'v1 scoring call is untouched');
+    // M-adjacent-1 — the feed route now pre-filters cross-provider
+    // duplicates (opportunity.supersededByOpportunityId) out of the
+    // discoverable set BEFORE scoring, so the scoring call's argument is
+    // named `discoverable` rather than the raw `opportunities`. The scoring
+    // FUNCTION itself is untouched (engine.ts diff-checked below); only its
+    // input set is filtered upstream. Updating this literal string is a
+    // regression-guard alignment, not an N behavior change.
+    assert(route.includes('scoreOpportunitiesForFeed(profile, discoverable)'), 'v1 scoring call is untouched');
 
     try {
       const engineDiff = execSync('git diff HEAD -- src/lib/matching/engine.ts', { cwd: join(__dirname, '..'), encoding: 'utf8' });

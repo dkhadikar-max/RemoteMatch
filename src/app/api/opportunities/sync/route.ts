@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { syncOpportunitiesToCatalog, revalidateStaleLinks, verifyIngestionSecret } from '@/lib/ingestion/catalog-sync';
+import {
+  syncOpportunitiesToCatalog,
+  revalidateStaleLinks,
+  verifyIngestionSecret,
+  reconcileCrossProviderDuplicates,
+} from '@/lib/ingestion/catalog-sync';
 
 /**
  * Previously: no authentication at all, and its body discarded
@@ -33,7 +38,16 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await syncOpportunitiesToCatalog();
-    return NextResponse.json({ success: true, action: 'sync', ...result });
+
+    // M-adjacent-1 — a separate, independently-testable step, never inside
+    // syncOpportunitiesToCatalog() itself (same pattern as revalidateStaleLinks).
+    // Only runs when this cycle actually persisted something — an all-providers-
+    // failed cycle changes nothing in the catalog, so there is nothing new to
+    // reconcile against.
+    const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
+    const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
+
+    return NextResponse.json({ success: true, action: 'sync', ...result, reconciliation });
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }

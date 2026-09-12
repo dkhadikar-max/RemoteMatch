@@ -232,6 +232,17 @@ export interface CanonicalOpportunity {
    *  official link was actually last checked, if ever. Undefined means
    *  never verified — display accordingly, never invent a date. */
   linkCheckedAt?: string;
+  /** M-adjacent-1 — set only by reconcileCrossProviderDuplicates()
+   *  (src/lib/ingestion/catalog-sync.ts). Non-null/non-undefined means this
+   *  row is a duplicate of another active, cross-provider opportunity for
+   *  the same real-world job; the value is that survivor's id. Recomputed
+   *  every reconciliation pass from current fingerprint data — never a
+   *  permanent historical fact. `status`/`isActive` are NEVER changed by
+   *  reconciliation, so a superseded row stays fully resolvable by id
+   *  (GET /api/opportunities/feed, ticket M-adj-2(a), and any historical
+   *  swipe/application reference); only the scored POST path filters this
+   *  field out of the discoverable card list. */
+  supersededByOpportunityId?: string | null;
   postedAt: string;
   lastVerifiedAt: string;
   expiresAt?: string;

@@ -38,6 +38,7 @@ import {
   normalizeOpportunity,
   deduplicateOpportunities,
   verifyLinkFreshness,
+  createNormalizedJobKey,
 } from './pipeline';
 
 const ABSENCE_EXPIRY_THRESHOLD = 3;
@@ -525,6 +526,224 @@ export async function revalidateStaleLinks(options?: {
       .eq('id', row.id);
     if (check.reachable) summary.stillReachable++;
     else summary.expiredByLinkFailure++;
+  }
+
+  return summary;
+}
+
+// ==============================================================================
+// M-adjacent-1 — cross-provider duplicate reconciliation (migration 018)
+// ==============================================================================
+// deduplicateOpportunities() (pipeline.ts) only ever compares jobs within a
+// single sync cycle's freshly-fetched raw batch — it never compares against
+// rows already persisted from an earlier cycle or from a provider that
+// didn't return the job this cycle. Two different providers can therefore
+// end up with independent, permanently-coexisting active rows for the same
+// real-world job. This reconciliation pass is a separate, independently
+// testable step (same pattern as revalidateStaleLinks above) that runs
+// AFTER syncOpportunitiesToCatalog() and closes that gap — without
+// introducing a second duplicate definition: it reads the exact same
+// canonical_url_hash / normalized company+title / content_hash fingerprints
+// deduplicateOpportunities() already computes and persists, never
+// recomputing or altering that hierarchy.
+//
+// Approved lifecycle contract (see M-adjacent-1's spec):
+//   - Scope: status = 'active' rows only.
+//   - Cross-provider only — a same-source collision (two source_ids from
+//     one provider matching) is a different provider-side problem, left
+//     untouched here; per-provider (source, source_id) identity stays valid.
+//   - Survivor selection: source_quality desc, then first_seen_at asc, then
+//     id asc — fully deterministic.
+//   - `status` / `consecutive_absences` / `link_reachable` are NEVER written
+//     here. A duplicate keeps accruing its own real absence/link history
+//     under the state machine above exactly as if never merged — this is
+//     what makes "un-merge when the survivor is no longer active" free: the
+//     duplicate was never touched, so it's already sitting at its own
+//     correct current status the moment it stops being superseded.
+//   - Recomputed every pass, not memorized: a pair stays merged only while
+//     they still satisfy at least one current duplicate-hierarchy
+//     predicate. No record of *which* predicate matched is kept — none is
+//     needed, since the check is always re-derived from current data.
+//   - 3+-way collisions resolve flat: every non-survivor in a cluster points
+//     directly at the single deterministic survivor. A survivor can never
+//     itself carry a non-null pointer — guaranteed structurally by ranking
+//     the whole cluster at once and assigning every non-top member to the
+//     one top member, never chaining through an intermediate row.
+
+interface ReconciliationRow {
+  id: string;
+  source: string;
+  company: string;
+  title: string;
+  canonical_url_hash: string | null;
+  content_hash: string | null;
+  source_quality: number | null;
+  first_seen_at: string | null;
+  superseded_by_opportunity_id: string | null;
+}
+
+export interface ReconciliationSummary {
+  activeRowsScanned: number;
+  crossProviderClustersFound: number;
+  newlyMerged: number;
+  unmerged: number;
+  alreadyCorrect: number;
+}
+
+/** Minimal union-find (disjoint-set) over row ids, used to cluster rows that
+ *  are transitively connected via ANY of the three cross-provider-relevant
+ *  fingerprints — e.g. A~B via URL and B~C via title correctly land C in
+ *  the same cluster as A, even though A and C share no single key directly. */
+class DisjointSet {
+  private parent = new Map<string, string>();
+
+  add(id: string) {
+    if (!this.parent.has(id)) this.parent.set(id, id);
+  }
+
+  find(id: string): string {
+    let root = id;
+    while (this.parent.get(root) !== root) root = this.parent.get(root)!;
+    let cur = id;
+    while (this.parent.get(cur) !== root) {
+      const next = this.parent.get(cur)!;
+      this.parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  }
+
+  union(a: string, b: string) {
+    const ra = this.find(a);
+    const rb = this.find(b);
+    if (ra !== rb) this.parent.set(ra, rb);
+  }
+}
+
+/** Clusters active rows by the same three predicates deduplicateOpportunities()
+ *  uses for cross-batch dedup (source+sourceId, layer 1, is intentionally
+ *  excluded here — it can never connect two DIFFERENT providers' rows, which
+ *  is the only case this function cares about). Exported for unit testing
+ *  independent of any database. */
+export function clusterActiveRowsForReconciliation(
+  rows: ReconciliationRow[]
+): ReconciliationRow[][] {
+  const ds = new DisjointSet();
+  for (const row of rows) ds.add(row.id);
+
+  const byUrlHash = new Map<string, string[]>();
+  const byCompanyTitle = new Map<string, string[]>();
+  const byContentHash = new Map<string, string[]>();
+
+  for (const row of rows) {
+    if (row.canonical_url_hash) {
+      (byUrlHash.get(row.canonical_url_hash) ?? byUrlHash.set(row.canonical_url_hash, []).get(row.canonical_url_hash)!).push(row.id);
+    }
+    const ctKey = createNormalizedJobKey(row.company, row.title);
+    (byCompanyTitle.get(ctKey) ?? byCompanyTitle.set(ctKey, []).get(ctKey)!).push(row.id);
+    if (row.content_hash) {
+      (byContentHash.get(row.content_hash) ?? byContentHash.set(row.content_hash, []).get(row.content_hash)!).push(row.id);
+    }
+  }
+
+  for (const map of [byUrlHash, byCompanyTitle, byContentHash]) {
+    for (const ids of Array.from(map.values())) {
+      for (let i = 1; i < ids.length; i++) ds.union(ids[0], ids[i]);
+    }
+  }
+
+  const clusters = new Map<string, ReconciliationRow[]>();
+  for (const row of rows) {
+    const root = ds.find(row.id);
+    (clusters.get(root) ?? clusters.set(root, []).get(root)!).push(row);
+  }
+  return Array.from(clusters.values());
+}
+
+/** Deterministic survivor selection: source_quality desc, first_seen_at
+ *  asc, id asc. Exported for unit testing independent of any database. */
+export function rankClusterForSurvivor(members: ReconciliationRow[]): ReconciliationRow[] {
+  return [...members].sort((a, b) => {
+    const qa = a.source_quality ?? -1;
+    const qb = b.source_quality ?? -1;
+    if (qa !== qb) return qb - qa;
+    const ta = a.first_seen_at ? new Date(a.first_seen_at).getTime() : Number.MAX_SAFE_INTEGER;
+    const tb = b.first_seen_at ? new Date(b.first_seen_at).getTime() : Number.MAX_SAFE_INTEGER;
+    if (ta !== tb) return ta - tb;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+}
+
+/**
+ * The reconciliation entrypoint. Called once, after a successful
+ * syncOpportunitiesToCatalog() cycle (never inside it) — see the sync
+ * route. Full recomputation every call: reads every currently-'active' row
+ * fresh, re-derives clusters from current fingerprint data, and writes only
+ * `superseded_by_opportunity_id`. Never reads or writes `status`,
+ * `consecutive_absences`, or `link_reachable`.
+ */
+export async function reconcileCrossProviderDuplicates(): Promise<ReconciliationSummary> {
+  const admin = getSupabaseAdminClient();
+  if (!isSupabaseAdminConfigured || !admin) {
+    throw new Error('Supabase admin client is not configured — cannot reconcile duplicates.');
+  }
+
+  const summary: ReconciliationSummary = {
+    activeRowsScanned: 0,
+    crossProviderClustersFound: 0,
+    newlyMerged: 0,
+    unmerged: 0,
+    alreadyCorrect: 0,
+  };
+
+  const { data, error } = await admin
+    .from('opportunities')
+    .select('id, source, company, title, canonical_url_hash, content_hash, source_quality, first_seen_at, superseded_by_opportunity_id')
+    .eq('status', 'active');
+  if (error) throw new Error(`Could not read active opportunities for reconciliation: ${error.message}`);
+
+  const rows = (data ?? []) as ReconciliationRow[];
+  summary.activeRowsScanned = rows.length;
+
+  const clusters = clusterActiveRowsForReconciliation(rows);
+
+  for (const members of clusters) {
+    const distinctSources = new Set(members.map((m) => m.source));
+
+    if (distinctSources.size <= 1) {
+      // Same-provider (or lone) cluster — out of scope for this ticket. A
+      // member here might still carry a stale pointer from a PRIOR pass
+      // where its cross-provider counterpart was active and clustered with
+      // it — that counterpart has since left the active-row scan entirely
+      // (expired, or its own fingerprints diverged), so clear it.
+      for (const m of members) {
+        if (m.superseded_by_opportunity_id !== null) {
+          await admin.from('opportunities').update({ superseded_by_opportunity_id: null }).eq('id', m.id);
+          summary.unmerged++;
+        }
+      }
+      continue;
+    }
+
+    summary.crossProviderClustersFound++;
+    const ranked = rankClusterForSurvivor(members);
+    const survivor = ranked[0];
+
+    if (survivor.superseded_by_opportunity_id !== null) {
+      await admin.from('opportunities').update({ superseded_by_opportunity_id: null }).eq('id', survivor.id);
+      summary.unmerged++;
+    } else {
+      summary.alreadyCorrect++;
+    }
+
+    for (const dup of ranked.slice(1)) {
+      if (dup.superseded_by_opportunity_id === survivor.id) {
+        summary.alreadyCorrect++;
+        continue;
+      }
+      await admin.from('opportunities').update({ superseded_by_opportunity_id: survivor.id }).eq('id', dup.id);
+      summary.newlyMerged++;
+    }
   }
 
   return summary;

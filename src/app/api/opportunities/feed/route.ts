@@ -51,6 +51,16 @@ import { deriveEffectiveDecisions, applyBehavioralPersonalization, type SwipeRow
  *        see behavioral-personalization.ts). Below 5 effective decisions,
  *        or for any anon/unauthenticated/unscorable-profile caller, this
  *        layer is a no-op and ordering is byte-identical to before.
+ *
+ *        M-adjacent-1 — before any of the above runs, a cross-provider
+ *        duplicate (opportunity.supersededByOpportunityId set by
+ *        reconcileCrossProviderDuplicates(), a separate post-sync pass —
+ *        never computed here) is dropped from the scored list. This is a
+ *        pure filter on an already-persisted fact, not a duplicate-
+ *        detection algorithm running at feed time. GET is completely
+ *        unaffected — it still returns every active row so a historical
+ *        swipe/application reference and ticket M-adj-2(a)'s by-id
+ *        resolution keep working for a superseded opportunity.
  */
 
 function isScorableProfile(p: unknown): p is PersonProfile {
@@ -148,8 +158,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (isScorableProfile(profile)) {
+      // M-adjacent-1 — discoverability-only: a cross-provider duplicate
+      // (reconcileCrossProviderDuplicates(), src/lib/ingestion/catalog-sync.ts)
+      // is excluded from the scored card list only. `status` is never
+      // changed by reconciliation, so this is purely an in-memory filter
+      // here — GET (ticket M-adj-2(a)'s by-id resolution path) is untouched
+      // and still returns every active row, superseded or not, so a
+      // historical swipe/application reference keeps resolving.
+      const discoverable = opportunities.filter((o) => !o.supersededByOpportunityId);
+
       // v1 scoring + ranking — completely unchanged.
-      const scored = scoreOpportunitiesForFeed(profile, opportunities);
+      const scored = scoreOpportunitiesForFeed(profile, discoverable);
 
       // Authenticate once for every layer below that needs identity —
       // never re-validates the token twice per request.

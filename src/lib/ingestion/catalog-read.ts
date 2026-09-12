@@ -22,7 +22,8 @@ const OPPORTUNITY_COLUMNS =
   'eligible_countries, excluded_countries, timezone_requirements, salary_min, salary_max, ' +
   'salary_currency, salary_period, required_skills, preferred_skills, experience_requirement, quality_score, ' +
   'source_quality, description_completeness, salary_quality, remote_policy_confidence, ' +
-  'explicit_remote_scope, status, posted_at, is_permanently_removed, link_checked_at';
+  'explicit_remote_scope, status, posted_at, is_permanently_removed, link_checked_at, ' +
+  'superseded_by_opportunity_id';
 
 interface OpportunityRow {
   id: string;
@@ -61,6 +62,14 @@ interface OpportunityRow {
   posted_at: string;
   is_permanently_removed: boolean;
   link_checked_at: string | null;
+  // M-adjacent-1 (migration 018) — nullable. WARNING: this column is now
+  // part of OPPORTUNITY_COLUMNS below, so every call to getActiveOpportunities
+  // / getActiveOpportunityByCanonicalId / getOpportunityBySourceIdAnyStatus
+  // requires migration 018 to be live — against a pre-018 database the
+  // SELECT itself fails (unknown column), not just this field. Do not run
+  // any real-infra test that touches the opportunities catalog read path
+  // until the migration is confirmed applied.
+  superseded_by_opportunity_id: string | null;
 }
 
 export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportunity {
@@ -99,6 +108,7 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
     isActive: row.status === 'active',
     isPermanentlyRemoved: row.is_permanently_removed,
     linkCheckedAt: row.link_checked_at ?? undefined,
+    supersededByOpportunityId: row.superseded_by_opportunity_id ?? null,
     postedAt: row.posted_at,
     lastVerifiedAt: row.posted_at, // see deprecation note on the column itself; not used as freshness evidence
   };
