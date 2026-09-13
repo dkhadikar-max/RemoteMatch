@@ -38,6 +38,15 @@ export function Navbar() {
   // category chips untappable. Scoped to exactly this route family — the
   // authenticated app pages this bar actually serves are unaffected.
   const isRemoteJobsDirectory = pathname?.startsWith('/remote-jobs') ?? false;
+  // Same overlap class of bug, confirmed via measured DOM coordinates on the
+  // landing page itself: the fixed app-shortcut bar (Jobs/Applications/
+  // Profile) sits directly over non-interactive section headings at several
+  // scroll positions ("Find. Understand. Apply.", the pricing section
+  // heading), since the landing page's own long-form marketing content was
+  // never designed with this bar's fixed footprint in mind. Same fix as
+  // /remote-jobs: an anonymous landing-page visitor doesn't have real
+  // Applications/Profile state for this bar to reflect anyway.
+  const isLandingForMobileNav = isLanding;
 
   // Server-authoritative entitlement. `null` until it resolves AND whenever
   // there is no session — the navbar never renders a fabricated quota/plan.
@@ -112,31 +121,31 @@ export function Navbar() {
               <>
                 <Link
                   href="/feed"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Jobs
                 </Link>
                 <Link
                   href="/remote-jobs"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Directory
                 </Link>
                 <a
                   href="#how-it-works"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   How It Works
                 </a>
                 <Link
                   href="/guide"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Guides
                 </Link>
                 <Link
                   href="/settings?tab=billing"
-                  className="rounded-xl px-3.5 py-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Pricing
                 </Link>
@@ -225,9 +234,11 @@ export function Navbar() {
 
       {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) —
           omitted on /login for the same reason as the desktop right controls,
-          and on /remote-jobs where it overlaps that page's own category nav
-          on mobile — see isRemoteJobsDirectory above. */}
-      {!isAuthPage && !isRemoteJobsDirectory && (
+          on /remote-jobs where it overlaps that page's own category nav on
+          mobile (see isRemoteJobsDirectory above), and on the landing page
+          where it overlaps marketing section headings while scrolling (see
+          isLandingForMobileNav above). */}
+      {!isAuthPage && !isRemoteJobsDirectory && !isLandingForMobileNav && (
       <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"
