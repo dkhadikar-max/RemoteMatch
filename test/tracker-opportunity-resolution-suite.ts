@@ -210,10 +210,18 @@ async function run() {
         const supersededSourceId = `tracker-test-superseded-${stamp}`;
         const nonexistentId = canonicalId('curated', `tracker-test-missing-${stamp}`);
 
+        // Cleanup order matters: `superseded_by_opportunity_id` is a FK (no
+        // ON DELETE clause) from the superseded row to the survivor row, so
+        // the superseded row MUST be deleted before the survivor — deleting
+        // the survivor first fails the FK check. supabase-js's `.delete()`
+        // doesn't throw on that failure (it returns `{ error }`), so an
+        // earlier version of this ordering leaked "Survivor Role (test)"
+        // rows onto the live production job directory across multiple real
+        // runs before this was caught and fixed.
         seededSourceIds.push(
           { source: 'curated', sourceId: expiredSourceId },
-          { source: 'curated', sourceId: survivorSourceId },
           { source: 'curated', sourceId: supersededSourceId },
+          { source: 'curated', sourceId: survivorSourceId },
         );
         const survivorId = canonicalId('curated', survivorSourceId);
 
@@ -337,13 +345,36 @@ async function run() {
         );
       }
     } finally {
+      // Delete in the order pushed above (expired, superseded, survivor) —
+      // FK-safe. supabase-js's `.delete()` returns `{ error }` rather than
+      // throwing, so that field is checked and surfaced loudly rather than
+      // silently swallowed — a silent failure here is exactly what leaked
+      // "Survivor Role (test)" rows onto the live production job directory
+      // before this was caught.
       for (const { source, sourceId } of seededSourceIds) {
-        try {
-          await admin.from('opportunities').delete().eq('source', source).eq('source_id', sourceId);
-        } catch {
-          // best-effort cleanup
+        const { error: deleteErr } = await admin
+          .from('opportunities')
+          .delete()
+          .eq('source', source)
+          .eq('source_id', sourceId);
+        if (deleteErr) {
+          console.error(`  WARNING: cleanup failed to delete ${source}/${sourceId}: ${deleteErr.message}`);
         }
       }
+
+      // Explicit regression guard: confirm every seeded row is actually
+      // gone, not just that the delete calls were issued.
+      if (seededSourceIds.length > 0) {
+        const { data: leftover } = await admin
+          .from('opportunities')
+          .select('source, source_id')
+          .in('source_id', seededSourceIds.map((s) => s.sourceId));
+        assert(
+          !leftover || leftover.length === 0,
+          `no seeded synthetic opportunity rows remain after cleanup (found ${leftover?.length ?? 0} leftover: ${JSON.stringify(leftover)})`
+        );
+      }
+
       if (sessionA) await admin.auth.admin.deleteUser(sessionA.userId).catch(() => {});
       if (sessionB) await admin.auth.admin.deleteUser(sessionB.userId).catch(() => {});
     }
