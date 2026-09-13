@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ApplicationRecord, ApplicationStatus } from '@/types/byn';
-import { localStore } from '@/lib/db/mock-seed';
 import { InterviewModal } from '@/components/tracker/interview-modal';
 import {
   ArrowRight,
@@ -19,8 +18,11 @@ import {
 // lifecycle state, joined with the fit-score-at-decision-time snapshot
 // recorded by finalize_interested_swipe(). Deliberately does not carry the
 // full `opportunity`/`match` objects ApplicationRecord allows for — those
-// are looked up from the (legitimately client-local) opportunity catalog
-// per-render, same as before.
+// are resolved separately, in bulk, via GET /api/applications/opportunities
+// (Tracker Opportunity Resolution) below. This USED to say the opportunity
+// catalog was "legitimately client-local" — that was true before Live
+// Supply Activation, and became false the moment the catalog grew beyond
+// the curated fixture; see ResolvedOpportunity/loadOpportunities below.
 interface ServerApplication {
   id: string;
   opportunityId: string;
@@ -32,8 +34,35 @@ interface ServerApplication {
   decisionSnapshot: { fitScore?: number } | null;
 }
 
+// Shape returned by GET /api/applications/opportunities — a deliberately
+// minimal projection of the real, live catalog (active or expired; a
+// superseded opportunity resolves to its own row, never a survivor's), keyed
+// by opportunityId. Replaces the old `localStore.getOpportunityById()` call,
+// which only ever matched the 12-entry `CURATED_JOBS` fixture and silently
+// dropped the Tracker card entirely (`if (!opp) return null`) for the other
+// 91% of the real catalog. A missing key here means the id genuinely could
+// not be resolved (deleted/never existed) — never fabricated.
+interface ResolvedOpportunity {
+  id: string;
+  title: string;
+  company: string;
+  remoteType: string;
+  salaryMin?: number;
+  salaryMax?: number;
+  // Never populated by GET /api/applications/opportunities (computing a live
+  // fitScore needs the caller's profile + the scoring engine — out of scope
+  // here). Kept only so the existing `opp.fitScore ?? 92` fallback chain
+  // below compiles and behaves byte-identically to before this ticket — it
+  // was already always undefined under the old localStore path too, since
+  // neither normalizeOpportunity() nor rowToCanonicalOpportunity() ever set
+  // it. The `?? 92` fabricated-fallback itself is a separate, deliberately
+  // out-of-scope Tracker integrity item.
+  fitScore?: number;
+}
+
 export default function TrackerPage() {
   const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [opportunitiesById, setOpportunitiesById] = useState<Record<string, ResolvedOpportunity>>({});
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
@@ -61,8 +90,20 @@ export default function TrackerPage() {
     setApplications(apps);
   };
 
+  // Tracker Opportunity Resolution — a single batched call per page load,
+  // never one request per row. The route itself derives which ids to
+  // resolve from the caller's own applications server-side; this call sends
+  // no ids at all.
+  const loadOpportunities = async () => {
+    const res = await fetch('/api/applications/opportunities');
+    if (!res.ok) return;
+    const data = await res.json();
+    setOpportunitiesById((data.opportunities as Record<string, ResolvedOpportunity>) ?? {});
+  };
+
   useEffect(() => {
     loadApplications();
+    loadOpportunities();
   }, []);
 
   // The server is the only authority on whether a transition is valid —
@@ -126,7 +167,7 @@ export default function TrackerPage() {
         ? app.status === 'offer'
         : app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
 
-    const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
+    const opp = opportunitiesById[app.opportunityId];
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     const companyMatch = opp?.company.toLowerCase().includes(searchQuery.toLowerCase()) || false;
     return matchesTab && (titleMatch || companyMatch || searchQuery === '');
@@ -244,7 +285,7 @@ export default function TrackerPage() {
         ) : (
           <div className="space-y-4">
             {filtered.map((app) => {
-              const opp = app.opportunity || localStore.getOpportunityById(app.opportunityId);
+              const opp = opportunitiesById[app.opportunityId];
               if (!opp) return null;
 
               // Prefer the score actually recorded at the moment this

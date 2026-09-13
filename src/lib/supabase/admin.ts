@@ -25,6 +25,13 @@ let adminClient: SupabaseClient | null = null;
  *     Stripe itself has confirmed payment (trust anchor: Stripe's API
  *     response), which the authenticated user's own RLS-limited session
  *     cannot do by design (see supabase/migrations/003_security_remediation.sql).
+ *   - `getOpportunitiesByCanonicalIdsAnyStatus()` (src/lib/ingestion/catalog-read.ts),
+ *     used only by GET /api/applications/opportunities (Tracker Opportunity
+ *     Resolution), to read an opportunity regardless of its `status` (a
+ *     since-expired job a user genuinely applied to). Trust anchor: the
+ *     caller's own RLS-scoped `applications` query has already proven, in
+ *     the same request, that every id passed in belongs to THAT user's own
+ *     applications — this function is never given a client-supplied id.
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

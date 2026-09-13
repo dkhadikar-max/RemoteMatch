@@ -186,3 +186,50 @@ export async function getOpportunityBySourceIdAnyStatus(sourceId: string): Promi
   if (error || !data) return null;
   return rowToCanonicalOpportunity(data as unknown as OpportunityRow);
 }
+
+/**
+ * Batch lookup by canonical id (`opp-${source}-${sourceId}`), REGARDLESS of
+ * status — Tracker Opportunity Resolution's read path.
+ *
+ * Deliberately uses the admin client, not RLS, for the same reason as
+ * `getOpportunityBySourceIdAnyStatus` above: `opportunities_select_active`
+ * walls off non-'active' rows from every role, but a user's Tracker page
+ * must still show the real title/company for an application against a job
+ * that has since expired — the application represents what they actually
+ * acted on, and its lifecycle is independent of the opportunity's.
+ *
+ * The trust anchor is NOT this function — it is the caller's responsibility
+ * to have already proven, via the caller's own RLS-scoped `applications`
+ * query, that every id passed in belongs to that authenticated user's own
+ * applications. This function does no ownership check itself and must never
+ * be called with a client-supplied id list (see
+ * `/api/applications/opportunities`, its only caller).
+ *
+ * A superseded opportunity resolves to its OWN row here — this function has
+ * no knowledge of `superseded_by_opportunity_id` and never follows it;
+ * that's what keeps a Tracker entry pointing at what the user actually
+ * applied to, not silently redirecting to a reconciliation survivor.
+ *
+ * Matches `.in('canonical_id', ...)` against the same persisted, generated
+ * column `getActiveOpportunityByCanonicalId` uses above, for the same
+ * reason: parsing the `opp-${source}-${sourceId}` string back apart cannot
+ * survive a hyphenated source slug or source id.
+ */
+export async function getOpportunitiesByCanonicalIdsAnyStatus(
+  canonicalIds: string[]
+): Promise<CanonicalOpportunity[]> {
+  const validIds = canonicalIds.filter(
+    (id) => typeof id === 'string' && id.startsWith('opp-') && id.length <= 200
+  );
+  if (validIds.length === 0) return [];
+
+  const admin = getSupabaseAdminClient();
+  if (!admin) return [];
+
+  const { data, error } = await admin
+    .from('opportunities')
+    .select(OPPORTUNITY_COLUMNS)
+    .in('canonical_id', validIds);
+  if (error || !data) return [];
+  return (data as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity);
+}
