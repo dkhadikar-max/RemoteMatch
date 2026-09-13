@@ -37,12 +37,20 @@ export async function POST(req: NextRequest) {
   // Rule: a mock session must NEVER approve when real Stripe is configured —
   // fixed from the prior implementation, where this branch sat OUTSIDE the
   // isStripeConfigured check and therefore fired regardless of it.
+  //
+  // Launch-blocker fix: a mock session must ALSO never approve in
+  // production, even when Stripe is unconfigured there. The mock path
+  // exists purely as a local/test convenience (see
+  // test/security-remediation-suite.ts, which asserts this exact behavior
+  // when Stripe is unconfigured) — in production, "Stripe unconfigured"
+  // must mean "upgrades unavailable," never "free Pro for anyone who asks."
   if (sessionId.startsWith('mock_')) {
-    if (isStripeConfigured) {
+    if (isStripeConfigured || process.env.NODE_ENV === 'production') {
       return NextResponse.json({ error: 'Invalid checkout session' }, { status: 400 });
     }
-    // Stripe genuinely not configured (local/demo environment only): grant
-    // Pro to the AUTHENTICATED caller, never a client-supplied identity.
+    // Stripe genuinely not configured, and this is not production (local/
+    // test environment only): grant Pro to the AUTHENTICATED caller, never
+    // a client-supplied identity.
     const { data: updated, error } = await admin
       .from('profiles')
       .update({ plan_tier: 'pro', updated_at: new Date().toISOString() })

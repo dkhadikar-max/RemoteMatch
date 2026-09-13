@@ -21,6 +21,16 @@ export async function POST(req: NextRequest) {
       returnUrl: `${origin}/settings`,
     });
 
+    // In production with Stripe unconfigured, createCheckoutSession returns
+    // no URL rather than a fake success redirect — a real user must never
+    // see a checkout flow that "succeeds" without a real payment.
+    if (!session.url) {
+      return NextResponse.json(
+        { error: "Pro upgrades aren't available right now. Please check back soon." },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       url: session.url,

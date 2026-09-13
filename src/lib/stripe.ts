@@ -16,10 +16,15 @@ export async function createCheckoutSession(params: {
   returnUrl: string;
 }): Promise<{ url: string | null; isMock?: boolean }> {
   if (!stripe) {
-    // If Stripe is not configured yet, return a mock success redirect.
-    // The verify route only ever honors this for the SAME authenticated
-    // user and only while Stripe remains unconfigured — see
-    // src/app/api/stripe/verify/route.ts.
+    // Local/test convenience: with no Stripe key configured, hand back a
+    // mock success redirect. The verify route only ever honors this for the
+    // SAME authenticated user, and — as of the launch-blocker fix — never
+    // in production regardless of Stripe configuration: a real user must
+    // never receive Pro without paying. See src/app/api/stripe/verify/route.ts
+    // and the NODE_ENV check in the route below.
+    if (process.env.NODE_ENV === 'production') {
+      return { url: null, isMock: true };
+    }
     return {
       url: `${params.returnUrl}?session_id=mock_session_success&tier=pro`,
       isMock: true,

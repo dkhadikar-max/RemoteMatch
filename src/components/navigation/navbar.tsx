@@ -29,6 +29,15 @@ export function Navbar() {
   // (Jobs/Applications/Profile, saves badge, avatar) there is misleading,
   // since none of it reflects real state for a signed-out visitor.
   const isAuthPage = pathname === '/login';
+  // The public /remote-jobs SEO directory renders its own in-page category
+  // navigation near the bottom of the initial mobile viewport; the fixed
+  // app-shortcut bar (Jobs/Applications/Profile — all auth-gated
+  // destinations a public-directory visitor may not even have a session
+  // for) has been confirmed, via measured DOM overlap, to sit directly on
+  // top of that in-page navigation on mobile, making the second row of
+  // category chips untappable. Scoped to exactly this route family — the
+  // authenticated app pages this bar actually serves are unaffected.
+  const isRemoteJobsDirectory = pathname?.startsWith('/remote-jobs') ?? false;
 
   // Server-authoritative entitlement. `null` until it resolves AND whenever
   // there is no session — the navbar never renders a fabricated quota/plan.
@@ -215,8 +224,10 @@ export function Navbar() {
       </header>
 
       {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) —
-          omitted on /login for the same reason as the desktop right controls. */}
-      {!isAuthPage && (
+          omitted on /login for the same reason as the desktop right controls,
+          and on /remote-jobs where it overlaps that page's own category nav
+          on mobile — see isRemoteJobsDirectory above. */}
+      {!isAuthPage && !isRemoteJobsDirectory && (
       <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"

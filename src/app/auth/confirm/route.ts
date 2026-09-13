@@ -31,7 +31,21 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
  * package / deploy checklist).
  */
 export async function GET(req: NextRequest) {
-  const { searchParams, origin } = req.nextUrl;
+  const { searchParams } = req.nextUrl;
+  // `req.nextUrl.origin` reflects the address Railway's proxy forwards the
+  // request to internally (confirmed in production to resolve to
+  // http://localhost:8080), not the public domain — so it can never be used
+  // directly for a redirect the user's own browser will follow. Prefer the
+  // standard reverse-proxy forwarded headers, fall back to nextUrl.origin
+  // for local dev (where there is no proxy and it's already correct), and
+  // fall back to the real production domain as a last resort so this can
+  // never emit a broken localhost redirect.
+  const forwardedProto = req.headers.get('x-forwarded-proto');
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  const origin =
+    (forwardedProto && forwardedHost ? `${forwardedProto}://${forwardedHost}` : null) ??
+    req.nextUrl.origin ??
+    'https://remotematch.online';
   const tokenHash = searchParams.get('token_hash');
   const type = searchParams.get('type') as EmailOtpType | null;
   const code = searchParams.get('code');

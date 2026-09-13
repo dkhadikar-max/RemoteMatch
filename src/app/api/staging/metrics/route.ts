@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { localStore } from '@/lib/db/mock-seed';
 
 export async function GET() {
+  // Fixture-backed internal dev tool (see src/app/staging/layout.tsx for the
+  // matching page-level lockdown) — never real production data, never meant
+  // to be publicly reachable. Unreachable in production; still usable in
+  // local dev/preview.
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   try {
     const opportunities = localStore.getOpportunities();
     const applications = localStore.getAllApplications();
