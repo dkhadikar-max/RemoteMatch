@@ -132,7 +132,7 @@ async function run() {
 
     const apiDir = join(__dirname, '../src/app/api');
     const beforeApiRoutes = [
-      'ai', 'applications', 'demand', 'health', 'onboarding', 'opportunities', 'profile',
+      'ai', 'applications', 'demand', 'funnel', 'health', 'onboarding', 'opportunities', 'profile',
       'resume', 'seo', 'staging', 'stripe',
     ];
     const currentApiDirs = readdirSync(apiDir).sort();

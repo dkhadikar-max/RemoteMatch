@@ -32,6 +32,15 @@ let adminClient: SupabaseClient | null = null;
  *     caller's own RLS-scoped `applications` query has already proven, in
  *     the same request, that every id passed in belongs to THAT user's own
  *     applications — this function is never given a client-supplied id.
+ *   - `recordFunnelEvent()` (src/lib/funnel/events.ts), used only by
+ *     POST /api/funnel/event (Funnel Instrumentation). Different shape of
+ *     justification from the two above: `funnel_events` has RLS enabled
+ *     with ZERO client policies by design (migration 019) — no `anon` or
+ *     `authenticated` role can read or write it at all, ever. The admin
+ *     client here isn't bypassing a policy a real session could otherwise
+ *     satisfy; it's the intended sole write path behind a route that has
+ *     already validated event_type/fields against a fixed allow-list and
+ *     derived profile_id from the caller's own session (never the body).
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

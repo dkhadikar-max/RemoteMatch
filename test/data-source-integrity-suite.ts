@@ -70,7 +70,7 @@ async function run() {
     // no new top-level API route directory (a1 — reuse only, no new route)
     const { readdirSync } = await import('fs');
     const apiDirs = readdirSync(join(__dirname, '../src/app/api')).sort();
-    const expected = ['ai', 'applications', 'demand', 'health', 'onboarding', 'opportunities', 'profile', 'resume', 'seo', 'staging', 'stripe'];
+    const expected = ['ai', 'applications', 'demand', 'funnel', 'health', 'onboarding', 'opportunities', 'profile', 'resume', 'seo', 'staging', 'stripe'];
     assert(
       apiDirs.every((d) => expected.includes(d)) && apiDirs.length === expected.length,
       `no new top-level API route directory introduced (got: ${apiDirs.join(', ')})`,
