@@ -39,6 +39,15 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Figma', 'Product Design', 'Design Systems', 'User Research', 'SaaS'],
         publicationDate: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13): this listing's officialUrl was
+        // confirmed dead (404) and, since fixture entries without an
+        // explicit EXPIRED status are unconditionally reasserted 'active'
+        // by every sync cycle (see catalog-sync.ts's explicitOverrideByKey),
+        // a database-only status change does not stick — it must be marked
+        // here, in source, to durably expire.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '7-10',
       },
       {
@@ -77,6 +86,10 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Product Management', 'PostgreSQL', 'Developer Tools', 'Open Source', 'Roadmapping'],
         publicationDate: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13) — see curated-002's comment above.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '7-10',
       },
       {
@@ -96,6 +109,10 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Go', 'Kafka', 'Kubernetes', 'Microservices', 'PostgreSQL'],
         publicationDate: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13) — see curated-002's comment above.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '4-6',
       },
       {
@@ -134,6 +151,10 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Product Marketing', 'Copywriting', 'Positioning', 'SaaS', 'Developer Tools'],
         publicationDate: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13) — see curated-002's comment above.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '4-6',
       },
       {
@@ -153,6 +174,10 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Python', 'SQL', 'dbt', 'Snowflake', 'ETL', 'Fintech'],
         publicationDate: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13) — see curated-002's comment above.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '4-6',
       },
       {
@@ -172,6 +197,10 @@ export const CURATED_JOBS: RawJobPayload[] = [
         salaryPeriod: 'yearly',
         tags: ['Content Marketing', 'Copywriting', 'SEO', 'Email Marketing', 'Brand Strategy'],
         publicationDate: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+        // Launch-blocker fix (2026-09-13) — see curated-002's comment above.
+        status: 'EXPIRED',
+        closedAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString(),
+        isPermanentlyRemoved: true,
         experienceLevel: '2-3',
       },
       {
