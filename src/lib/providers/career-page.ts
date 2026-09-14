@@ -254,10 +254,28 @@ function stripLocaleSegment(pathname: string): { canonicalPath: string; hasLocal
  */
 export function discoverJobPostingLinks(html: string, baseUrl: string, maxLinks = 10): string[] {
   const base = new URL(baseUrl);
+  const baseKey = new URL(base.toString());
+  baseKey.hash = '';
+  const baseUrlKey = baseKey.toString();
   const hrefs = Array.from(html.matchAll(/href="([^"]+)"/gi)).map((m) => m[1]);
 
   // Pass 1: resolve to valid, same-origin, job-shaped, document-like
   // candidates, deduplicated on the fragment-stripped absolute URL.
+  //
+  // Real defect found via Phase 2A production audit (docs/ai-phase2a-
+  // production-audit.md), root-caused against Coalition Technologies' real
+  // /jobs page (2026-09-14): that page is a genuine 28-job index listing
+  // with a job-shaped self-referencing link (e.g. a "Jobs" nav item)
+  // pointing back at its OWN url. Without the self-URL exclusion below,
+  // that link passed every other check and was "discovered" as if it were
+  // a distinct sub-posting, causing the index page's own multi-job content
+  // to be re-fetched and routed into single-posting extraction — Gemini
+  // then correctly refused to fabricate a single posting from 28 of them
+  // (all-null output, per its own prompt instruction), which the shape
+  // guard correctly rejected as malformed_response. Gemini and the shape
+  // guard were never the problem; the origin page's own URL simply needs
+  // to be excluded from its own candidate set, same as any other dedup
+  // rule already in this function.
   const seen = new Set<string>();
   const resolvedCandidates: URL[] = [];
   for (const href of hrefs) {
@@ -268,6 +286,7 @@ export function discoverJobPostingLinks(html: string, baseUrl: string, maxLinks 
       if (abs.origin !== base.origin) continue; // same-domain only
       abs.hash = '';
       const key = abs.toString();
+      if (key === baseUrlKey) continue; // never "discover" the page's own url as a sub-link
       if (seen.has(key)) continue;
       seen.add(key);
       resolvedCandidates.push(abs);
