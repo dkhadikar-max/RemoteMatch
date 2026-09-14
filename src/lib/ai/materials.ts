@@ -1,5 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getGeminiModel } from './gemini-config';
+import { getOpenAiClient, OPENAI_MODEL_ID, OPENAI_REASONING_EFFORT } from './openai-config';
+import { reserveOpenAiSpend, consumeOpenAiSpend, refundOpenAiSpend } from './spend-ledger';
+import { recordAiCallEvent, type AiCallOutcome } from '@/lib/observability/ai-events';
 import {
   CanonicalOpportunity,
   PersonProfile,
@@ -9,6 +10,29 @@ import {
 } from '@/types/byn';
 import { deriveActionableSkillGaps } from '@/lib/match/actionable-skill-gaps';
 import { isGeneratedKitSupported } from '@/lib/ai/anti-fabrication';
+
+/**
+ * AI Phase 1B provider switch (docs/ai-phase1b-implementation-plan.md).
+ * Was Gemini (`gemini-flash-latest` via gemini-config.ts); is now OpenAI
+ * (`gpt-5-mini` via openai-config.ts), per the locked two-provider routing
+ * table (remotematch-ai-cost-policy memory: O3/O4 = OpenAI paid). The
+ * prompt, schema, anti-fabrication check (isGeneratedKitSupported below),
+ * and generateFallbackApplicationKit() are otherwise BYTE-FOR-BYTE
+ * unchanged from before this switch — only the provider call itself and
+ * its budget wrapper (spend-ledger.ts instead of no wrapper at all) change.
+ *
+ * `reasoning_effort: OPENAI_REASONING_EFFORT` is mandatory on the
+ * completions call below — see openai-config.ts's header for the real,
+ * live-verified failure mode (empty output, full token burn) if it's ever
+ * omitted. test/openai-reasoning-effort-suite.ts regression-guards this.
+ */
+function classifyOpenAiError(err: unknown): AiCallOutcome {
+  const status = (err as { status?: number })?.status;
+  if (status === 429) return 'rate_limited_429';
+  if (status === 404) return 'model_not_found_404';
+  if (status && status >= 500) return 'service_unavailable_503';
+  return 'other';
+}
 
 /** Where the returned material actually came from (ticket O3). 'template'
  *  means the deterministic, hand-authored generator — including when an
@@ -107,7 +131,7 @@ ${candidateName}`;
   return { resumeTweaks, coverLetter, source: 'template' };
 }
 
-// Generate application kit with Gemini Flash or intelligent fallback
+// Generate application kit with OpenAI (gpt-5-mini) or intelligent fallback
 export async function generateApplicationKit(
   profile: PersonProfile,
   opportunity: CanonicalOpportunity,
@@ -118,17 +142,15 @@ export async function generateApplicationKit(
   coverLetter: string;
   source: ApplicationKitSource;
 }> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
     return generateFallbackApplicationKit(profile, opportunity, match, tone);
   }
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = getGeminiModel(genAI);
+  const MAX_COMPLETION_TOKENS = 2000;
 
-    const prompt = `
+  const prompt = `
 You are an expert career strategist for RemoteMatch.
 Generate a tailored Application Kit for this candidate applying to this specific remote opportunity.
 
@@ -178,14 +200,59 @@ Output ONLY valid JSON with this exact schema:
 }
 `;
 
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
+  const reservation = await reserveOpenAiSpend('o3_o4_materials', prompt, MAX_COMPLETION_TOKENS);
+  if (!reservation.allowed) {
+    // Spend cap exhausted (daily or monthly) — nothing was reserved,
+    // nothing to refund. Falls to the deterministic template exactly like
+    // any other unavailability, by design.
+    return generateFallbackApplicationKit(profile, opportunity, match, tone);
+  }
+  const { usagePeriod, reservedCostUsd } = reservation as { usagePeriod: string; reservedCostUsd: number };
+  const startedAt = Date.now();
 
-    const responseText = result.response.text();
+  // Two explicit stages, same shape as career-page-extraction.ts's Phase 1A
+  // pattern: the reservation is consumed exactly once, right after the API
+  // call itself resolves (success OR failure) — never a second time
+  // afterward, even if a post-success JSON.parse or anti-fabrication check
+  // subsequently rejects the result.
+  let completion;
+  try {
+    const client = getOpenAiClient();
+    completion = await client.chat.completions.create({
+      model: OPENAI_MODEL_ID,
+      // See openai-config.ts's header for why omitting this is not an
+      // option — a real, live-verified failure mode (empty output).
+      reasoning_effort: OPENAI_REASONING_EFFORT,
+      response_format: { type: 'json_object' },
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      messages: [{ role: 'user', content: prompt }],
+    });
+  } catch (err) {
+    // Reached OpenAI's endpoint (an HTTP error status) or a genuine network
+    // failure — either way, consumes the reservation rather than refunding
+    // it: safer to slightly under-report available spend than to risk
+    // believing budget exists when a request already left the process.
+    const failedConsume = await consumeOpenAiSpend('o3_o4_materials', usagePeriod, reservedCostUsd);
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'o3_o4_materials',
+      outcome: classifyOpenAiError(err), latencyMs: Date.now() - startedAt,
+      estimatedCostUsd: failedConsume.actualCostUsd,
+    });
+    console.warn('OpenAI call failed, falling back to rule-based generator:', err);
+    return generateFallbackApplicationKit(profile, opportunity, match, tone);
+  }
+
+  const usage = completion.usage;
+  // Use the RECONCILED actual cost (from consumeOpenAiSpend's return value)
+  // for observability below, never reservedCostUsd — fixed 2026-09-14, see
+  // OpenAiConsumeResult's doc comment in spend-ledger.ts for why.
+  const { actualCostUsd, tokensUsed } = await consumeOpenAiSpend(
+    'o3_o4_materials', usagePeriod, reservedCostUsd,
+    usage?.prompt_tokens, usage?.completion_tokens
+  );
+
+  try {
+    const responseText = completion.choices[0]?.message?.content ?? '';
     const parsed = JSON.parse(responseText);
 
     // O4 — a conservative claim screen, not proof of factual accuracy: it
@@ -201,9 +268,20 @@ Output ONLY valid JSON with this exact schema:
       { gapSkills, rawResumeText: profile.rawResumeText || '', opportunityCompany: opportunity.company },
     );
     if (!supported) {
-      console.warn('Gemini Flash output failed the anti-fabrication check, falling back to rule-based generator.');
+      console.warn('OpenAI output failed the anti-fabrication check, falling back to rule-based generator.');
+      await recordAiCallEvent({
+        provider: 'openai', model: OPENAI_MODEL_ID, feature: 'o3_o4_materials',
+        outcome: 'success', latencyMs: Date.now() - startedAt,
+        tokensUsed, estimatedCostUsd: actualCostUsd,
+      });
       return generateFallbackApplicationKit(profile, opportunity, match, tone);
     }
+
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'o3_o4_materials',
+      outcome: 'success', latencyMs: Date.now() - startedAt,
+      tokensUsed, estimatedCostUsd: actualCostUsd,
+    });
 
     return {
       resumeTweaks: parsed.resumeTweaks,
@@ -211,7 +289,12 @@ Output ONLY valid JSON with this exact schema:
       source: 'ai',
     };
   } catch (err) {
-    console.warn('Gemini Flash call failed, falling back to rule-based generator:', err);
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'o3_o4_materials',
+      outcome: 'malformed_response', latencyMs: Date.now() - startedAt,
+      tokensUsed, estimatedCostUsd: actualCostUsd,
+    });
+    console.warn('OpenAI response was unparseable, falling back to rule-based generator:', err);
     return generateFallbackApplicationKit(profile, opportunity, match, tone);
   }
 }

@@ -1,12 +1,15 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-// Model identifier centralized per the Gemini Compatibility Remediation
-// (docs/gemini-compatibility-remediation-spec.md §5) — mechanical
-// consistency cleanup only. This file's real-Gemini path is still
-// structurally unreachable in production (ticket O5's HELD finding:
-// called from onboarding client-side, GEMINI_API_KEY always undefined
-// there), independent of the model identifier. Stays exactly as HELD —
-// NOT resolved by this change.
-import { getGeminiModel } from './gemini-config';
+// AI Phase 1B provider switch (docs/ai-phase1b-implementation-plan.md,
+// locked §7.2). Was Gemini; is now OpenAI (`gpt-5-mini` via
+// openai-config.ts). This file's real-AI path is STILL structurally
+// unreachable in production (ticket O5's HELD finding: called from
+// onboarding client-side, where any `*_API_KEY` env var is always
+// undefined there), independent of which provider is configured — stays
+// exactly as HELD, NOT resolved by this change, same mechanical-swap-only
+// discipline as the earlier Gemini-model-id cleanup this file already went
+// through (docs/gemini-compatibility-remediation-spec.md §5).
+import { getOpenAiClient, OPENAI_MODEL_ID, OPENAI_REASONING_EFFORT } from './openai-config';
+import { reserveOpenAiSpend, consumeOpenAiSpend } from './spend-ledger';
+import { recordAiCallEvent, type AiCallOutcome } from '@/lib/observability/ai-events';
 import {
   PersonProfile,
   CanonicalOpportunity,
@@ -15,6 +18,14 @@ import {
   AIUncertaintyItem,
   SkillEvidenceLevel,
 } from '@/types/byn';
+
+function classifyOpenAiError(err: unknown): AiCallOutcome {
+  const status = (err as { status?: number })?.status;
+  if (status === 429) return 'rate_limited_429';
+  if (status === 404) return 'model_not_found_404';
+  if (status && status >= 500) return 'service_unavailable_503';
+  return 'other';
+}
 
 // Fallback rule-based analyzer
 export function analyzeResumeHeuristically(
@@ -141,21 +152,19 @@ export function analyzeResumeHeuristically(
   };
 }
 
-// Full AI Resume Intelligence Analysis with Gemini Flash
+// Full AI Resume Intelligence Analysis (OpenAI gpt-5-mini)
 export async function analyzeResumeWithAI(
   profile: PersonProfile,
   rawResumeText: string
 ): Promise<ProfileStrengthAnalysis> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return analyzeResumeHeuristically(profile, rawResumeText);
   }
 
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = getGeminiModel(genAI);
+  const MAX_COMPLETION_TOKENS = 1500;
 
-    const prompt = `
+  const prompt = `
 You are the Chief Resume Intelligence Officer for RemoteMatch.
 Analyze this candidate's resume text against their onboarding intent.
 
@@ -209,15 +218,61 @@ Output ONLY valid JSON matching this schema:
 }
 `;
 
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    });
+  const reservation = await reserveOpenAiSpend('resume_intelligence', prompt, MAX_COMPLETION_TOKENS);
+  if (!reservation.allowed) {
+    return analyzeResumeHeuristically(profile, rawResumeText);
+  }
+  const { usagePeriod, reservedCostUsd } = reservation as { usagePeriod: string; reservedCostUsd: number };
+  const startedAt = Date.now();
 
-    const parsed = JSON.parse(result.response.text());
+  // Two explicit stages (Phase 1A/1B pattern): consume exactly once, right
+  // after the API call resolves, never a second time if a post-success
+  // JSON.parse subsequently fails.
+  let completion;
+  try {
+    const client = getOpenAiClient();
+    completion = await client.chat.completions.create({
+      model: OPENAI_MODEL_ID,
+      // See openai-config.ts's header for why omitting this is not an
+      // option — a real, live-verified failure mode (empty output).
+      reasoning_effort: OPENAI_REASONING_EFFORT,
+      response_format: { type: 'json_object' },
+      max_completion_tokens: MAX_COMPLETION_TOKENS,
+      messages: [{ role: 'user', content: prompt }],
+    });
+  } catch (err) {
+    const failedConsume = await consumeOpenAiSpend('resume_intelligence', usagePeriod, reservedCostUsd);
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'resume_intelligence',
+      outcome: classifyOpenAiError(err), latencyMs: Date.now() - startedAt,
+      estimatedCostUsd: failedConsume.actualCostUsd,
+    });
+    console.warn('OpenAI Resume Intelligence call failed, using heuristic analysis:', err);
+    return analyzeResumeHeuristically(profile, rawResumeText);
+  }
+
+  const usage = completion.usage;
+  // Use the RECONCILED actual cost, never reservedCostUsd — see
+  // OpenAiConsumeResult's doc comment in spend-ledger.ts.
+  const { actualCostUsd, tokensUsed } = await consumeOpenAiSpend(
+    'resume_intelligence', usagePeriod, reservedCostUsd, usage?.prompt_tokens, usage?.completion_tokens
+  );
+
+  try {
+    const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '');
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'resume_intelligence',
+      outcome: 'success', latencyMs: Date.now() - startedAt,
+      tokensUsed, estimatedCostUsd: actualCostUsd,
+    });
     return parsed;
   } catch (err) {
-    console.warn('Gemini Flash Resume Intelligence failed, using heuristic analysis:', err);
+    await recordAiCallEvent({
+      provider: 'openai', model: OPENAI_MODEL_ID, feature: 'resume_intelligence',
+      outcome: 'malformed_response', latencyMs: Date.now() - startedAt,
+      tokensUsed, estimatedCostUsd: actualCostUsd,
+    });
+    console.warn('OpenAI Resume Intelligence returned unparseable JSON, using heuristic analysis:', err);
     return analyzeResumeHeuristically(profile, rawResumeText);
   }
 }

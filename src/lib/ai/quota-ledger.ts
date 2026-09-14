@@ -66,7 +66,24 @@ async function getEmployerUsageToday(employerId: string, usageDate: string): Pro
 }
 
 export async function reserveGeminiRequest(employerId: string): Promise<GeminiReservationResult> {
-  const admin = getSupabaseAdminClient();
+  // Hardening fix (2026-09-14, real finding from Phase 1B live verification):
+  // getSupabaseAdminClient() can throw SYNCHRONOUSLY (observed: @supabase/
+  // supabase-js's realtime client constructor requires a WebSocket ctor on
+  // Node < 22, absent in a bare script without a polyfill — Next.js's own
+  // server runtime doesn't hit this, confirmed by this function's real
+  // production use, but the call site itself must not assume that). Every
+  // other function in this file already wraps its own getSupabaseAdminClient()
+  // call in try/catch; this one didn't, so an uncaught throw here would
+  // propagate into career-page-extraction.ts instead of failing closed —
+  // a real mismatch against this module's own stated "fail-safe" contract.
+  // See test/ai-ledger-failsafe-suite.ts for the regression coverage.
+  let admin;
+  try {
+    admin = getSupabaseAdminClient();
+  } catch (err) {
+    console.warn('[quota-ledger] getSupabaseAdminClient() threw, failing closed:', err);
+    return { allowed: false, reason: 'not_configured' };
+  }
   if (!isSupabaseAdminConfigured || !admin) {
     return { allowed: false, reason: 'not_configured' };
   }

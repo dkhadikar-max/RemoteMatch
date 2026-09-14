@@ -65,6 +65,20 @@ let adminClient: SupabaseClient | null = null;
  *     model id, employer id, content hash, call outcome) is computed
  *     server-side from static config or the trusted `allowlist_employers`
  *     registry, never from client-supplied input.
+ *   - `src/lib/ai/spend-ledger.ts` (AI Phase 1B,
+ *     docs/ai-phase1b-implementation-plan.md), used by `materials.ts`
+ *     (O3/O4), `resume.ts` and `resume-intelligence.ts` (O5, still
+ *     structurally unreachable — see those files' own headers). UNLIKE the
+ *     C3/C5 entries above, these ARE user-facing call sites (reached from
+ *     `/api/opportunities/swipe`'s proposal-generation flow and
+ *     onboarding), so the trust anchor here is the same shape as
+ *     `funnel_events`'s, not the secret-gated-route shape: `ai_spend_ledger`
+ *     has RLS enabled with ZERO client policies (migration 024) — no
+ *     `anon` or `authenticated` role can read or write it, ever — and
+ *     every value written (feature name, model id, the reserved/actual
+ *     cost estimate) is computed server-side from static `openai-config.ts`
+ *     constants or a real OpenAI response's own `usage` object, never from
+ *     anything the calling user supplies.
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

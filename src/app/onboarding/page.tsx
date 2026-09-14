@@ -16,7 +16,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { localStore } from '@/lib/db/mock-seed';
-import { parseResumeWithGemini } from '@/lib/ai/resume';
+import { parseResumeWithAI } from '@/lib/ai/resume';
 import { analyzeResumeWithAI } from '@/lib/ai/resume-intelligence';
 import { ResumeIntelligenceDashboard } from '@/components/onboarding/resume-intelligence-dashboard';
 import { EmploymentType, ProfileStrengthAnalysis, AIUncertaintyItem } from '@/types/byn';

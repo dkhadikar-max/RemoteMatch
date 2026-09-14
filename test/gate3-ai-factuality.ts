@@ -10,6 +10,15 @@
  * percentages, revenue, team size, scale, employers, technologies,
  * responsibilities, dates, achievements, seniority, certifications, requirements.
  */
+// AI Phase 1B note: generateApplicationKit() now calls reserveOpenAiSpend()
+// -> getSupabaseAdminClient(), a new dependency this suite never needed
+// before (it was pure Gemini, no ledger). Same ws polyfill every other
+// real-infra suite in this repo already carries, for the same reason
+// (@supabase/supabase-js's realtime client needs a WebSocket ctor on
+// Node < 22, which Next.js's own server runtime provides but a bare tsx
+// script does not).
+import ws from 'ws';
+if (!(global as any).WebSocket) (global as any).WebSocket = ws;
 
 import { PersonProfile, CanonicalOpportunity } from '../src/types/byn';
 import {
