@@ -51,6 +51,20 @@ let adminClient: SupabaseClient | null = null;
  *     only reads `allowlist_employers`/writes reliability counters on
  *     `supply_sources`, both service-role-only tables with zero client
  *     policies (migration 012).
+ *   - `src/lib/ai/quota-ledger.ts`, `src/lib/ai/gemini-cache.ts`,
+ *     `src/lib/observability/ai-events.ts` (AI Phase 1A,
+ *     docs/ai-phase1-implementation-plan.md §5), used only by
+ *     `career-page-extraction.ts`'s C5 extraction call site (itself only
+ *     ever reached from the same secret-gated career-page sync path as
+ *     `employer-registry.ts` above). Same shape of justification as
+ *     `funnel_events`: `ai_quota_ledger` / `ai_quota_employer_ledger` /
+ *     `gemini_extraction_cache` / `ai_call_events` all have RLS enabled
+ *     with ZERO client policies by design (migrations 020-023) — no `anon`
+ *     or `authenticated` role can read or write any of them, ever — and
+ *     every value written through these three modules (feature name,
+ *     model id, employer id, content hash, call outcome) is computed
+ *     server-side from static config or the trusted `allowlist_employers`
+ *     registry, never from client-supplied input.
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

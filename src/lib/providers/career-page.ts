@@ -297,7 +297,14 @@ export function discoverJobPostingLinks(html: string, baseUrl: string, maxLinks 
  *  shared by both the single-posting root-page case and each discovered
  *  sub-link, so the json_ld/Gemini branch logic exists in exactly one
  *  place. Never itself fetches; the caller owns rate-limiting/robots-check/
- *  fetch for whichever URL this html came from. */
+ *  fetch for whichever URL this html came from.
+ *
+ *  `sourceIdSuffix` is `employer.id` (allowlist_employers' uuid) — reused
+ *  as-is (AI Phase 1A, docs/ai-phase1-implementation-plan.md §5) as the
+ *  identity `extractJobFromCareerPageText()` attributes real Gemini calls
+ *  to for the per-employer soft cap. Not a new parameter: this value was
+ *  already threaded through for the sourceId suffix; the Gemini budget
+ *  wiring just reads the same already-passed value. */
 async function extractCandidateFromPage(
   html: string,
   url: string,
@@ -312,7 +319,7 @@ async function extractCandidateFromPage(
   }
 
   const text = extractMainText(html);
-  const extraction = await extractJobFromCareerPageText(text, url);
+  const extraction = await extractJobFromCareerPageText(text, url, sourceIdSuffix);
   if (!extraction) return null;
 
   const validation = validateExtraction(extraction, text, {

@@ -1,5 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { getGeminiModel } from './gemini-config';
+import { getGeminiModel, GEMINI_MODEL_ID } from './gemini-config';
+import { reserveGeminiRequest, consumeGeminiRequest, refundGeminiReservation } from './quota-ledger';
+import { getCachedExtraction, setCachedExtraction } from './gemini-cache';
+import { recordAiCallEvent, type AiCallOutcome } from '@/lib/observability/ai-events';
+import { createContentHash } from '@/lib/ingestion/pipeline';
 
 /**
  * Supply Discovery gate C5 — Gemini career-page extraction (docs/c5-implementation-plan.md §5)
@@ -89,32 +93,103 @@ Output ONLY valid JSON matching this exact structure:
 }
 `;
 
+/** Classifies a caught Gemini SDK error into the small closed vocabulary
+ *  ai_call_events.outcome accepts (migration 022) — string-matches the
+ *  SDK's own error message shape (`[GoogleGenerativeAI Error]: Error
+ *  fetching from ...: [429/503/404 ...]`), the same shape real verification
+ *  this project has already observed live (Phase 0/0b). Best-effort only —
+ *  falls to 'other' for anything unrecognized, which is fine since this
+ *  classification is for observability, not for the reserve/consume/refund
+ *  safety invariant (that invariant does not depend on knowing WHICH
+ *  failure occurred, only THAT the provider was reached at all). */
+function classifyGeminiError(err: unknown): AiCallOutcome {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/\[429/.test(message)) return 'quota_exceeded_429';
+  if (/\[503/.test(message)) return 'service_unavailable_503';
+  if (/\[404/.test(message)) return 'model_not_found_404';
+  return 'other';
+}
+
 /**
  * Calls Gemini once for one already-isolated job-posting text block.
  * Returns null on ANY failure (missing API key, network error, malformed
- * response, missing required fields) — never a fallback/heuristic guess.
- * The caller (career-page.ts) is expected to skip this candidate entirely
- * when null is returned, exactly as it does for any other extraction
- * failure.
+ * response, missing required fields, budget exhaustion) — never a
+ * fallback/heuristic guess. The caller (career-page.ts) is expected to
+ * skip this candidate entirely when null is returned, exactly as it does
+ * for any other extraction failure — a budget exhaustion is deliberately
+ * indistinguishable from any other failure to every downstream caller.
+ *
+ * AI Phase 1A (docs/ai-phase1-implementation-plan.md §5) wraps this call
+ * with, in order: a content-hash cache lookup (skips Gemini entirely on a
+ * hit — evidence validation still re-runs downstream against the CURRENT
+ * source text regardless, this function's return contract is unchanged
+ * either way), a per-employer soft-cap check + a global request-count
+ * reservation (skips the call entirely if either denies it), and — after
+ * the call — a consume (never refund) of that reservation for ANY response
+ * Gemini actually returns, success or failure alike. The one safety
+ * invariant that must never be violated by a future edit here: once
+ * `model.generateContent()` has been awaited (meaning the HTTP request
+ * left this process), every exit path from that point on must call
+ * `consumeGeminiRequest()`, never `refundGeminiReservation()` — refund is
+ * reserved for a reservation that's abandoned BEFORE the network call is
+ * even attempted, which does not happen in this function's current shape
+ * (nothing between a successful reservation and the `generateContent()`
+ * call performs any I/O that could fail) but is structured explicitly in
+ * case a future pre-flight step is ever inserted here.
  */
 export async function extractJobFromCareerPageText(
   sourceText: string,
-  officialUrl: string
+  officialUrl: string,
+  employerId: string
 ): Promise<CareerPageExtraction | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return null;
 
   const truncatedText = sourceText.slice(0, 4000);
+  const contentHash = createContentHash(truncatedText);
 
+  const cached = await getCachedExtraction(contentHash);
+  if (cached) {
+    await recordAiCallEvent({
+      provider: 'gemini', model: GEMINI_MODEL_ID, feature: 'c5_extraction',
+      outcome: 'success', cacheHit: true,
+    });
+    return { ...cached, officialUrl };
+  }
+
+  const reservation = await reserveGeminiRequest(employerId);
+  if (!reservation.allowed) return null; // budget exhausted (global or per-employer) — nothing was reserved, nothing to refund
+  const usageDate = reservation.usageDate!;
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = getGeminiModel(genAI);
+  const startedAt = Date.now();
+
+  let result;
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = getGeminiModel(genAI);
-
-    const result = await model.generateContent({
+    result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: EXTRACTION_PROMPT_TEMPLATE(truncatedText) }] }],
       generationConfig: { responseMimeType: 'application/json' },
     });
+  } catch (err) {
+    // Reached Gemini's endpoint (an HTTP error status) or a genuine network
+    // failure — either way, per the plan's conservative safety rule, this
+    // consumes the reservation rather than refunding it: it's safer to
+    // slightly under-report available budget than to risk believing
+    // capacity exists when a request already left the process.
+    await consumeGeminiRequest(employerId, usageDate);
+    await recordAiCallEvent({
+      provider: 'gemini', model: GEMINI_MODEL_ID, feature: 'c5_extraction',
+      outcome: classifyGeminiError(err), cacheHit: false, latencyMs: Date.now() - startedAt,
+    });
+    console.error('[career-page-extraction] Gemini extraction failed:', err);
+    return null;
+  }
 
+  await consumeGeminiRequest(employerId, usageDate);
+  const latencyMs = Date.now() - startedAt;
+
+  try {
     const parsed = JSON.parse(result.response.text());
 
     // Minimal shape guard only — this is NOT the evidence-substring check
@@ -130,10 +205,15 @@ export async function extractJobFromCareerPageText(
       typeof parsed.jobType !== 'string' ||
       typeof parsed.jobTypeEvidence !== 'string'
     ) {
+      await recordAiCallEvent({
+        provider: 'gemini', model: GEMINI_MODEL_ID, feature: 'c5_extraction',
+        outcome: 'malformed_response', cacheHit: false, latencyMs,
+        tokensUsed: result.response.usageMetadata?.totalTokenCount,
+      });
       return null;
     }
 
-    return {
+    const extraction: CareerPageExtraction = {
       title: parsed.title,
       titleEvidence: parsed.titleEvidence,
       description: parsed.description,
@@ -148,7 +228,23 @@ export async function extractJobFromCareerPageText(
       jobTypeEvidence: parsed.jobTypeEvidence,
       officialUrl,
     };
+
+    await setCachedExtraction(contentHash, extraction);
+    await recordAiCallEvent({
+      provider: 'gemini', model: GEMINI_MODEL_ID, feature: 'c5_extraction',
+      outcome: 'success', cacheHit: false, latencyMs,
+      tokensUsed: result.response.usageMetadata?.totalTokenCount,
+    });
+
+    return extraction;
   } catch (err) {
+    // JSON.parse or another post-response failure — Gemini was already
+    // reached (consumeGeminiRequest() already ran above), this is purely
+    // about what we do with an already-consumed call's response.
+    await recordAiCallEvent({
+      provider: 'gemini', model: GEMINI_MODEL_ID, feature: 'c5_extraction',
+      outcome: 'malformed_response', cacheHit: false, latencyMs,
+    });
     console.error('[career-page-extraction] Gemini extraction failed:', err);
     return null;
   }
