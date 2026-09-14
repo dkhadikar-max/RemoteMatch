@@ -82,7 +82,12 @@ async function runAudit() {
   }
 
   console.log('--- SETUP: syncing the live catalog before auditing it ---');
-  const syncSummary = await syncOpportunitiesToCatalog();
+  // Explicit, visible opt-in for this suite's intentional real-provider
+  // sync (see this file's own header) — required since
+  // syncOpportunitiesToCatalog()'s test-isolation guard (added after an
+  // accidental real sync from this exact call site) now throws for any
+  // no-fetchResult call that doesn't pass this flag explicitly.
+  const syncSummary = await syncOpportunitiesToCatalog(undefined, { allowLiveProviderFetch: true });
   console.log(`  Provider outcomes: ${syncSummary.providerOutcomes.map((o) => `${o.sourceKey}=${o.success ? 'ok' : 'FAILED'}`).join(', ')}`);
   console.log(`  new active=${syncSummary.newJobsVerifiedActive} new expired=${syncSummary.newJobsVerifiedExpired} explicit override=${syncSummary.explicitlyExpiredCount} refreshed=${syncSummary.refreshedExistingActive}\n`);
 

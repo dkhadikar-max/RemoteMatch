@@ -37,7 +37,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
-    const result = await syncOpportunitiesToCatalog();
+    // Explicit, visible authorization for the real live-provider fetch —
+    // this route is the one legitimate caller, already gated above by
+    // verifyIngestionSecret(). See syncOpportunitiesToCatalog()'s own
+    // header for why this is a code-level parameter, not an env var.
+    const result = await syncOpportunitiesToCatalog(undefined, { allowLiveProviderFetch: true });
 
     // M-adjacent-1 — a separate, independently-testable step, never inside
     // syncOpportunitiesToCatalog() itself (same pattern as revalidateStaleLinks).

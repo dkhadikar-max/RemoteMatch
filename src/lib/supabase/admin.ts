@@ -41,6 +41,16 @@ let adminClient: SupabaseClient | null = null;
  *     satisfy; it's the intended sole write path behind a route that has
  *     already validated event_type/fields against a fixed allow-list and
  *     derived profile_id from the caller's own session (never the body).
+ *   - `src/lib/ingestion/employer-registry.ts` (Supply Discovery gate C3),
+ *     used only by the ATS provider classes (Greenhouse/Lever/Ashby) inside
+ *     the same ingestion pipeline `catalog-sync.ts` itself already writes
+ *     the `opportunities` table through (that pre-existing usage predates
+ *     this comment). Trust anchor: this code path is only ever reached from
+ *     the secret-gated `/api/opportunities/sync` route
+ *     (verifyIngestionSecret()) — never from a user-facing request — and it
+ *     only reads `allowlist_employers`/writes reliability counters on
+ *     `supply_sources`, both service-role-only tables with zero client
+ *     policies (migration 012).
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

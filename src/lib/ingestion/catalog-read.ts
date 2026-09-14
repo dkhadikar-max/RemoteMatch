@@ -15,6 +15,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CanonicalOpportunity } from '@/types/byn';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { getFreshnessWindowBounds } from './freshness-gate';
 
 const OPPORTUNITY_COLUMNS =
   'id, type, title, company, company_logo, description, source, source_id, source_url, ' +
@@ -119,9 +120,33 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
  *  unknown/expired/draft rows, via whichever client (anon or an
  *  authenticated user's own session) is passed in. Never uses the admin
  *  client for a product/SEO-facing read — that would bypass the exact
- *  guarantee this whole design depends on. */
-export async function getActiveOpportunities(supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
-  const { data, error } = await supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
+ *  guarantee this whole design depends on.
+ *
+ *  `options.freshOnly` (Supply Discovery gate C3-B): the read-time half of
+ *  the 48-hour freshness invariant, applied GLOBALLY across every source
+ *  when set — not just the 3 new ATS ones (that scope decision was made
+ *  explicitly; C3-A's ingestion-time gate was ATS-only, this one is not).
+ *  Computed fresh on every call (getFreshnessWindowBounds() reads the
+ *  current time each time), so a row that WAS fresh when ingested
+ *  correctly stops qualifying once it ages past 48h on its very next read
+ *  — no background job, no status mutation, no extra column. Deliberately
+ *  opt-in rather than baked into every caller: the SEO/sitemap/public-
+ *  directory surface (src/lib/seo/data.ts) and the resume-driven skill-gap
+ *  statistics (api/resume/opportunities) serve a different purpose —
+ *  comprehensive catalog indexing and durable skill-gap signal,
+ *  respectively — where excluding anything older than 48h would be wrong,
+ *  not a freshness improvement. Applied explicitly at the one call site
+ *  that IS "the feed": src/app/api/opportunities/feed/route.ts. */
+export async function getActiveOpportunities(
+  supabase: SupabaseClient,
+  options?: { freshOnly?: boolean }
+): Promise<CanonicalOpportunity[]> {
+  let query = supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
+  if (options?.freshOnly) {
+    const { from, to } = getFreshnessWindowBounds();
+    query = query.gte('posted_at', from).lte('posted_at', to);
+  }
+  const { data, error } = await query;
   if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
   return (data ?? []).map((row) => rowToCanonicalOpportunity(row as unknown as OpportunityRow));
 }

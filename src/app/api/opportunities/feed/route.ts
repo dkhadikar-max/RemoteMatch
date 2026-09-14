@@ -127,7 +127,14 @@ async function loadEffectiveDecisions(auth: ResolvedAuth): Promise<Map<string, E
 async function loadActiveCatalog() {
   const supabase = createSupabaseServerClient();
   if (!supabase) return null;
-  return getActiveOpportunities(supabase);
+  // Supply Discovery gate C3-B: the 48-hour freshness promise applies to
+  // THE FEED specifically (this is the one place a user is told "here are
+  // opportunities for you right now") — global across every source, per
+  // the explicit scope decision (not just the 3 new ATS ones). See
+  // getActiveOpportunities()'s own header for why this is opt-in rather
+  // than baked into every caller (SEO/sitemap and the resume skill-gap
+  // statistics are deliberately excluded).
+  return getActiveOpportunities(supabase, { freshOnly: true });
 }
 
 export async function GET() {

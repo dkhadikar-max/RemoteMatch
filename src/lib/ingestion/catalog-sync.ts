@@ -30,16 +30,27 @@
 import { timingSafeEqual } from 'crypto';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { RawJobPayload, JobProvider } from '../providers/types';
-import { CuratedProvider } from '../providers/curated';
 import { RemotiveProvider } from '../providers/remotive';
 import { ArbeitnowProvider } from '../providers/arbeitnow';
 import { JobicyProvider } from '../providers/jobicy';
+import { GreenhouseProvider } from '../providers/greenhouse';
+import { LeverProvider } from '../providers/lever';
+import { AshbyProvider } from '../providers/ashby';
 import {
   normalizeOpportunity,
   deduplicateOpportunities,
   verifyLinkFreshness,
   createNormalizedJobKey,
 } from './pipeline';
+import { passesFreshnessGate } from './freshness-gate';
+
+/**
+ * Supply Discovery gate C3: the 3 new ATS sources, gated for the fresh
+ * catalog only (per docs/c3-implementation-plan.md §7a/§7c — scope
+ * deliberately limited to these sources this phase, not retrofitted onto
+ * the 3 pre-existing aggregator feeds).
+ */
+const ATS_SOURCES_WITH_FRESHNESS_GATE = new Set(['greenhouse', 'lever', 'ashby']);
 
 const ABSENCE_EXPIRY_THRESHOLD = 3;
 const WEAK_DESCRIPTION_MIN_LENGTH = 100;
@@ -91,11 +102,22 @@ function isWeakDescription(description: string): boolean {
 export type ProviderFetchResult = { outcomes: ProviderRunOutcome[]; successfulRaw: Map<string, RawJobPayload[]> };
 
 async function runProviderFetches(): Promise<ProviderFetchResult> {
+  // Curated retired from active supply (Supply Discovery gate C3, per
+  // docs/c3-implementation-plan.md §9) — it was 100% static, hand-written
+  // fixture data, never a real live source, and its fabricated/dead
+  // listings caused the launch-blocker regression fixed in 2571b56.
+  // Existing curated rows are NOT deleted by this change — they simply stop
+  // being refreshed/re-verified going forward, exactly like any other
+  // retired source. swipes/applications reference opportunities by their
+  // opaque canonical_id string, never a live FK, so no application/tracker
+  // history is affected.
   const providers: JobProvider[] = [
-    new CuratedProvider(),
     new RemotiveProvider(),
     new ArbeitnowProvider(),
     new JobicyProvider(),
+    new GreenhouseProvider(),
+    new LeverProvider(),
+    new AshbyProvider(),
   ];
 
   const results = await Promise.allSettled(providers.map((p) => p.fetchJobs()));
@@ -139,14 +161,43 @@ async function runProviderFetches(): Promise<ProviderFetchResult> {
  * only source_ids starting with the given prefix, so synthetic test data
  * can exercise the exact absence-counting sequence without incrementing
  * (and risking eventually expiring) unrelated real production rows.
+ *
+ * `options.allowLiveProviderFetch` (test-environment isolation, added after
+ * an accidental real production sync from a local test run — see
+ * docs/c3-implementation-plan.md §14): required to be explicitly `true`
+ * whenever `fetchResult` is omitted, i.e. whenever this call is about to
+ * fetch from every real registered provider (now including the C3 ATS
+ * adapters) rather than a test's injected data. Deliberately a CODE-LEVEL
+ * parameter the caller must pass at the call site, not an ambient
+ * environment variable — an env var could sit in `.env.local` and be
+ * silently inherited by any local test process with production Supabase
+ * credentials, which is exactly the failure mode this exists to close. The
+ * one legitimate caller (POST /api/opportunities/sync, itself gated by
+ * verifyIngestionSecret) passes this explicitly and visibly in its own
+ * source. test/seo-audit.ts's real-sync setup (an intentional, pre-existing
+ * design — see that file's own header) now does the same, making its
+ * always-real-provider-fetch behavior a deliberate, visible opt-in instead
+ * of an accidental side effect of anyone else running that suite. Every
+ * OTHER test suite passes `fetchResult` and never reaches this check at all.
  */
 export async function syncOpportunitiesToCatalog(
   fetchResult?: ProviderFetchResult,
-  options?: { absenceScanSourceIdPrefix?: string }
+  options?: { absenceScanSourceIdPrefix?: string; allowLiveProviderFetch?: boolean }
 ): Promise<SyncSummary> {
   const admin = getSupabaseAdminClient();
   if (!isSupabaseAdminConfigured || !admin) {
     throw new Error('Supabase admin client is not configured — cannot sync the catalog.');
+  }
+  if (!fetchResult && !options?.allowLiveProviderFetch) {
+    throw new Error(
+      'syncOpportunitiesToCatalog() was called with no injected fetchResult, which means a REAL fetch ' +
+        'across every registered provider (including the ATS adapters) is about to run. This requires ' +
+        'the caller to explicitly pass { allowLiveProviderFetch: true } — an accidental real sync from a ' +
+        'local test process with production credentials is exactly what this guard exists to prevent. ' +
+        'If this is a test that needs a real live-catalog sync (like seo-audit.ts), pass the flag ' +
+        'explicitly at the call site. If this is meant to run against a synthetic dataset, pass a ' +
+        'fetchResult instead.'
+    );
   }
 
   const summary: SyncSummary = {
@@ -227,6 +278,31 @@ export async function syncOpportunitiesToCatalog(
 
   // --- Upsert every job returned by a successful provider this cycle ---
   for (const opp of deduped) {
+    // Supply Discovery gate C3 (docs/c3-implementation-plan.md §7a/§7c):
+    // for the 3 new ATS sources ONLY, a candidate that fails freshness or
+    // remote-eligibility is rejected outright — never inserted, not even as
+    // 'unknown' or 'draft'. Scope is deliberately limited to Greenhouse/
+    // Lever/Ashby this phase (not retrofitted onto the pre-existing
+    // aggregator feeds, a separate decision flagged in the plan).
+    //
+    // ACKNOWLEDGED SCOPE BOUNDARY: this is an ingestion-time gate only. A
+    // job that IS fresh when first ingested but later ages past 48h while
+    // still 'active' in the catalog is NOT automatically removed from the
+    // regular feed by this change — there is no separate "fresh feed" read
+    // path in the codebase yet to filter it out of. Continuously enforcing
+    // "ages out of the fresh feed after 48h" for rows already in the
+    // catalog requires either a scheduled re-classification job or a feed-
+    // query change, neither of which is part of this phase — flagged
+    // explicitly rather than silently assumed done.
+    if (ATS_SOURCES_WITH_FRESHNESS_GATE.has(opp.source)) {
+      if (!passesFreshnessGate(opp.postedAt)) {
+        continue;
+      }
+      if (opp.explicitRemoteScope === 'unknown') {
+        continue;
+      }
+    }
+
     const key = `${opp.source}:${opp.sourceId}`;
     const existing = existingByKey.get(key);
     const override = explicitOverrideByKey.get(key);
