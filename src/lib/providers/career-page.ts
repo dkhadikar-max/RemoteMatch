@@ -5,6 +5,7 @@ import { waitForDomainSlot } from '@/lib/ingestion/domain-rate-limiter';
 import { extractJobFromCareerPageText } from '@/lib/ai/career-page-extraction';
 import { validateExtraction } from '@/lib/ingestion/extraction-validation';
 import { recordEmployerFetchSuccess, recordEmployerFetchFailure } from '@/lib/ingestion/employer-registry';
+import { checkRobotsPermission } from '@/lib/ingestion/robots-check';
 
 /**
  * Career-page ATS-less adapter (Supply Discovery gate C5, docs/c5-implementation-plan.md §7).
@@ -87,6 +88,36 @@ function findJobPostingNode(block: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * Acquisition-validation Finding A (docs/c5-acquisition-validation-amendment.md
+ * §1): schema.org's JobPosting.jobLocation.address permits EITHER a
+ * PostalAddress object OR a plain string — real-world usage is inconsistent.
+ * Confirmed live 2026-09-14 against Coinbase's and Okta's actual JobPosting
+ * markup: both use the string form (`"address": "Remote - USA"`), which the
+ * original object-only parser silently produced `locationString: ''` for.
+ * Checked string form FIRST since it's the confirmed-real shape; falls back
+ * to the object form, then the TELECOMMUTE/applicantLocationRequirements
+ * signal, exactly as before.
+ */
+function extractLocationString(node: Record<string, unknown>): string {
+  const jobLocation = node.jobLocation;
+  if (jobLocation && typeof jobLocation === 'object') {
+    const loc = jobLocation as Record<string, unknown>;
+    const address = loc.address;
+    if (typeof address === 'string' && address.trim()) {
+      return address.trim();
+    }
+    if (address && typeof address === 'object') {
+      const addr = address as Record<string, unknown>;
+      const parts = [addr.addressLocality, addr.addressRegion, addr.addressCountry]
+        .filter((p): p is string => typeof p === 'string' && p.length > 0);
+      if (parts.length) return parts.join(', ');
+    }
+  }
+  if (node.jobLocationType === 'TELECOMMUTE' || node.applicantLocationRequirements) return 'Remote';
+  return '';
+}
+
+/**
  * Deterministic — the site itself explicitly published this as structured
  * schema.org/JobPosting data, distinct from free text an LLM must interpret.
  * No evidence check needed (per §7 pseudocode, verbatim): there is nothing
@@ -107,18 +138,7 @@ export function parseJsonLd(html: string, url: string, company: string, sourceId
   const description = typeof node.description === 'string' ? stripHtmlTags(node.description) : '';
   const datePosted = typeof node.datePosted === 'string' ? node.datePosted : '';
   const employmentType = typeof node.employmentType === 'string' ? node.employmentType : 'Full-time';
-
-  let locationString = '';
-  const jobLocation = node.jobLocation;
-  if (jobLocation && typeof jobLocation === 'object') {
-    const loc = jobLocation as Record<string, unknown>;
-    const address = loc.address as Record<string, unknown> | undefined;
-    const parts = [address?.addressLocality, address?.addressRegion, address?.addressCountry]
-      .filter((p): p is string => typeof p === 'string' && p.length > 0);
-    locationString = parts.join(', ');
-  } else if (node.jobLocationType === 'TELECOMMUTE' || node.applicantLocationRequirements) {
-    locationString = 'Remote';
-  }
+  const locationString = extractLocationString(node);
 
   return {
     sourceId: `careerpage-${sourceIdSuffix}-${createContentHash(url)}`,
@@ -133,6 +153,104 @@ export function parseJsonLd(html: string, url: string, company: string, sourceId
     tags: [],
     publicationDate: datePosted,
   };
+}
+
+/**
+ * Acquisition-validation Finding C (docs/c5-acquisition-validation-
+ * amendment.md §3): a page carrying a JobPosting-typed JSON-LD node is a
+ * single posting; anything else (Organization-typed, no LD-JSON at all —
+ * confirmed live against Canonical's real /careers page, which is
+ * Organization-typed) is an index page needing link discovery. Reuses the
+ * exact JobPosting-detection helpers parseJsonLd() already has — no new
+ * detection logic, just a different question asked of the same data.
+ */
+export type PageKind = 'single_posting' | 'index';
+
+export function detectPageKind(html: string): PageKind {
+  const blocks = extractJsonLdBlocks(html);
+  return blocks.some((b) => findJobPostingNode(b) !== null) ? 'single_posting' : 'index';
+}
+
+const JOB_SHAPED_PATH = /job|career|position|vacanc/i;
+
+/**
+ * Same-origin-only link discovery — a hard safety boundary, not a tunable
+ * option: a link to any origin other than baseUrl's is never followed, no
+ * matter what the page contains. This is what keeps Finding C's discovery
+ * step "still C5 career-page acquisition, not C6" — it only ever enumerates
+ * pages within the ONE already-approved employer's own domain.
+ *
+ * Acceptance conditions (Deep, 2026-09-14, added on spec review):
+ *   - Deduplicated before fetching: collected into a Set keyed on the
+ *     resolved absolute URL, so the same href appearing multiple times on
+ *     the page (nav + footer + body, or a #fragment-only variant of the
+ *     same URL) yields exactly one entry.
+ *   - Deterministic rejection before any network fetch or Gemini call: this
+ *     function is pure and synchronous over already-fetched HTML text — it
+ *     makes no network call itself, and the job-shaped-path regex + same-
+ *     origin checks both run before a link is ever added to the result set.
+ *     A non-job link is excluded at zero fetch cost and can never reach
+ *     detectExtractionMethod()/Gemini at all; only links that survive this
+ *     function are ever fetched by the caller.
+ *
+ * Job-shaped path heuristic matches the pattern already proven against a
+ * real page during acquisition validation (Canonical's own category links:
+ * /careers/engineering, /careers/sales, etc. all matched this shape live).
+ * Capped at maxLinks — sized to the 5-10 employer cohort, not built for a
+ * scale that doesn't exist yet, same reasoning as domain-rate-limiter.ts's
+ * own header.
+ */
+export function discoverJobPostingLinks(html: string, baseUrl: string, maxLinks = 10): string[] {
+  const base = new URL(baseUrl);
+  const hrefs = Array.from(html.matchAll(/href="([^"]+)"/gi)).map((m) => m[1]);
+  const resolved = new Set<string>();
+  for (const href of hrefs) {
+    if (resolved.size >= maxLinks) break;
+    if (!JOB_SHAPED_PATH.test(href)) continue; // deterministic rejection, zero fetch cost
+    try {
+      const abs = new URL(href, base);
+      if (abs.origin !== base.origin) continue; // same-domain only
+      resolved.add(abs.toString());
+    } catch {
+      // malformed href, skip
+    }
+  }
+  return Array.from(resolved);
+}
+
+/** Extracts a candidate from one already-fetched page, given its own URL —
+ *  shared by both the single-posting root-page case and each discovered
+ *  sub-link, so the json_ld/Gemini branch logic exists in exactly one
+ *  place. Never itself fetches; the caller owns rate-limiting/robots-check/
+ *  fetch for whichever URL this html came from. */
+async function extractCandidateFromPage(
+  html: string,
+  url: string,
+  company: string,
+  sourceIdSuffix: string
+): Promise<RawJobPayload | null> {
+  const method = detectExtractionMethod(url, html);
+  if (method === 'ats_redirect') return null;
+
+  if (method === 'json_ld') {
+    return parseJsonLd(html, url, company, sourceIdSuffix);
+  }
+
+  const text = extractMainText(html);
+  const extraction = await extractJobFromCareerPageText(text, url);
+  if (!extraction) return null;
+
+  const validation = validateExtraction(extraction, text, {
+    sourceId: `careerpage-${sourceIdSuffix}-${createContentHash(url)}`,
+    source: 'careerpage',
+    company,
+    sourceUrl: url,
+  });
+  if (!validation.valid) {
+    console.warn(`[CareerPageProvider] '${company}' (${url}) extraction failed validation: ${validation.reason}`);
+    return null;
+  }
+  return validation.candidate;
 }
 
 function stripHtmlTags(html: string): string {
@@ -213,9 +331,9 @@ export class CareerPageProvider implements JobProvider {
         }
 
         const html = await res.text();
-        const method = detectExtractionMethod(employer.careerUrl, html);
+        const rootMethod = detectExtractionMethod(employer.careerUrl, html);
 
-        if (method === 'ats_redirect') {
+        if (rootMethod === 'ats_redirect') {
           // This employer is misregistered — it should have been onboarded
           // through C3's ATS adapters instead. Log for manual correction,
           // never silently re-route through the ATS path from here.
@@ -224,30 +342,48 @@ export class CareerPageProvider implements JobProvider {
           continue;
         }
 
-        let candidate: RawJobPayload | null = null;
+        // Acquisition-validation Finding C (docs/c5-acquisition-validation-
+        // amendment.md §3): the registered career_url is realistically a
+        // listing/index page far more often than a single posting —
+        // confirmed live against 9 real companies. A single_posting page
+        // (e.g. Coinbase's/Okta's own individual job pages) still goes
+        // straight through extractCandidateFromPage() exactly as before;
+        // an index page (e.g. Canonical's real /careers) is discovered into
+        // same-domain, job-shaped candidate links first, each of which then
+        // goes through the SAME extractCandidateFromPage() pipeline.
+        const employerCandidates: RawJobPayload[] = [];
 
-        if (method === 'json_ld') {
-          candidate = parseJsonLd(html, employer.careerUrl, employer.canonicalName, employer.id);
+        if (detectPageKind(html) === 'single_posting') {
+          const candidate = await extractCandidateFromPage(html, employer.careerUrl, employer.canonicalName, employer.id);
+          if (candidate) employerCandidates.push(candidate);
         } else {
-          const text = extractMainText(html);
-          const extraction = await extractJobFromCareerPageText(text, employer.careerUrl);
-          if (extraction) {
-            const validation = validateExtraction(extraction, text, {
-              sourceId: `careerpage-${employer.id}-${createContentHash(employer.careerUrl)}`,
-              source: 'careerpage',
-              company: employer.canonicalName,
-              sourceUrl: employer.careerUrl,
-            });
-            if (validation.valid) {
-              candidate = validation.candidate;
-            } else {
-              console.warn(`[CareerPageProvider] employer '${employer.canonicalName}' extraction failed validation: ${validation.reason}`);
+          const links = discoverJobPostingLinks(html, employer.careerUrl);
+          for (const link of links) {
+            // Per-URL robots-check: registration-time review only checked
+            // the employer's root career_url — a discovered subpath can
+            // legitimately carry its own Disallow rule (e.g.
+            // /careers/internal/ blocked while /careers/public/ isn't).
+            const robots = await checkRobotsPermission(link);
+            if (!robots.allowed) continue;
+
+            await waitForDomainSlot(employer.officialDomain);
+            try {
+              const subRes = await fetch(link, {
+                headers: { 'User-Agent': 'RemoteMatchBot/1.0 (Job Ingestion; +https://remotematch.com)' },
+                signal: AbortSignal.timeout(15000),
+              });
+              if (!subRes.ok) continue; // one discovered link's failure never aborts the others
+              const subHtml = await subRes.text();
+              const candidate = await extractCandidateFromPage(subHtml, link, employer.canonicalName, employer.id);
+              if (candidate) employerCandidates.push(candidate);
+            } catch {
+              continue;
             }
           }
         }
 
-        if (candidate) results.push(candidate);
-        await recordEmployerFetchSuccess(employer.linkedSourceId, candidate ? 1 : 0);
+        results.push(...employerCandidates);
+        await recordEmployerFetchSuccess(employer.linkedSourceId, employerCandidates.length);
       } catch (err) {
         // Per-employer isolation, matching C3's pattern exactly (§7): one
         // employer's failure never aborts the run or the other employers.

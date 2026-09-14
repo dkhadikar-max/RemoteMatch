@@ -8,7 +8,7 @@
 import ws from 'ws';
 if (!(global as any).WebSocket) (global as any).WebSocket = ws;
 
-import { detectExtractionMethod, parseJsonLd, CareerPageProvider } from '../src/lib/providers/career-page';
+import { detectExtractionMethod, parseJsonLd, detectPageKind, discoverJobPostingLinks, CareerPageProvider } from '../src/lib/providers/career-page';
 import { hasRequiredEnv, adminClient } from './helpers/verified-session';
 
 let passed = 0;
@@ -84,6 +84,61 @@ const MALFORMED_LD_PAGE = `
 </head><body><h1>Careers</h1></body></html>
 `;
 
+// Finding A (c5-acquisition-validation-amendment.md §1) fixtures — the
+// exact real shapes observed live against Coinbase's/Okta's own
+// JobPosting markup 2026-09-14.
+const JSON_LD_STRING_ADDRESS_PAGE = `
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org/",
+  "@type": "JobPosting",
+  "title": "Operational Excellence Senior Program Lead",
+  "description": "Real-world address-as-string shape.",
+  "datePosted": "2026-09-11T18:15:13-04:00",
+  "employmentType": "FULL_TIME",
+  "jobLocation": { "@type": "Place", "address": "Remote - USA" }
+}
+</script>
+</head><body></body></html>
+`;
+
+const JSON_LD_NO_LOCATION_PAGE = `
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org/",
+  "@type": "JobPosting",
+  "title": "No Location Signal At All",
+  "description": "Neither jobLocation, jobLocationType, nor applicantLocationRequirements present.",
+  "datePosted": "2026-09-11",
+  "employmentType": "FULL_TIME"
+}
+</script>
+</head><body></body></html>
+`;
+
+// Finding C (c5-acquisition-validation-amendment.md §3) fixtures — real
+// shape observed live against Canonical's actual /careers page 2026-09-14:
+// Organization-typed JSON-LD (not JobPosting) + category links, not
+// individual postings.
+const REAL_SHAPE_INDEX_PAGE = `
+<html><head>
+<script type="application/ld+json">
+{ "@context": "https://schema.org/", "@type": "Organization", "name": "Acme Corp" }
+</script>
+</head><body>
+<nav><a href="/about">About</a><a href="/careers">Careers</a><a href="/careers">Careers (duplicate)</a></nav>
+<main>
+  <a href="/careers/engineering">Engineering</a>
+  <a href="/careers/sales">Sales</a>
+  <a href="/careers/engineering#top">Engineering (fragment duplicate)</a>
+  <a href="https://not-acme-at-all.example/careers/fake-role">Off-domain job-shaped link</a>
+</main>
+<footer><a href="/privacy">Privacy</a><a href="/careers/engineering">Engineering (footer duplicate)</a></footer>
+</body></html>
+`;
+
 async function run() {
   console.log('==============================================================================');
   console.log('SUPPLY DISCOVERY C5 — CAREER-PAGE PROVIDER');
@@ -150,7 +205,53 @@ async function run() {
   }
 
   // ==========================================================================
-  console.log('\n3. REAL-INFRA — provider run against seeded synthetic employers (self-skips if env unavailable)');
+  console.log('\n2b. UNIT — Finding A: address string vs. object (real observed shapes)');
+  // ==========================================================================
+  {
+    const candidate = parseJsonLd(JSON_LD_STRING_ADDRESS_PAGE, 'https://coinbase.com/careers/positions/8198059', 'Coinbase', 'emp-5');
+    assert(candidate !== null, 'the real Coinbase-shaped JobPosting parses to a non-null candidate');
+    assert(candidate?.locationString === 'Remote - USA', "address AS A PLAIN STRING (the real, confirmed Coinbase/Okta shape) is now correctly extracted — was '' before the Finding A fix");
+  }
+  {
+    // Regression guard: the existing object-form case (JSON_LD_GRAPH_PAGE,
+    // tested above) must still resolve 'Berlin, DE' — already asserted in
+    // section 2; not re-duplicated here, just noted as still covered.
+    const candidate = parseJsonLd(JSON_LD_GRAPH_PAGE, 'https://acme.com/careers/product-designer', 'Acme Corp', 'emp-2');
+    assert(candidate?.locationString === 'Berlin, DE', 'PostalAddress OBJECT form (pre-existing case) still resolves correctly — Finding A fix did not regress it');
+  }
+  {
+    const candidate = parseJsonLd(JSON_LD_NO_LOCATION_PAGE, 'https://acme.com/careers/no-location', 'Acme Corp', 'emp-6');
+    assert(candidate !== null, 'a JobPosting with no location signal at all still parses (title/description are present)');
+    assert(candidate?.locationString === '', 'genuinely absent location information resolves to an empty string, never guessed — this is the exact input Finding B\'s write-time gate must then reject');
+  }
+
+  // ==========================================================================
+  console.log('\n3. UNIT — Finding C: detectPageKind / discoverJobPostingLinks (no infra)');
+  // ==========================================================================
+  assert(detectPageKind(JSON_LD_PAGE) === 'single_posting', 'a page with a JobPosting-typed JSON-LD is detected as single_posting');
+  assert(detectPageKind(JSON_LD_GRAPH_PAGE) === 'single_posting', 'a JobPosting nested in @graph is still detected as single_posting');
+  assert(detectPageKind(REAL_SHAPE_INDEX_PAGE) === 'index', "Canonical's real Organization-typed /careers shape is detected as index");
+  assert(detectPageKind(NON_JOBPOSTING_LD_PAGE) === 'index', 'any non-JobPosting JSON-LD (or none) is treated as index, not single_posting');
+
+  {
+    const links = discoverJobPostingLinks(REAL_SHAPE_INDEX_PAGE, 'https://acme.com/careers');
+    assert(links.includes('https://acme.com/careers/engineering'), 'a real job-shaped, same-domain link is discovered');
+    assert(links.includes('https://acme.com/careers/sales'), 'a second real job-shaped, same-domain link is discovered');
+    assert(!links.some((l) => l.includes('not-acme-at-all.example')), 'an off-domain job-shaped link is EXCLUDED — the hard same-origin safety boundary');
+    assert(!links.some((l) => l.includes('/about') || l.includes('/privacy')), 'non-job-shaped links (nav/footer, no job|career|position|vacanc in the path) are excluded — deterministic rejection before any fetch');
+    assert(links.length === new Set(links).size, 'the returned list has no duplicates');
+    assert(
+      links.filter((l) => l === 'https://acme.com/careers/engineering').length === 1,
+      "acceptance condition: the SAME URL appearing 3 times on the page (nav/main/footer, plus a #fragment-only variant) collapses to exactly ONE entry — deduplicated before fetching"
+    );
+  }
+  {
+    const capped = discoverJobPostingLinks(REAL_SHAPE_INDEX_PAGE, 'https://acme.com/careers', 1);
+    assert(capped.length <= 1, 'maxLinks caps the result set (sized to a small employer cohort, not built for unbounded scale)');
+  }
+
+  // ==========================================================================
+  console.log('\n4. REAL-INFRA — provider run against seeded synthetic employers (self-skips if env unavailable)');
   // ==========================================================================
   if (!hasRequiredEnv()) {
     skip('Supabase env vars not set — real-infra section skipped.');
@@ -159,6 +260,29 @@ async function run() {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const domainFor = (label: string) => `c5-test-${label}-${suffix}.example`;
 
+    const indexPageDomain = domainFor('indexpage');
+    // A real-shaped index page (Finding C) whose discovered sub-links point
+    // at OTHER pages on the SAME domain — subPages routes those exact paths
+    // to their own fixture content, distinct from the employer's root page.
+    const indexPageHtml = `
+<html><head>
+<script type="application/ld+json">
+{ "@context": "https://schema.org/", "@type": "Organization", "name": "C5 Test indexpage" }
+</script>
+</head><body>
+<main>
+  <a href="/careers/eng-role">Engineering role</a>
+  <a href="/careers/eng-role">Engineering role (duplicate)</a>
+  <a href="/about">About (non-job-shaped, must never be fetched)</a>
+</main>
+</body></html>`;
+    const discoveredPostingHtml = `
+<html><head>
+<script type="application/ld+json">
+{ "@context": "https://schema.org/", "@type": "JobPosting", "title": "Discovered Engineering Role", "description": "Found via index-page link discovery.", "datePosted": "2026-09-14", "employmentType": "FULL_TIME", "jobLocation": { "@type": "Place", "address": "Remote - USA" } }
+</script>
+</head><body></body></html>`;
+
     const employerDefs = [
       { label: 'jsonld', domain: domainFor('jsonld'), path: '/careers/staff-eng', html: JSON_LD_PAGE, status: 200 },
       { label: 'blocked', domain: domainFor('blocked'), path: '/careers/x', html: '', status: 403 },
@@ -166,6 +290,10 @@ async function run() {
       { label: 'noextraction', domain: domainFor('noextraction'), path: '/careers/x', html: NON_JOBPOSTING_LD_PAGE, status: 200 },
       { label: 'atsredirect', domain: 'boards.greenhouse.io', path: '/acme-c5-test/jobs/1', html: '<html></html>', status: 200 },
       { label: 'networkfail', domain: domainFor('networkfail'), path: '/careers/x', html: '', status: 0 },
+      {
+        label: 'indexpage', domain: indexPageDomain, path: '/careers', html: indexPageHtml, status: 200,
+        subPages: { '/careers/eng-role': discoveredPostingHtml, '/about': '<html><body>About us</body></html>' },
+      },
     ];
 
     // Keyed by label, not positional index — robust against any single
@@ -213,12 +341,29 @@ async function run() {
       // also go through global.fetch under the hood) must pass through to
       // the real fetch untouched, or getApprovedCareerPageEmployers()'s own
       // query would be starved before the per-employer loop ever runs.
+      // fetchedUrls tracks every intercepted URL — the Finding C real-infra
+      // assertions below verify discovery behavior against this log, not
+      // just the final candidate output shape.
+      const fetchedUrls: string[] = [];
       const originalFetch = global.fetch;
       (global as any).fetch = async (input: any, init?: any) => {
         const url = typeof input === 'string' ? input : input.url;
         const def = employerDefs.find((d) => url.includes(d.domain));
         if (!def) return originalFetch(input, init);
+        fetchedUrls.push(url);
         if (def.status === 0) throw new Error('simulated network failure');
+        // subPages routes an exact path (Finding C's discovered sub-links)
+        // to its own fixture content — falls back to the employer's root
+        // page/status for any other path on that same domain (incl. its
+        // own /robots.txt request, which incidentally parses as "no
+        // applicable rule -> allowed" since it isn't real robots syntax).
+        const subPages = (def as any).subPages as Record<string, string> | undefined;
+        if (subPages) {
+          const path = (() => { try { return new URL(url).pathname; } catch { return ''; } })();
+          if (subPages[path] !== undefined) {
+            return { ok: true, status: 200, text: async () => subPages[path] };
+          }
+        }
         return {
           ok: def.status >= 200 && def.status < 300,
           status: def.status,
@@ -259,6 +404,29 @@ async function run() {
       } else {
         skip('GEMINI_API_KEY is configured in this environment — skipping the no-key-required assertion for the non-JSON-LD employer.');
       }
+
+      // Finding C real-infra: the index-page employer's discovered sub-link
+      // is genuinely fetched and extracted — closes the loop the original
+      // acquisition validation pass exposed as broken (a general /careers
+      // page alone never produces a candidate; discovery is what makes it
+      // work end-to-end).
+      assert(
+        results.some((j) => j.title === 'Discovered Engineering Role'),
+        'the index-page employer\'s DISCOVERED sub-link (not its own root /careers page) produced a real candidate, via the full discover -> fetch -> json_ld pipeline'
+      );
+      assert(
+        fetchedUrls.some((u) => u.includes(`${indexPageDomain}/careers/eng-role`)),
+        'the discovered job-shaped sub-link was genuinely fetched (verified via the fetch-call log, not just output shape)'
+      );
+      assert(
+        !fetchedUrls.some((u) => u.includes(`${indexPageDomain}/about`)),
+        'the non-job-shaped /about link was NEVER fetched — deterministic rejection happened before any network call, exactly as Finding C\'s acceptance condition requires'
+      );
+      const engRoleFetchCount = fetchedUrls.filter((u) => u.includes(`${indexPageDomain}/careers/eng-role`)).length;
+      assert(
+        engRoleFetchCount === 1,
+        `the duplicated /careers/eng-role link (appeared twice in the source HTML) was fetched exactly ONCE, not twice — deduplication held all the way through to the real fetch call (got ${engRoleFetchCount} fetches)`
+      );
 
       // 403/429 must be a SOURCE FAILURE on the linked supply_sources row,
       // never interpreted as a dead-link/removed-job signal (§4c).

@@ -126,6 +126,20 @@ export async function syncCareerPageOpportunities(
   const existingByKey = new Map((existingRows ?? []).map((r) => [r.source_id, r]));
 
   for (const opp of deduped) {
+    // Acquisition-validation Finding B (docs/c5-acquisition-validation-
+    // amendment.md §2): mirrors catalog-sync.ts's exact ATS-source gate —
+    // reuses the frozen classifyExplicitRemoteScope() (via
+    // normalizeOpportunity(), already computed above), no new C5-specific
+    // eligibility rule. A candidate whose location couldn't be resolved to
+    // an explicit remote scope is never inserted, matching the C3 invariant
+    // this write path was missing. Deliberately checked exactly where C3's
+    // own gate sits (inside the per-candidate loop, after presentSourceIds
+    // is already built from the full deduped set) — same acknowledged
+    // scope boundary as C3: an existing active row's absence counter still
+    // resets this cycle even if THIS cycle's candidate for it was gated,
+    // exactly matching catalog-sync.ts's own behavior, not a new deviation.
+    if (opp.explicitRemoteScope === 'unknown') continue;
+
     const contentFields = {
       title: opp.title,
       company: opp.company,
