@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiModel } from './gemini-config';
 import {
   CanonicalOpportunity,
   PersonProfile,
@@ -125,7 +126,7 @@ export async function generateApplicationKit(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = getGeminiModel(genAI);
 
     const prompt = `
 You are an expert career strategist for RemoteMatch.

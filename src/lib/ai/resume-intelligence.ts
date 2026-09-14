@@ -1,4 +1,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+// Model identifier centralized per the Gemini Compatibility Remediation
+// (docs/gemini-compatibility-remediation-spec.md §5) — mechanical
+// consistency cleanup only. This file's real-Gemini path is still
+// structurally unreachable in production (ticket O5's HELD finding:
+// called from onboarding client-side, GEMINI_API_KEY always undefined
+// there), independent of the model identifier. Stays exactly as HELD —
+// NOT resolved by this change.
+import { getGeminiModel } from './gemini-config';
 import {
   PersonProfile,
   CanonicalOpportunity,
@@ -145,7 +153,7 @@ export async function analyzeResumeWithAI(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = getGeminiModel(genAI);
 
     const prompt = `
 You are the Chief Resume Intelligence Officer for RemoteMatch.

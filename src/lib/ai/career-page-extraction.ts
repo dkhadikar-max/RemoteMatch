@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getGeminiModel } from './gemini-config';
 
 /**
  * Supply Discovery gate C5 — Gemini career-page extraction (docs/c5-implementation-plan.md §5)
@@ -107,7 +108,7 @@ export async function extractJobFromCareerPageText(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = getGeminiModel(genAI);
 
     const result = await model.generateContent({
       contents: [{ role: 'user', parts: [{ text: EXTRACTION_PROMPT_TEMPLATE(truncatedText) }] }],
