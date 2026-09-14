@@ -174,6 +174,51 @@ export function detectPageKind(html: string): PageKind {
 const JOB_SHAPED_PATH = /job|career|position|vacanc/i;
 
 /**
+ * Acquisition Validation Refinement (docs/c5-acquisition-validation-
+ * amendment.md, discovery-heuristic follow-up, 2026-09-14): confirmed live
+ * against real re-tested pages that a bare job-shaped-path regex is too
+ * broad in two ways — (1) it matches N locale-variant copies of the SAME
+ * landing page (Coinbase: /en-in/careers, /es-us/careers, /en-de/careers...
+ * all real, all the identical page), which consumed the entire maxLinks
+ * cap before a genuine distinct posting was ever reached; (2) it matches
+ * static assets whose FILENAME merely contains a job-shaped word
+ * (DuckDuckGo's careers-bg-sm.jpg/.svg) and API endpoints (Coalition
+ * Technologies' /wp-json/oembed/...). Neither was a fabrication risk
+ * (evidence validation already protects downstream either way) — both
+ * reduced real acquisition yield by wasting the bounded discovery budget.
+ * Narrowly scoped to discovery only: extraction, evidence validation, the
+ * remote-eligibility gate, robots semantics, and Gemini are all untouched.
+ */
+const LOCALE_PATH_SEGMENT = /^[a-z]{2}-[a-z]{2}$/i;
+const NON_DOCUMENT_EXTENSION = /\.(jpe?g|png|gif|svg|webp|ico|bmp|css|js|mjs|woff2?|ttf|eot|otf|mp4|webm|mp3|pdf|zip|json|xml)(?:[?#]|$)/i;
+const NON_DOCUMENT_PATH_SEGMENT = /\/wp-json\//i;
+
+/** True if href looks like a real page a browser would navigate to, not a
+ *  static asset or an API endpoint. Deterministic, zero fetch cost — the
+ *  same pre-fetch rejection tier the job-shaped-path check already is. */
+function isLikelyJobDocument(href: string): boolean {
+  if (NON_DOCUMENT_EXTENSION.test(href)) return false;
+  if (NON_DOCUMENT_PATH_SEGMENT.test(href)) return false;
+  return true;
+}
+
+/** Strips a leading locale path segment (e.g. /en-in/careers -> /careers),
+ *  used only to compute a FAMILY key for collapsing equivalent landing-page
+ *  copies — never used to reject a link outright. A genuinely distinct
+ *  posting that happens to live under a locale-prefixed path (e.g.
+ *  /en-us/careers/software-engineer-123) is unaffected: its remaining path
+ *  after stripping differs from any other candidate's, so it gets its own
+ *  family key and is never collapsed with anything. */
+function stripLocaleSegment(pathname: string): { canonicalPath: string; hasLocale: boolean } {
+  const segments = pathname.split('/');
+  const first = segments[1] ?? '';
+  if (LOCALE_PATH_SEGMENT.test(first)) {
+    return { canonicalPath: '/' + segments.slice(2).join('/'), hasLocale: true };
+  }
+  return { canonicalPath: pathname, hasLocale: false };
+}
+
+/**
  * Same-origin-only link discovery — a hard safety boundary, not a tunable
  * option: a link to any origin other than baseUrl's is never followed, no
  * matter what the page contains. This is what keeps Finding C's discovery
@@ -181,17 +226,24 @@ const JOB_SHAPED_PATH = /job|career|position|vacanc/i;
  * pages within the ONE already-approved employer's own domain.
  *
  * Acceptance conditions (Deep, 2026-09-14, added on spec review):
- *   - Deduplicated before fetching: collected into a Set keyed on the
- *     resolved absolute URL, so the same href appearing multiple times on
- *     the page (nav + footer + body, or a #fragment-only variant of the
- *     same URL) yields exactly one entry.
+ *   - Deduplicated before fetching: fragment stripped before computing the
+ *     dedup key (the server ignores it — two hrefs differing only by
+ *     #fragment are the same resource), so the same href appearing
+ *     multiple times on the page (nav + footer + body, or a #fragment-only
+ *     variant) yields exactly one candidate.
  *   - Deterministic rejection before any network fetch or Gemini call: this
  *     function is pure and synchronous over already-fetched HTML text — it
- *     makes no network call itself, and the job-shaped-path regex + same-
- *     origin checks both run before a link is ever added to the result set.
- *     A non-job link is excluded at zero fetch cost and can never reach
- *     detectExtractionMethod()/Gemini at all; only links that survive this
- *     function are ever fetched by the caller.
+ *     makes no network call itself, and the job-shaped-path / document-
+ *     shaped / same-origin checks all run before a link is ever added to
+ *     the candidate set. A non-job, asset, or API-endpoint link is excluded
+ *     at zero fetch cost and can never reach detectExtractionMethod()/
+ *     Gemini at all; only links that survive this function are ever
+ *     fetched by the caller.
+ *   - Locale-variant families collapse to one representative each
+ *     (preferring the canonical/no-locale URL when the page offers one),
+ *     so N locale copies of the same landing page never consume more than
+ *     one discovery slot — this is what actually keeps `maxLinks` a
+ *     meaningful cap on distinct candidates rather than on locale noise.
  *
  * Job-shaped path heuristic matches the pattern already proven against a
  * real page during acquisition validation (Canonical's own category links:
@@ -203,19 +255,42 @@ const JOB_SHAPED_PATH = /job|career|position|vacanc/i;
 export function discoverJobPostingLinks(html: string, baseUrl: string, maxLinks = 10): string[] {
   const base = new URL(baseUrl);
   const hrefs = Array.from(html.matchAll(/href="([^"]+)"/gi)).map((m) => m[1]);
-  const resolved = new Set<string>();
+
+  // Pass 1: resolve to valid, same-origin, job-shaped, document-like
+  // candidates, deduplicated on the fragment-stripped absolute URL.
+  const seen = new Set<string>();
+  const resolvedCandidates: URL[] = [];
   for (const href of hrefs) {
-    if (resolved.size >= maxLinks) break;
     if (!JOB_SHAPED_PATH.test(href)) continue; // deterministic rejection, zero fetch cost
+    if (!isLikelyJobDocument(href)) continue; // static-asset / API-endpoint rejection, same cost
     try {
       const abs = new URL(href, base);
       if (abs.origin !== base.origin) continue; // same-domain only
-      resolved.add(abs.toString());
+      abs.hash = '';
+      const key = abs.toString();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      resolvedCandidates.push(abs);
     } catch {
       // malformed href, skip
     }
   }
-  return Array.from(resolved);
+
+  // Pass 2: collapse locale-variant families into one representative each.
+  const familyOrder: string[] = [];
+  const familyRepresentative = new Map<string, URL>();
+  for (const candidate of resolvedCandidates) {
+    const { canonicalPath, hasLocale } = stripLocaleSegment(candidate.pathname);
+    const familyKey = `${candidate.origin}${canonicalPath}${candidate.search}`;
+    if (!familyRepresentative.has(familyKey)) {
+      familyRepresentative.set(familyKey, candidate);
+      familyOrder.push(familyKey);
+    } else if (!hasLocale) {
+      familyRepresentative.set(familyKey, candidate); // prefer the canonical URL once one is seen
+    }
+  }
+
+  return familyOrder.slice(0, maxLinks).map((key) => familyRepresentative.get(key)!.toString());
 }
 
 /** Extracts a candidate from one already-fetched page, given its own URL —

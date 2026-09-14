@@ -139,6 +139,32 @@ const REAL_SHAPE_INDEX_PAGE = `
 </body></html>
 `;
 
+// Discovery-heuristic refinement fixtures (2026-09-14) — real shapes
+// observed live during acquisition re-validation: Coinbase's locale-variant
+// landing pages (/en-in/careers, /es-us/careers, ...), DuckDuckGo's
+// image-asset "links" (careers-bg-sm.jpg/.svg), Coalition Technologies'
+// WordPress oEmbed API endpoint (/wp-json/oembed/...).
+const LOCALE_AND_NOISE_INDEX_PAGE = `
+<html><head>
+<script type="application/ld+json">
+{ "@context": "https://schema.org/", "@type": "Organization", "name": "Acme Corp" }
+</script>
+</head><body>
+<main>
+  <a href="/en-in/careers">Careers (India)</a>
+  <a href="/es-us/careers">Careers (US Spanish)</a>
+  <a href="/en-de/careers">Careers (Germany)</a>
+  <a href="/en-gb/careers">Careers (UK)</a>
+  <a href="/careers/positions/8198059?gh_jid=8198059">Real distinct posting</a>
+  <a href="/static-assets/backgrounds/careers-bg-sm.jpg">Careers background image</a>
+  <a href="/static-assets/backgrounds/careers-fg-lg.svg">Careers foreground svg</a>
+  <a href="/wp-json/oembed/1.0/embed?url=https%3A%2F%2Facme.com%2Fcareers">oEmbed API endpoint</a>
+  <a href="/en-us/careers/software-engineer-123">A genuinely distinct locale-prefixed posting (US)</a>
+  <a href="/en-gb/careers/software-engineer-456">A genuinely distinct locale-prefixed posting (UK)</a>
+</main>
+</body></html>
+`;
+
 async function run() {
   console.log('==============================================================================');
   console.log('SUPPLY DISCOVERY C5 — CAREER-PAGE PROVIDER');
@@ -242,12 +268,45 @@ async function run() {
     assert(links.length === new Set(links).size, 'the returned list has no duplicates');
     assert(
       links.filter((l) => l === 'https://acme.com/careers/engineering').length === 1,
-      "acceptance condition: the SAME URL appearing 3 times on the page (nav/main/footer, plus a #fragment-only variant) collapses to exactly ONE entry — deduplicated before fetching"
+      "acceptance condition: the SAME URL appearing 3 times on the page (nav/main/footer) collapses to exactly ONE entry — deduplicated before fetching"
+    );
+    assert(
+      !links.some((l) => l.includes('#')),
+      "the #fragment-only variant is genuinely absent (not just under-counted) — fragment is stripped before the dedup key is computed, since the server ignores it and it's the same resource"
     );
   }
   {
     const capped = discoverJobPostingLinks(REAL_SHAPE_INDEX_PAGE, 'https://acme.com/careers', 1);
     assert(capped.length <= 1, 'maxLinks caps the result set (sized to a small employer cohort, not built for unbounded scale)');
+  }
+
+  // ==========================================================================
+  console.log('\n3b. UNIT — Discovery-heuristic refinement: locale-family collapse + static/API filtering');
+  // ==========================================================================
+  {
+    const links = discoverJobPostingLinks(LOCALE_AND_NOISE_INDEX_PAGE, 'https://acme.com/careers', 20);
+
+    const localeVariants = links.filter((l) => /\/(en-in|es-us|en-de|en-gb)\/careers$/.test(l));
+    assert(
+      localeVariants.length <= 1,
+      `4 locale-variant copies of the SAME /careers landing page collapse to at most 1 representative, not 4 (got ${localeVariants.length}: ${localeVariants.join(', ')})`
+    );
+    assert(
+      links.includes('https://acme.com/careers/positions/8198059?gh_jid=8198059'),
+      'a genuinely distinct posting link is NOT crowded out by locale noise — it survives alongside the collapsed locale family'
+    );
+    assert(
+      links.includes('https://acme.com/en-us/careers/software-engineer-123') && links.includes('https://acme.com/en-gb/careers/software-engineer-456'),
+      'two GENUINELY DISTINCT locale-prefixed postings (different remaining path after stripping locale) are BOTH kept — this is not a blanket rejection of locale-prefixed URLs, only of equivalent-landing-page families'
+    );
+    assert(
+      !links.some((l) => l.includes('.jpg') || l.includes('.svg')),
+      'static image assets whose filename merely contains a job-shaped word (careers-bg-sm.jpg, careers-fg-lg.svg — the real DuckDuckGo shape) are excluded before any fetch'
+    );
+    assert(
+      !links.some((l) => l.includes('/wp-json/')),
+      'a WordPress oEmbed API endpoint (the real Coalition Technologies shape) is excluded before any fetch'
+    );
   }
 
   // ==========================================================================
