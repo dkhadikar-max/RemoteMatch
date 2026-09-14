@@ -323,6 +323,13 @@ async function run() {
     // A real-shaped index page (Finding C) whose discovered sub-links point
     // at OTHER pages on the SAME domain — subPages routes those exact paths
     // to their own fixture content, distinct from the employer's root page.
+    //
+    // C5 second finding (docs/c5-finding2-audit.md): /careers/jobs is a
+    // discovered sub-link that is ITSELF another index/listing page — the
+    // real virtual7 /unternehmen/jobs/ shape. The guard added in fetchJobs()
+    // must skip it before extraction. /careers/eng-role is the genuine single
+    // posting and must still produce a candidate — the guard must not regress
+    // legitimate discovery.
     const indexPageHtml = `
 <html><head>
 <script type="application/ld+json">
@@ -332,6 +339,7 @@ async function run() {
 <main>
   <a href="/careers/eng-role">Engineering role</a>
   <a href="/careers/eng-role">Engineering role (duplicate)</a>
+  <a href="/careers/jobs">Job listing index (sub-link that is itself an index)</a>
   <a href="/about">About (non-job-shaped, must never be fetched)</a>
 </main>
 </body></html>`;
@@ -341,6 +349,21 @@ async function run() {
 { "@context": "https://schema.org/", "@type": "JobPosting", "title": "Discovered Engineering Role", "description": "Found via index-page link discovery.", "datePosted": "2026-09-14", "employmentType": "FULL_TIME", "jobLocation": { "@type": "Place", "address": "Remote - USA" } }
 </script>
 </head><body></body></html>`;
+    // The real virtual7 /unternehmen/jobs/ shape: Organization-typed JSON-LD
+    // (no JobPosting node) + multiple job listing links. detectPageKind() on
+    // this content returns 'index', so the guard must skip it entirely.
+    const discoveredIndexPageHtml = `
+<html><head>
+<script type="application/ld+json">
+{ "@context": "https://schema.org/", "@type": "Organization", "name": "C5 Test indexpage Jobs" }
+</script>
+</head><body>
+<main>
+  <a href="/careers/jobs/role-1">Role 1</a>
+  <a href="/careers/jobs/role-2">Role 2</a>
+  <a href="/careers/jobs/role-3">Role 3</a>
+</main>
+</body></html>`;
 
     const employerDefs = [
       { label: 'jsonld', domain: domainFor('jsonld'), path: '/careers/staff-eng', html: JSON_LD_PAGE, status: 200 },
@@ -351,7 +374,7 @@ async function run() {
       { label: 'networkfail', domain: domainFor('networkfail'), path: '/careers/x', html: '', status: 0 },
       {
         label: 'indexpage', domain: indexPageDomain, path: '/careers', html: indexPageHtml, status: 200,
-        subPages: { '/careers/eng-role': discoveredPostingHtml, '/about': '<html><body>About us</body></html>' },
+        subPages: { '/careers/eng-role': discoveredPostingHtml, '/careers/jobs': discoveredIndexPageHtml, '/about': '<html><body>About us</body></html>' },
       },
     ];
 
@@ -485,6 +508,33 @@ async function run() {
       assert(
         engRoleFetchCount === 1,
         `the duplicated /careers/eng-role link (appeared twice in the source HTML) was fetched exactly ONCE, not twice — deduplication held all the way through to the real fetch call (got ${engRoleFetchCount} fetches)`
+      );
+
+      // C5 second finding regression (docs/c5-finding2-audit.md §8):
+      // /careers/jobs is a discovered sub-link that is itself an Organization-
+      // typed index page (no JobPosting JSON-LD node — the real virtual7
+      // /unternehmen/jobs/ shape). The guard added to fetchJobs() must:
+      //   1. Fetch it (robots + domain-slot + HTTP — already done before the guard)
+      //   2. Classify it as 'index' via detectPageKind(subHtml)
+      //   3. Skip it — never route it to extractCandidateFromPage()
+      //
+      // Both assertions are needed: (a) output shape alone could look correct
+      // even if the guard were absent (Gemini/shape-guard catches multi-job
+      // content too, behaviorally); (b) the fetchedUrls log proves the guard
+      // fires post-fetch as designed, not pre-fetch as a discovery filter would.
+      assert(
+        fetchedUrls.some((u) => u.includes(`${indexPageDomain}/careers/jobs`)),
+        'the discovered index sub-link (/careers/jobs) WAS fetched — the second-finding guard fires after the fetch (post-fetch classification), not before'
+      );
+      assert(
+        !results.some((j) => j.company === 'C5 Test indexpage' && j.sourceUrl?.includes('/careers/jobs')),
+        'the index-shaped discovered sub-link (/careers/jobs) produced NO candidate — detectPageKind() classified it as \'index\' and the guard skipped it before extraction'
+      );
+      // Regression: the genuine single-posting sub-link must still produce a
+      // candidate — the guard must not over-skip real postings.
+      assert(
+        results.filter((j) => j.title === 'Discovered Engineering Role').length === 1,
+        'the genuine single-posting sub-link (/careers/eng-role) still produces exactly ONE candidate — the second-finding guard does not regress legitimate discovery (this is the same assertion as Finding C\'s, now strengthened by the presence of the index sub-link in the same employer\'s fixture)'
       );
 
       // 403/429 must be a SOURCE FAILURE on the linked supply_sources row,

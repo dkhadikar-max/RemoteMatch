@@ -475,6 +475,23 @@ export class CareerPageProvider implements JobProvider {
               });
               if (!subRes.ok) continue; // one discovered link's failure never aborts the others
               const subHtml = await subRes.text();
+              // C5 second finding (docs/c5-finding2-audit.md §7): a discovered
+              // sub-link must be individually classified before being committed
+              // to single-posting extraction. discoverJobPostingLinks() returns
+              // any same-domain, job-shaped-path link — that includes department
+              // category pages (/careers/engineering) and secondary listing pages
+              // (/unternehmen/jobs/) in addition to genuine individual postings.
+              // Passing an index/listing page to extractCandidateFromPage() has
+              // two failure modes: (1) Gemini-path: multi-job content → all-null
+              // output → shape-guard rejection, confirmed against Coalition
+              // Technologies' real 28-job page; wastes one quota unit per link
+              // per cycle. (2) JSON-LD-path: a category page with an embedded
+              // featured-job node would publish a candidate with the category
+              // page URL as officialUrl — a correctness gap with no downstream
+              // guard (parseJsonLd() is trusted/not evidence-validated).
+              // detectPageKind() is deterministic, synchronous, reads already-
+              // fetched subHtml from memory — zero network calls, zero quota.
+              if (detectPageKind(subHtml) !== 'single_posting') continue;
               const candidate = await extractCandidateFromPage(subHtml, link, employer.canonicalName, employer.id);
               if (candidate) employerCandidates.push(candidate);
             } catch {
