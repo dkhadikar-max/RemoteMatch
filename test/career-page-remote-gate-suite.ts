@@ -70,7 +70,11 @@ async function run() {
   try {
     for (const c of cases) {
       const raw = makeRaw(`${c.label}-${suffix}`, c.locationString);
-      const summary = await syncCareerPageOpportunities({ fetchJobs: async () => [raw] });
+      // Array-wrapped since the C5-B pilot: the real signature is now
+      // JobProvider[], mirroring catalog-sync.ts's own multi-provider shape.
+      const summary = await syncCareerPageOpportunities([
+        { name: 'test-careerpage', sourceKey: 'careerpage', fetchJobs: async () => [raw] },
+      ]);
 
       const { data } = await admin
         .from('opportunities')

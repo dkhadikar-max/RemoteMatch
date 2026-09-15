@@ -36,10 +36,12 @@
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { normalizeOpportunity, deduplicateOpportunities } from './pipeline';
 import { CareerPageProvider } from '@/lib/providers/career-page';
+import { WeWorkRemotelyProvider } from '@/lib/providers/weworkremotely';
+import { HimalayasProvider } from '@/lib/providers/himalayas';
+import type { JobProvider, RawJobPayload } from '@/lib/providers/types';
 import { timingSafeEqual } from 'crypto';
 
 const ABSENCE_EXPIRY_THRESHOLD = 3;
-const CAREER_PAGE_SOURCE = 'careerpage';
 
 /**
  * Independent secret, independent env var — matches verifyIngestionSecret's
@@ -60,6 +62,13 @@ export function verifyCareerPageSyncSecret(authHeader: string | null): boolean {
   return timingSafeEqual(secretBuf, candidateBuf);
 }
 
+export interface CareerPageAcquisitionOutcome {
+  sourceKey: string;
+  success: boolean;
+  jobCount: number;
+  error?: string;
+}
+
 export interface CareerPageSyncSummary {
   fetchedCount: number;
   fetchFailed: boolean;
@@ -68,18 +77,47 @@ export interface CareerPageSyncSummary {
   refreshedExisting: number;
   absenceIncremented: number;
   expiredByAbsence: number;
+  /** Per-source breakdown (C5-A career pages, C5-B job portals, ...) — added
+   *  when this function became multi-provider (C5-B pilot: WeWorkRemotely +
+   *  Himalayas). Mirrors catalog-sync.ts's ProviderRunOutcome shape exactly
+   *  ("reused conceptually, not by shared code," per this file's own header
+   *  comment) rather than importing it — this module stays a genuinely
+   *  independent implementation against the same shared opportunities table. */
+  providerOutcomes: CareerPageAcquisitionOutcome[];
 }
 
 /**
- * `providerOverride` is a test-only injection point (mirrors
- * syncOpportunitiesToCatalog()'s `fetchResult` parameter) — a test passes a
- * fake `{ fetchJobs }` implementation instead of the real CareerPageProvider,
- * so no test run ever performs a real network fetch or a real Gemini call
- * merely by calling this function. Production code (the sync route) never
- * passes this.
+ * `providersOverride` is a test-only injection point (mirrors
+ * syncOpportunitiesToCatalog()'s `fetchResult` parameter) — a test passes an
+ * array of fake `{ name, sourceKey, fetchJobs }` implementations instead of
+ * the real providers, so no test run ever performs a real network fetch or a
+ * real Gemini call merely by calling this function. Production code (the
+ * sync route) never passes this.
+ *
+ * Evolved from a single provider to JobProvider[] for the C5-B pilot
+ * (WeWorkRemotely + Himalayas alongside the existing CareerPageProvider),
+ * reusing catalog-sync.ts's already-proven Promise.allSettled() pattern
+ * (src/lib/ingestion/catalog-sync.ts:114-141) rather than inventing a new
+ * one. THE SAFETY PROPERTY preserved from that precedent, restated because
+ * it matters: a failed provider has ZERO effect on that provider's existing
+ * rows this cycle — its rows are never even queried for absence-comparison
+ * (see `successfulSources` below), let alone written to.
+ *
+ * Fixed as part of this evolution, not a pre-existing deliberate choice:
+ * every insert/update below now writes `opp.source` (the real, per-candidate
+ * provider source key) instead of the previous hardcoded `CAREER_PAGE_SOURCE`
+ * constant. That hardcoding was harmless while exactly one provider ever
+ * existed (it was always 'careerpage' either way) but would have silently
+ * mislabeled every WeWorkRemotely/Himalayas row as 'careerpage' once a
+ * second source existed — a real, structural bug this multi-provider
+ * evolution surfaces and must fix, not a stylistic change. `opportunities`
+ * table's own `UNIQUE (source, source_id)` constraint (migration
+ * 001_initial_schema.sql:100) already assumes/requires this per-source
+ * keying; the old single-constant code was never actually exercising that
+ * constraint's real intent.
  */
 export async function syncCareerPageOpportunities(
-  providerOverride?: { fetchJobs: () => Promise<ReturnType<CareerPageProvider['fetchJobs']> extends Promise<infer T> ? T : never> }
+  providersOverride?: JobProvider[]
 ): Promise<CareerPageSyncSummary> {
   const admin = getSupabaseAdminClient();
   if (!isSupabaseAdminConfigured || !admin) {
@@ -93,37 +131,65 @@ export async function syncCareerPageOpportunities(
     refreshedExisting: 0,
     absenceIncremented: 0,
     expiredByAbsence: 0,
+    providerOutcomes: [],
   };
 
-  const provider = providerOverride ?? new CareerPageProvider();
+  const providers: JobProvider[] = providersOverride ?? [
+    new CareerPageProvider(),
+    new WeWorkRemotelyProvider(),
+    new HimalayasProvider(),
+  ];
 
-  let raw;
-  try {
-    raw = await provider.fetchJobs();
-  } catch (err) {
-    // Whole-run failure (e.g. DB unreachable while listing approved
-    // employers) — matches syncOpportunitiesToCatalog()'s "failed provider,
-    // zero effect on existing rows" discipline: nothing below runs, nothing
-    // is touched.
+  const results = await Promise.allSettled(providers.map((p) => p.fetchJobs()));
+
+  const outcomes: CareerPageAcquisitionOutcome[] = [];
+  const successfulRaw = new Map<string, RawJobPayload[]>();
+
+  results.forEach((result, i) => {
+    const sourceKey = providers[i].sourceKey;
+    if (result.status === 'fulfilled') {
+      outcomes.push({ sourceKey, success: true, jobCount: result.value.length });
+      successfulRaw.set(sourceKey, result.value);
+    } else {
+      // Provider failure: timeout, thrown error, whatever fetchJobs()
+      // surfaces as a rejection. Deliberately NOT added to successfulRaw —
+      // its rows are never touched this cycle (see successfulSources below).
+      outcomes.push({ sourceKey, success: false, jobCount: 0, error: String(result.reason) });
+    }
+  });
+
+  summary.providerOutcomes = outcomes;
+
+  const successfulSources = outcomes.filter((o) => o.success).map((o) => o.sourceKey);
+
+  if (successfulSources.length === 0) {
+    // Every provider failed this cycle — matches the old single-provider
+    // "whole run failed" contract exactly: nothing below runs, nothing
+    // existing is touched.
     summary.fetchFailed = true;
-    summary.fetchError = String(err);
+    summary.fetchError = outcomes.map((o) => `${o.sourceKey}: ${o.error}`).join('; ');
     return summary;
   }
 
+  const raw = successfulSources.flatMap((s) => successfulRaw.get(s) ?? []);
   summary.fetchedCount = raw.length;
 
   const normalized = raw.map(normalizeOpportunity).filter((o) => o.title && o.company);
   const deduped = deduplicateOpportunities(normalized);
 
-  const presentSourceIds = new Set(deduped.map((o) => o.sourceId));
+  // Composite (source, sourceId) key throughout — a bare sourceId is not
+  // guaranteed unique ACROSS different sources (the DB's own UNIQUE
+  // constraint is on the pair, not sourceId alone), so neither is this
+  // in-memory tracking.
+  const presentKeys = new Set(deduped.map((o) => `${o.source}:${o.sourceId}`));
 
   const { data: existingRows, error: fetchErr } = await admin
     .from('opportunities')
-    .select('id, source_id, status, consecutive_absences')
-    .eq('source', CAREER_PAGE_SOURCE);
-  if (fetchErr) throw new Error(`Could not read existing career-page opportunities: ${fetchErr.message}`);
+    .select('id, source, source_id, status, consecutive_absences')
+    .in('source', successfulSources);
+  if (fetchErr) throw new Error(`Could not read existing career-page-acquisition opportunities: ${fetchErr.message}`);
 
-  const existingByKey = new Map((existingRows ?? []).map((r) => [r.source_id, r]));
+  const existingByKey = new Map((existingRows ?? []).map((r) => [`${r.source}:${r.source_id}`, r]));
 
   for (const opp of deduped) {
     // Acquisition-validation Finding B (docs/c5-acquisition-validation-
@@ -133,7 +199,7 @@ export async function syncCareerPageOpportunities(
     // eligibility rule. A candidate whose location couldn't be resolved to
     // an explicit remote scope is never inserted, matching the C3 invariant
     // this write path was missing. Deliberately checked exactly where C3's
-    // own gate sits (inside the per-candidate loop, after presentSourceIds
+    // own gate sits (inside the per-candidate loop, after presentKeys
     // is already built from the full deduped set) — same acknowledged
     // scope boundary as C3: an existing active row's absence counter still
     // resets this cycle even if THIS cycle's candidate for it was gated,
@@ -169,12 +235,12 @@ export async function syncCareerPageOpportunities(
       remote_policy_confidence: opp.remotePolicyConfidence ?? null,
     };
 
-    const existing = existingByKey.get(opp.sourceId);
+    const existing = existingByKey.get(`${opp.source}:${opp.sourceId}`);
 
     if (!existing) {
       await admin.from('opportunities').insert({
         ...contentFields,
-        source: CAREER_PAGE_SOURCE,
+        source: opp.source,
         source_id: opp.sourceId,
         type: opp.type,
         status: 'active',
@@ -215,15 +281,21 @@ export async function syncCareerPageOpportunities(
     summary.refreshedExisting++;
   }
 
-  // --- Feed-absence accounting, scoped to source='careerpage' only ---
+  // --- Feed-absence accounting, scoped to THIS CYCLE'S SUCCESSFUL sources
+  // only — mirrors catalog-sync.ts's own scoping exactly (its own header
+  // comment: "Provider failure... produces ZERO effect on that provider's
+  // existing rows this cycle... enforced structurally: a failed provider's
+  // existing rows are never even queried for absence-comparison"). A
+  // provider that failed to fetch this cycle must never have its existing
+  // rows silently absence-incremented as if they'd genuinely disappeared. ---
   const { data: activeRows, error: activeErr } = await admin
     .from('opportunities')
-    .select('id, source_id, consecutive_absences')
-    .eq('source', CAREER_PAGE_SOURCE)
+    .select('id, source, source_id, consecutive_absences')
+    .in('source', successfulSources)
     .eq('status', 'active');
   if (!activeErr) {
     for (const row of activeRows ?? []) {
-      if (presentSourceIds.has(row.source_id)) continue;
+      if (presentKeys.has(`${row.source}:${row.source_id}`)) continue;
       const nextAbsences = (row.consecutive_absences ?? 0) + 1;
       summary.absenceIncremented++;
       if (nextAbsences >= ABSENCE_EXPIRY_THRESHOLD) {

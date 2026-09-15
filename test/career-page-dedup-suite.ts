@@ -151,7 +151,11 @@ async function run() {
     // the provider's fetchJobs() is substituted, exactly as
     // career-page-sync.ts's own header documents as the sanctioned test
     // injection point (mirrors syncOpportunitiesToCatalog()'s fetchResult).
-    const syncSummary = await syncCareerPageOpportunities({ fetchJobs: async () => [careerPageRaw] });
+    // Array-wrapped since the C5-B pilot: the real signature is now
+    // JobProvider[], mirroring catalog-sync.ts's own multi-provider shape.
+    const syncSummary = await syncCareerPageOpportunities([
+      { name: 'test-careerpage', sourceKey: 'careerpage', fetchJobs: async () => [careerPageRaw] },
+    ]);
     assert(syncSummary.newJobsInserted === 1, `syncCareerPageOpportunities() inserted the new career-page row (got newJobsInserted=${syncSummary.newJobsInserted})`);
 
     const { data: careerPageRow } = await admin
