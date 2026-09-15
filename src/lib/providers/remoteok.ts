@@ -1,4 +1,4 @@
-﻿import { JobProvider, RawJobPayload } from './types';
+import { JobProvider, RawJobPayload } from './types';
 
 /**
  * C5-B -- RemoteOK public JSON API
@@ -24,7 +24,7 @@ export class RemoteOKProvider implements JobProvider {
   async fetchJobs(): Promise<RawJobPayload[]> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       const res = await fetch(API_URL, {
         signal: controller.signal,

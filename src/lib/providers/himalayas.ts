@@ -27,7 +27,8 @@ import { JobProvider, RawJobPayload } from './types';
 
 const API_URL = 'https://himalayas.app/jobs/api';
 const PAGE_SIZE = 20;
-const MAX_PAGES = 10;
+const MAX_PAGES = 75;
+const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
 interface HimalayasJob {
   title: string;
@@ -53,6 +54,7 @@ export class HimalayasProvider implements JobProvider {
   async fetchJobs(): Promise<RawJobPayload[]> {
     const jobs: RawJobPayload[] = [];
     let cursor: string | undefined;
+    const now = Date.now();
 
     try {
       for (let page = 0; page < MAX_PAGES; page++) {
@@ -75,9 +77,18 @@ export class HimalayasProvider implements JobProvider {
 
         const data: HimalayasResponse = await res.json();
         const pageJobs = Array.isArray(data.jobs) ? data.jobs : [];
+        if (pageJobs.length === 0) break;
+
+        let reachedStaleBoundary = false;
 
         for (const job of pageJobs) {
           if (!job.guid || !job.title || !job.companyName) continue; // no stable identity or core fields, skip
+
+          const jobTime = job.pubDate ? job.pubDate * 1000 : now;
+          if (now - jobTime > MAX_AGE_MS) {
+            reachedStaleBoundary = true;
+            continue; // don't ingest jobs older than 48 hours
+          }
 
           const locationString = Array.isArray(job.locationRestrictions) && job.locationRestrictions.length > 0
             ? job.locationRestrictions.join(', ')
@@ -102,8 +113,9 @@ export class HimalayasProvider implements JobProvider {
           });
         }
 
-        if (!data.nextCursor || pageJobs.length === 0) break; // reached the end of available pages
+        if (reachedStaleBoundary || !data.nextCursor) break; // reached the end of fresh supply or available pages
         cursor = data.nextCursor;
+        await new Promise((resolve) => setTimeout(resolve, 80));
       }
 
       return jobs;
