@@ -182,6 +182,20 @@ export function Navbar() {
                 >
                   Profile
                 </Link>
+                {/* LinkedIn Job Finder (Pro) — desktop nav only, omitted from
+                    the mobile bottom bar to keep it at its existing 3
+                    destinations (see the mobile nav block's own comment
+                    below). Plan: vivid-hatching-kitten.md §26. */}
+                <Link
+                  href="/linkedin-jobs"
+                  className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
+                    pathname === '/linkedin-jobs'
+                      ? 'bg-[var(--surface)] text-[var(--red)] font-semibold shadow-sm border border-[var(--line)]'
+                      : 'text-[var(--muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  LinkedIn
+                </Link>
               </>
             )}
           </nav>

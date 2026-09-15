@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
 import { notifyEntitlementChanged } from '@/lib/entitlement/client';
 
-export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition';
+export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition' | 'linkedinSearch' | 'linkedinPeopleConnect';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -43,6 +43,17 @@ const REASON_COPY: Record<
       'Your transition analysis is free. Upgrade to Pro to discover and filter the jobs that match your transition.',
     badge: 'Career transition',
   },
+  linkedinSearch: {
+    title: "You've used your free LinkedIn searches today.",
+    subtitle: 'Upgrade to Pro for unlimited automated LinkedIn job search.',
+    badge: 'LinkedIn search limit',
+  },
+  linkedinPeopleConnect: {
+    title: 'Connect with people at the company',
+    subtitle:
+      'Your LinkedIn job match analysis is free. Upgrade to Pro for AI-drafted connection messages and company people-search.',
+    badge: 'LinkedIn Job Finder',
+  },
 };
 
 const PRO_FEATURES = [
@@ -51,6 +62,8 @@ const PRO_FEATURES = [
   'Rewind',
   'Precision location, salary & timezone filters',
   'Career transition job discovery',
+  'Unlimited LinkedIn job search',
+  'LinkedIn connection-message drafts & people search',
 ];
 
 export function UpgradeModal({
