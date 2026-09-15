@@ -1,14 +1,24 @@
 /**
- * RemoteMatch — Auth Flow Change HTTP suite (AFC — email OTP code amendment)
+ * RemoteMatch — Auth Flow HTTP suite (email + password login, 2026-09-16 reversal)
  * ==============================================================================
- * Primary AFC auth entry = an emailed one-time CODE the user types in:
- *   signInWithOtp({ email, options:{ shouldCreateUser:true, data:{full_name} } })
- *   -> VerifyCode screen -> verifyOtp({ email, token: code, type: 'email' })
- *   -> session -> router.push('/feed') -> middleware onboarding gate
+ * Supersedes the Auth Flow Change (AFC)'s passwordless-OTP-only contract per
+ * explicit product direction: "login should only be email and password, no
+ * otp." New contract:
+ *   /signup: supabase.auth.signUp({ email, password, options:{data:{full_name}} })
+ *     -> VerifyCode screen (UNCHANGED — still an emailed CODE, since an
+ *        unverified inbox must never grant access) -> verifyOtp({ email,
+ *        token: code, type: 'email' }) -> session established
+ *   /login: supabase.auth.signInWithPassword({ email, password }) -> session
+ *     established directly, no code screen at all
+ *   /forgot-password + /reset-password: resetPasswordForEmail() ->
+ *     /auth/confirm (type=recovery) -> /reset-password -> updateUser({password})
+ *     — the path for every pre-existing passwordless account (AFC-era) to
+ *     get a password, and for anyone who forgets theirs.
  *
- * §0 source checks run always. The live section (TEST_BASE_URL + Supabase env)
- * proves the routing matrix and the OTP verify/reject/resend behavior using
- * admin.generateLink() to obtain the code (no live inbox needed).
+ * Everything downstream of "a session exists" (onboarding boundary, routing
+ * matrix, cross-user isolation, E1 no-fabricated-defaults) is UNCHANGED by
+ * this reversal — those sections are preserved as-is, just now reached via
+ * signUp+verifyOtp+signInWithPassword instead of signInWithOtp twice.
  *
  * Run: TEST_BASE_URL=... npx tsx test/auth-flow-suite.ts
  */
@@ -34,8 +44,12 @@ const COMPLETE = {
   allowedCountries: ['Worldwide'], willingTimezones: ['UTC', 'WET'], rawResumeText: 'test resume',
 };
 
-/** Obtain a real OTP code for `email` (creating the user if needed) via the
- *  admin API — this is exactly what Supabase would email as {{ .Token }}. */
+const TEST_PASSWORD = 'Correct-Horse-Battery-Staple-1';
+
+/** Obtain a real OTP code for `email`'s pending signup verification via the
+ *  admin API — this is exactly what Supabase emails as {{ .Token }}. Used
+ *  only to complete the signup-verification step; the account itself is
+ *  created with a real password via signUp(), not via this call. */
 async function issueOtp(email: string): Promise<string> {
   const admin = adminClient();
   const { data, error } = await admin.auth.admin.generateLink({ type: 'magiclink', email });
@@ -45,36 +59,69 @@ async function issueOtp(email: string): Promise<string> {
   return data.properties.email_otp;
 }
 
+/** Creates a brand-new account with a real password, then completes the
+ *  (unchanged) code-verification step and returns the established session. */
+async function signUpAndVerify(email: string, password: string, fullName: string) {
+  const client = anonKeyClient();
+  const { error: signUpErr } = await client.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+  if (signUpErr) throw new Error(`signUp failed: ${signUpErr.message}`);
+  const code = await issueOtp(email);
+  const result = await anonKeyClient().auth.verifyOtp({ email, token: code, type: 'email' });
+  if (result.error || !result.data.session) throw new Error(`verifyOtp failed: ${result.error?.message}`);
+  return result;
+}
+
 async function run() {
   console.log('='.repeat(78));
-  console.log('AUTH FLOW CHANGE — HTTP SUITE (AFC — OTP CODE)');
+  console.log('AUTH FLOW — HTTP SUITE (EMAIL + PASSWORD LOGIN)');
   console.log('='.repeat(78));
 
   // --- §0 source checks (always) ---
-  console.log('\n0. SOURCE — passwordless OTP-code entry');
+  console.log('\n0. SOURCE — password login, code-verified signup, password reset');
   const authFlow = fs.readFileSync(path.resolve(__dirname, '../src/lib/auth/auth-flow.ts'), 'utf8');
   assert(
-    !/export\s+(async\s+)?function\s+(signUpWithPassword|signInWithPassword)/.test(authFlow)
-      && !/signInWithPassword\s*\(/.test(authFlow),
-    'auth-flow.ts defines/calls no password functions',
+    /export async function signInWithPassword\(email: string, password: string\)/.test(authFlow) &&
+      /signInWithPassword\(\{\s*email,\s*password\s*\}\)/.test(authFlow),
+    '/login: signInWithPassword({ email, password })',
   );
-  assert(!/emailRedirectTo/.test(authFlow.replace(/\*.*emailRedirectTo.*/g, '')), 'auth-flow.ts passes no emailRedirectTo (OTP code, not link)');
-  assert(/startPasswordlessSignup[\s\S]*?shouldCreateUser:\s*true/.test(authFlow), '/signup: signInWithOtp({ shouldCreateUser: true }) — may create');
-  assert(/requestSignInCode[\s\S]*?shouldCreateUser:\s*false/.test(authFlow), '/login: signInWithOtp({ shouldCreateUser: false }) — existing account only');
-  assert(/resendCode[\s\S]*?shouldCreateUser:\s*false/.test(authFlow), 'resend never creates (shouldCreateUser: false)');
-  assert(/data:\s*\{\s*full_name/.test(authFlow), 'signup passes options.data.full_name');
-  assert(/verifyOtp\(\{\s*email,\s*token,\s*type:\s*'email'\s*\}\)/.test(authFlow), "verifyEmailOtp uses verifyOtp({ email, token, type: 'email' })");
-  assert(/export async function verifyEmailOtp\(email: string, code: string\)/.test(authFlow), 'the email is a function parameter from the sign-in form — not a URL/token identity');
+  assert(
+    /export async function startSignupWithPassword/.test(authFlow) &&
+      /auth\.signUp\(\{\s*\n\s*email,\s*\n\s*password,/.test(authFlow),
+    '/signup: signUp({ email, password, ... }) — password set at creation time',
+  );
+  assert(/resendCode[\s\S]*?shouldCreateUser:\s*false/.test(authFlow), 'resend (signup verification only) never creates (shouldCreateUser: false)');
+  assert(/data:\s*\{\s*full_name/.test(authFlow), 'signup passes options.data.full_name (014 trigger still fed identically)');
+  assert(/verifyOtp\(\{\s*email,\s*token,\s*type:\s*'email'\s*\}\)/.test(authFlow), "verifyEmailOtp (signup verification) uses verifyOtp({ email, token, type: 'email' }) — unchanged");
+  assert(
+    /export async function requestPasswordReset/.test(authFlow) && /resetPasswordForEmail/.test(authFlow),
+    'requestPasswordReset() calls resetPasswordForEmail() — the path for every pre-existing passwordless account',
+  );
+  assert(
+    /export async function setNewPassword/.test(authFlow) && /updateUser\(\{\s*password\s*\}\)/.test(authFlow),
+    'setNewPassword() calls updateUser({ password })',
+  );
 
   const signupPage = fs.readFileSync(path.resolve(__dirname, '../src/app/signup/page.tsx'), 'utf8');
   const loginPage = fs.readFileSync(path.resolve(__dirname, '../src/app/login/page.tsx'), 'utf8');
-  assert(/VerifyCode/.test(signupPage) && /VerifyCode/.test(loginPage), '/signup and /login render <VerifyCode>');
-  assert(!/type="password"/.test(signupPage) && !/type="password"/.test(loginPage), 'no password field on /signup or /login');
+  assert(/<VerifyCode/.test(signupPage), '/signup still renders <VerifyCode> (email verification unchanged)');
+  assert(!/<VerifyCode/.test(loginPage), '/login no longer renders <VerifyCode> — no OTP screen in the login path at all');
+  assert(/type="password"/.test(signupPage) && /type="password"/.test(loginPage), '/signup and /login both render a password field');
+  assert(/signInWithPassword/.test(loginPage) && !/requestSignInCode|signInWithOtp/.test(loginPage), '/login calls signInWithPassword only — no OTP call anywhere in the page');
+  assert(/Forgot password/.test(loginPage), '/login links to the forgot-password flow — the path for pre-existing passwordless accounts');
+
+  const forgotPage = fs.readFileSync(path.resolve(__dirname, '../src/app/forgot-password/page.tsx'), 'utf8');
+  const resetPage = fs.readFileSync(path.resolve(__dirname, '../src/app/reset-password/page.tsx'), 'utf8');
+  assert(/requestPasswordReset/.test(forgotPage), '/forgot-password calls requestPasswordReset()');
+  assert(/setNewPassword/.test(resetPage) && /type="password"/.test(resetPage), '/reset-password renders a password field and calls setNewPassword()');
 
   const verifyCode = fs.readFileSync(path.resolve(__dirname, '../src/components/auth/VerifyCode.tsx'), 'utf8');
   assert(
     /window\.location\.replace\('\/feed'\)/.test(verifyCode) && !/router\.push\(/.test(verifyCode),
-    'VerifyCode navigates to /feed via a full-document load on success (no router.push race — A)',
+    'VerifyCode (signup) navigates to /feed via a full-document load on success (no router.push race — A)',
+  );
+  assert(
+    /window\.location\.replace\(sanitizeRedirectPath/.test(loginPage) && !/router\.push\(/.test(loginPage),
+    'login navigates via a full-document load on success, honoring the sanitized ?redirect= target (A)',
   );
 
   // A/B — post-mutation navigation is a hard load, not a client push, so
@@ -100,19 +147,22 @@ async function run() {
     'sign out does a full-document load to /login (C)',
   );
 
-  // D — friendly copy branches on the Supabase error CODE (stable), and the
-  // resend-cooldown case is distinct from the wrong/expired-code case.
+  // D — friendly copy branches on the Supabase error CODE (stable).
   assert(
     /over_email_send_rate_limit/.test(authFlow),
     'auth-flow maps the cooldown code (over_email_send_rate_limit) to its own message (D)',
   );
   assert(
     /otp_expired/.test(authFlow) && /wrong or expired/.test(authFlow),
-    'auth-flow: wrong vs expired collapse to one honest message (Supabase returns otp_expired for both) (D)',
+    'auth-flow: signup-code wrong vs expired collapse to one honest message (Supabase returns otp_expired for both) (D)',
+  );
+  assert(
+    /invalid_credentials/.test(authFlow) && /Incorrect email or password/.test(authFlow),
+    'auth-flow: wrong password vs unknown email collapse to one honest message, naming the recovery action (D)',
   );
   assert(
     /\/\^\\d\{4,12\}\$\//.test(authFlow),
-    'verifyEmailOtp rejects a malformed (non-digit) entry client-side before calling Supabase (D)',
+    'verifyEmailOtp (signup) rejects a malformed (non-digit) entry client-side before calling Supabase (D)',
   );
 
   // E1 — onboarding is the authoritative DB write, so it must not ship
@@ -150,6 +200,10 @@ async function run() {
   assert(/verifyOtp\(\{\s*token_hash/.test(confirmRoute) && /exchangeCodeForSession\(code\)/.test(confirmRoute),
     '/auth/confirm KEPT as a fallback — still handles token_hash + code');
   assert(!/verifyOtp\([^)]*email/.test(confirmRoute), '/auth/confirm never passes an email to verifyOtp');
+  assert(
+    /type === 'recovery'[\s\S]*?\/reset-password/.test(confirmRoute),
+    "/auth/confirm routes a type='recovery' link to /reset-password instead of /feed or /onboarding",
+  );
 
   // anonymous session rejected regardless of infra
   const anon = { is_anonymous: true, email_confirmed_at: new Date().toISOString() } as unknown as User;
@@ -181,34 +235,24 @@ async function run() {
       'POST /api/onboarding unauthenticated -> 401',
     );
 
-    // --- 2. OTP verify / reject / resume ---
-    console.log('\n2. EMAIL OTP CODE — verify / reject');
+    // --- 2. EMAIL + PASSWORD LOGIN (signup still code-verified) ---
+    console.log('\n2. SIGNUP (password + code verification) then LOGIN (password only)');
     const emailA = uniqueEmail(); emails.push(emailA);
-    const client = anonKeyClient();
 
-    const badCode = await client.auth.verifyOtp({ email: emailA, token: '00000000', type: 'email' });
-    assert(!badCode.data.session && Boolean(badCode.error), 'invalid code -> rejected, no session');
-
-    const otp1 = await issueOtp(emailA); // creates the user + returns the code
-    const okCode = await client.auth.verifyOtp({ email: emailA, token: otp1, type: 'email' });
-    assert(Boolean(okCode.data.session) && !okCode.error, 'correct code -> session established');
+    const okCode = await signUpAndVerify(emailA, TEST_PASSWORD, 'AFC Test User');
+    assert(Boolean(okCode.data.session) && !okCode.error, 'signUp(password) + code verification -> session established');
     const tokenA = okCode.data.session!.access_token;
 
-    const reuse = await anonKeyClient().auth.verifyOtp({ email: emailA, token: otp1, type: 'email' });
-    assert(!reuse.data.session && Boolean(reuse.error), 'consumed/expired code -> rejected (same path as expiry)');
+    const wrongPassword = await anonKeyClient().auth.signInWithPassword({ email: emailA, password: 'definitely-the-wrong-password' });
+    assert(!wrongPassword.data.session && Boolean(wrongPassword.error), 'signInWithPassword with the WRONG password -> rejected, no session');
 
-    // resend (shouldCreateUser:false, user already exists) -> fresh code
-    const resendReq = await anonKeyClient().auth.signInWithOtp({ email: emailA, options: { shouldCreateUser: false } });
-    assert(!resendReq.error, 'resend (signInWithOtp, shouldCreateUser:false) -> no error for an existing user');
-    const otp2 = await issueOtp(emailA);
-    assert(otp2 !== otp1, '  ...a fresh code is issued');
+    const rightPassword = await anonKeyClient().auth.signInWithPassword({ email: emailA, password: TEST_PASSWORD });
+    assert(Boolean(rightPassword.data.session) && !rightPassword.error, 'signInWithPassword with the CORRECT password -> session established — no code involved anywhere in this call');
 
-    // login surface never creates an account
+    // login surface never touches signInWithOtp at all any more
     const neverSeen = `remotematch-test-nolist-${Date.now()}@example.com`;
-    const loginNew = await anonKeyClient().auth.signInWithOtp({ email: neverSeen, options: { shouldCreateUser: false } });
-    assert(Boolean(loginNew.error), 'login (shouldCreateUser:false) for a never-used email -> error, no account');
-    const { data: after } = await admin.auth.admin.listUsers();
-    assert(!after?.users?.some((u) => u.email === neverSeen), '  ...no auth.users row was created');
+    const loginUnknown = await anonKeyClient().auth.signInWithPassword({ email: neverSeen, password: 'whatever-password-123' });
+    assert(Boolean(loginUnknown.error), 'signInWithPassword for a never-used email -> error, no account, no OTP fallback');
 
     // --- 3. ROUTING MATRIX ---
     console.log('\n3. POST-AUTH ROUTING MATRIX');
@@ -241,6 +285,8 @@ async function run() {
 
     // onboarding_completed_at not client-writable
     console.log('\n5. onboarding_completed_at NOT CLIENT-WRITABLE');
+    const client = anonKeyClient();
+    await client.auth.setSession(okCode.data.session!);
     await client.from('profiles').update({ onboarding_completed_at: new Date().toISOString() }).eq('id', okCode.data.user!.id);
     assert(
       (await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HA })).json()).onboardingCompletedAt === null,
@@ -262,8 +308,7 @@ async function run() {
     //         residue for the fields the user left untouched. ---
     console.log('\n6b. E1 — no fabricated onboarding residue');
     const emailC = uniqueEmail(); emails.push(emailC);
-    const otpC = await issueOtp(emailC);
-    const okC = await anonKeyClient().auth.verifyOtp({ email: emailC, token: otpC, type: 'email' });
+    const okC = await signUpAndVerify(emailC, TEST_PASSWORD, 'Minimal User');
     const HC = { Authorization: `Bearer ${okC.data.session!.access_token}`, 'Content-Type': 'application/json' };
     const MINIMAL = {
       fullName: 'Minimal User',
@@ -291,7 +336,7 @@ async function run() {
     assert(getC.minSalary === null, '  ...min_salary null');
 
     // --- 7. /auth/confirm fallback intact ---
-    console.log('\n7. /auth/confirm FALLBACK (unchanged)');
+    console.log('\n7. /auth/confirm FALLBACK (unchanged) + recovery routing');
     assert(isRedirectTo(await fetch(`${BASE_URL}/auth/confirm`, { redirect: 'manual' }), '/login?verified=error'),
       'no material -> /login?verified=error');
     assert(isRedirectTo(await fetch(`${BASE_URL}/auth/confirm?token_hash=nope&type=magiclink`, { redirect: 'manual' }), '/login?verified=error'),
@@ -302,8 +347,7 @@ async function run() {
     // --- 8. cross-user isolation (RPC scoped to auth.uid) ---
     console.log('\n8. CROSS-USER ISOLATION');
     const emailB = uniqueEmail(); emails.push(emailB);
-    const otpB = await issueOtp(emailB);
-    const okB = await anonKeyClient().auth.verifyOtp({ email: emailB, token: otpB, type: 'email' });
+    const okB = await signUpAndVerify(emailB, TEST_PASSWORD, 'User B');
     const HB = { Authorization: `Bearer ${okB.data.session!.access_token}`, 'Content-Type': 'application/json' };
     await fetch(`${BASE_URL}/api/onboarding`, { method: 'POST', headers: HB, body: JSON.stringify({ ...COMPLETE, fullName: 'User B' }), redirect: 'manual' });
     const aStill = await (await fetch(`${BASE_URL}/api/onboarding`, { headers: HA })).json();

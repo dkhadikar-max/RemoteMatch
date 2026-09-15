@@ -29,6 +29,16 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
  * route will not accept an email as identity. The fix for a project on that
  * template is to switch it to the `token_hash` form (see the AFC review
  * package / deploy checklist).
+ *
+ * Password reset (2026-09-16 addition): requestPasswordReset() sends a
+ * recovery link through this exact route (redirectTo points here). Once
+ * the session is established below, a `type=recovery` link must NOT drop
+ * the user straight into /feed or /onboarding — the whole point of the
+ * link was to let them SET a password, which they haven't done yet. Route
+ * to /reset-password instead, same session, before the normal onboarding-
+ * state redirect. The PKCE `?code=` path doesn't carry `type` alongside
+ * `code`, so recovery-via-code is detected via the emailed link's own
+ * `type=recovery` query param, present on both link shapes Supabase emits.
  */
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -71,6 +81,13 @@ export async function GET(req: NextRequest) {
     userId = data.user.id;
   } else {
     return NextResponse.redirect(`${origin}/login?verified=error`);
+  }
+
+  // Password-reset link: send them to set a password, not into the app.
+  // Checked on `type` alone (present on both link shapes) rather than
+  // trying to infer intent from which branch above ran.
+  if (type === 'recovery') {
+    return NextResponse.redirect(`${origin}/reset-password`);
   }
 
   // Onboarding-state routing. A read failure here must not strand a

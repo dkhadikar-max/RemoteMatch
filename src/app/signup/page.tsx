@@ -3,12 +3,13 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { startPasswordlessSignup } from '@/lib/auth/auth-flow';
+import { startSignupWithPassword } from '@/lib/auth/auth-flow';
 import { VerifyCode } from '@/components/auth/VerifyCode';
 
 export default function SignupPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -17,7 +18,7 @@ export default function SignupPage() {
     e.preventDefault();
     setPending(true);
     setMessage(null);
-    const result = await startPasswordlessSignup(name, email);
+    const result = await startSignupWithPassword(name, email, password);
     setPending(false);
     if (result.success) {
       setSentTo(email);
@@ -31,7 +32,7 @@ export default function SignupPage() {
       <VerifyCode
         email={sentTo}
         onChangeEmail={() => {
-          // Keep the name; just let them fix the address.
+          // Keep the name and password; just let them fix the address.
           setSentTo(null);
           setMessage(null);
         }}
@@ -48,7 +49,7 @@ export default function SignupPage() {
           </div>
           <h1 className="text-xl font-bold text-[var(--ink)]">Create your account</h1>
           <p className="text-xs text-[var(--muted)]">
-            No password. We&apos;ll email you a code, then you set up your profile.
+            Set a password, then we&apos;ll email you a code to verify your address.
           </p>
         </div>
 
@@ -78,6 +79,19 @@ export default function SignupPage() {
                 autoComplete="email"
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Password</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                className="soft-input py-2 px-3 text-xs"
+                autoComplete="new-password"
+              />
+            </div>
 
             {message && (
               <p
@@ -92,7 +106,7 @@ export default function SignupPage() {
 
             <button
               type="submit"
-              disabled={pending || !name.trim() || !email}
+              disabled={pending || !name.trim() || !email || password.length < 8}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
             >
               <span>{pending ? 'Sending…' : 'Continue'}</span>
