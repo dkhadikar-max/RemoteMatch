@@ -27,7 +27,7 @@ import { JobProvider, RawJobPayload } from './types';
 
 const API_URL = 'https://himalayas.app/jobs/api';
 const PAGE_SIZE = 20;
-const MAX_PAGES = 3;
+const MAX_PAGES = 10;
 
 interface HimalayasJob {
   title: string;

@@ -33,6 +33,9 @@ import { RawJobPayload, JobProvider } from '../providers/types';
 import { RemotiveProvider } from '../providers/remotive';
 import { ArbeitnowProvider } from '../providers/arbeitnow';
 import { JobicyProvider } from '../providers/jobicy';
+import { WeWorkRemotelyProvider } from '../providers/weworkremotely';
+import { HimalayasProvider } from '../providers/himalayas';
+import { RemoteOKProvider } from '../providers/remoteok';
 import { GreenhouseProvider } from '../providers/greenhouse';
 import { LeverProvider } from '../providers/lever';
 import { AshbyProvider } from '../providers/ashby';
@@ -115,6 +118,9 @@ async function runProviderFetches(): Promise<ProviderFetchResult> {
     new RemotiveProvider(),
     new ArbeitnowProvider(),
     new JobicyProvider(),
+    new WeWorkRemotelyProvider(),
+    new HimalayasProvider(),
+    new RemoteOKProvider(),
     new GreenhouseProvider(),
     new LeverProvider(),
     new AshbyProvider(),

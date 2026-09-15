@@ -28,7 +28,7 @@ export class ArbeitnowProvider implements JobProvider {
       // Filter only remote jobs
       const remoteJobs = jobs.filter((job: any) => job.remote === true);
 
-      return remoteJobs.slice(0, 20).map((job: any): RawJobPayload => {
+      return remoteJobs.map((job: any): RawJobPayload => {
         const isContract = (job.tags || []).some((t: string) => t.toLowerCase().includes('contract')) ||
           (job.title || '').toLowerCase().includes('contract');
         const isFreelance = (job.tags || []).some((t: string) => t.toLowerCase().includes('freelance'));
