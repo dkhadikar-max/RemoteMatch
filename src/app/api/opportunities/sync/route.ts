@@ -5,6 +5,8 @@ import {
   verifyIngestionSecret,
   reconcileCrossProviderDuplicates,
 } from '@/lib/ingestion/catalog-sync';
+import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
+
 
 /**
  * Previously: no authentication at all, and its body discarded
@@ -43,6 +45,16 @@ export async function POST(req: NextRequest) {
     // header for why this is a code-level parameter, not an env var.
     const result = await syncOpportunitiesToCatalog(undefined, { allowLiveProviderFetch: true });
 
+    // Multilingual translation pass — runs after sync has written all newly-
+    // discovered and refreshed rows, before cross-provider reconciliation.
+    // Detects source language (DeepL auto-detect), translates non-English
+    // title/description to English, validates output, and writes result.
+    // Fail-closed: untranslated non-English rows remain invisible in the feed
+    // until translation_status = 'ok'. Never throws — any row-level error is
+    // caught and surfaced in the summary as `translationErrors`. A missing
+    // DEEPL_API_KEY makes this a logged no-op (does not abort the sync).
+    const translation = await translatePendingOpportunities();
+
     // M-adjacent-1 — a separate, independently-testable step, never inside
     // syncOpportunitiesToCatalog() itself (same pattern as revalidateStaleLinks).
     // Only runs when this cycle actually persisted something — an all-providers-
@@ -51,7 +63,8 @@ export async function POST(req: NextRequest) {
     const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
     const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
 
-    return NextResponse.json({ success: true, action: 'sync', ...result, reconciliation });
+    return NextResponse.json({ success: true, action: 'sync', ...result, translation, reconciliation });
+
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }

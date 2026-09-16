@@ -515,10 +515,17 @@ export const SEO_GUIDE_ARTICLES: SeoGuideArticle[] = [
  * status = 'active' only) instead of the static CURATED_JOBS array — the
  * guarantee that unknown/expired/draft rows never appear here comes from
  * that policy, not from any filtering in this function.
+ *
+ * Multilingual gate (Decision 4): translationSafe is set so non-English
+ * listings that have not yet been successfully translated are excluded from
+ * sitemaps and schema.org JobPosting output. A German job indexed by Google
+ * before translation would produce mismatched structured data for an
+ * English-language site — this prevents that.
  */
 export async function getActiveJobs(supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
-  return getActiveOpportunities(supabase);
+  return getActiveOpportunities(supabase, { translationSafe: true });
 }
+
 
 /**
  * Validates whether a job is eligible for search engine indexing.

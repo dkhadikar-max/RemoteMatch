@@ -24,7 +24,14 @@ const OPPORTUNITY_COLUMNS =
   'salary_currency, salary_period, required_skills, preferred_skills, experience_requirement, quality_score, ' +
   'source_quality, description_completeness, salary_quality, remote_policy_confidence, ' +
   'explicit_remote_scope, status, posted_at, is_permanently_removed, link_checked_at, ' +
-  'superseded_by_opportunity_id';
+  'superseded_by_opportunity_id, ' +
+  // Translation columns (migration 028). NULL values are handled gracefully in
+  // rowToCanonicalOpportunity() — a pre-028 schema returns NULLs for all of these,
+  // which the mapping treats as "not yet processed" (same as the initial state).
+  'source_language, original_title, original_description, ' +
+  'translated_at, translation_model, translated_content_hash, translation_status';
+
+
 
 interface OpportunityRow {
   id: string;
@@ -71,7 +78,17 @@ interface OpportunityRow {
   // any real-infra test that touches the opportunities catalog read path
   // until the migration is confirmed applied.
   superseded_by_opportunity_id: string | null;
+  // Translation columns (migration 028). All nullable — NULL means the
+  // translation pass has not yet run for this row.
+  source_language: string | null;
+  original_title: string | null;
+  original_description: string | null;
+  translated_at: string | null;
+  translation_model: string | null;
+  translated_content_hash: string | null;
+  translation_status: string | null;
 }
+
 
 export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportunity {
   return {
@@ -136,20 +153,50 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
  *  comprehensive catalog indexing and durable skill-gap signal,
  *  respectively — where excluding anything older than 48h would be wrong,
  *  not a freshness improvement. Applied explicitly at the one call site
- *  that IS "the feed": src/app/api/opportunities/feed/route.ts. */
+ *  that IS "the feed": src/app/api/opportunities/feed/route.ts.
+ *
+ *  `options.translationSafe` (Multilingual gate, migration 028):
+ *  Fail-closed filter — excludes non-English rows that have not yet been
+ *  successfully translated. When true, only rows matching ANY of the
+ *  following are returned:
+ *    (a) source_language IS NULL   — pass not yet run (briefly invisible)
+ *    (b) source_language = 'en'    — English, no translation needed
+ *    (c) translation_status = 'ok' — non-English, successfully translated
+ *  This MUST be set for every user-facing feed path and every SEO/sitemap
+ *  path (Decision 4). A non-English row with translation_status = 'error'
+ *  is NEVER shown to users or indexed. */
 export async function getActiveOpportunities(
   supabase: SupabaseClient,
-  options?: { freshOnly?: boolean }
+  options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
-  let query = supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
-  if (options?.freshOnly) {
-    const { from, to } = getFreshnessWindowBounds();
-    query = query.gte('posted_at', from).lte('posted_at', to);
+  const allRows: OpportunityRow[] = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    let query = supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
+    if (options?.freshOnly) {
+      const { from: windowFrom, to: windowTo } = getFreshnessWindowBounds();
+      query = query.gte('posted_at', windowFrom).lte('posted_at', windowTo);
+    }
+    if (options?.translationSafe) {
+      query = query.or(
+        'source_language.is.null,source_language.eq.en,translation_status.eq.ok'
+      );
+    }
+    query = query.range(from, from + pageSize - 1);
+    const { data, error } = await query;
+    if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
+    if (!data || data.length === 0) break;
+    allRows.push(...(data as unknown as OpportunityRow[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
   }
-  const { data, error } = await query;
-  if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
-  return (data ?? []).map((row) => rowToCanonicalOpportunity(row as unknown as OpportunityRow));
+
+  return allRows.map(rowToCanonicalOpportunity);
 }
+
+
 
 /** Looks up a single opportunity by its `opp-${source}-${sourceId}` id
  *  string (the format used everywhere else in the app — swipes,

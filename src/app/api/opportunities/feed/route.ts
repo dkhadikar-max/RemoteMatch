@@ -134,8 +134,17 @@ async function loadActiveCatalog() {
   // getActiveOpportunities()'s own header for why this is opt-in rather
   // than baked into every caller (SEO/sitemap and the resume skill-gap
   // statistics are deliberately excluded).
-  return getActiveOpportunities(supabase, { freshOnly: true });
+  //
+  // Multilingual gate (Decision 1 + Decision 4): translationSafe excludes
+  // non-English rows where translation has not yet succeeded. Fail-closed:
+  // a listing with translation_status = 'error' and source_language != 'en'
+  // is NEVER shown to users. Rows with source_language IS NULL (not yet
+  // processed) are also excluded — they become visible on the next sync
+  // cycle once the translation pass runs and marks them 'n/a' (English)
+  // or 'ok' (translated).
+  return getActiveOpportunities(supabase, { freshOnly: true, translationSafe: true });
 }
+
 
 export async function GET() {
   try {
