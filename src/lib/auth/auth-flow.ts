@@ -44,9 +44,15 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
  *      Unchanged from the AFC implementation.
  *
  *   4. requestPasswordReset(email)  — /forgot-password
- *        resetPasswordForEmail(email, { redirectTo: `${origin}/auth/confirm` })
- *      Emails a recovery link. /auth/confirm recognizes type=recovery and
- *      routes to /reset-password instead of /feed.
+ *        resetPasswordForEmail(email, { redirectTo: `${origin}/auth/confirm?next=recovery` })
+ *      Emails a recovery link. The `?next=recovery` marker helps
+ *      /auth/confirm for a query-string-based link shape, but the REAL
+ *      recovery link this project's Supabase Auth actually sends is
+ *      fragment-based (`#access_token=...&type=recovery`) — never seen by
+ *      any server route at all. The real fix is client-side:
+ *      src/components/auth/RecoveryRedirect.tsx (mounted globally in the
+ *      root layout) manually parses the fragment and routes to
+ *      /reset-password — see that file's header, confirmed live 2026-09-16.
  *
  *   5. setNewPassword(password)  — /reset-password, after the recovery link
  *      has already established a session via /auth/confirm
@@ -151,8 +157,17 @@ export async function requestPasswordReset(email: string): Promise<AuthFlowResul
   if (!supabase) return { success: false, error: 'Service not configured.' };
 
   const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
+  // `?next=recovery` is a marker WE control, not something read back from
+  // Supabase's own redirect params — kept as defense-in-depth for any
+  // query-string-based recovery link shape (Supabase preserves whatever
+  // query string is already on `redirectTo` and appends its own params on
+  // top, so this marker would survive that round trip). NOT the actual
+  // fix for the real bug found live: this project's real recovery
+  // redirect is fragment-based (`#access_token=...&type=recovery`), which
+  // no server-side marker can ever see — see
+  // src/components/auth/RecoveryRedirect.tsx for the real fix.
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: origin ? `${origin}/auth/confirm` : undefined,
+    redirectTo: origin ? `${origin}/auth/confirm?next=recovery` : undefined,
   });
 
   if (error) return { success: false, error: friendlySendError(error) };

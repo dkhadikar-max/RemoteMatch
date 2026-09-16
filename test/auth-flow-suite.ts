@@ -10,10 +10,19 @@
  *        token: code, type: 'email' }) -> session established
  *   /login: supabase.auth.signInWithPassword({ email, password }) -> session
  *     established directly, no code screen at all
- *   /forgot-password + /reset-password: resetPasswordForEmail() ->
- *     /auth/confirm (type=recovery) -> /reset-password -> updateUser({password})
- *     — the path for every pre-existing passwordless account (AFC-era) to
- *     get a password, and for anyone who forgets theirs.
+ *   /forgot-password + /reset-password: resetPasswordForEmail() -> a real
+ *     Supabase recovery redirect (fragment-based: `#access_token=...&type=
+ *     recovery`) -> RecoveryRedirect (root layout, client-side) parses the
+ *     fragment, establishes the session, routes to /reset-password ->
+ *     updateUser({password}) — the path for every pre-existing passwordless
+ *     account (AFC-era) to get a password, and for anyone who forgets
+ *     theirs. TWO rounds of live production testing (2026-09-16) were
+ *     needed: the first fix (?next=recovery marker on /auth/confirm,
+ *     kept as defense-in-depth) assumed a query-string-based PKCE
+ *     redirect; a second live test found the REAL redirect is fragment-
+ *     based, which no server route can ever see — the actual fix is
+ *     RecoveryRedirect.tsx, client-side, mounted globally. See auth-flow.ts
+ *     / auth/confirm/route.ts / RecoveryRedirect.tsx for the full history.
  *
  * Everything downstream of "a session exists" (onboarding boundary, routing
  * matrix, cross-user isolation, E1 no-fabricated-defaults) is UNCHANGED by
@@ -97,6 +106,10 @@ async function run() {
     'requestPasswordReset() calls resetPasswordForEmail() — the path for every pre-existing passwordless account',
   );
   assert(
+    /redirectTo:\s*origin\s*\?\s*`\$\{origin\}\/auth\/confirm\?next=recovery`/.test(authFlow),
+    'requestPasswordReset() embeds ?next=recovery in redirectTo itself — a secondary/defense-in-depth signal for any query-string-based recovery link shape, kept alongside the real fix (RecoveryRedirect, checked below)',
+  );
+  assert(
     /export async function setNewPassword/.test(authFlow) && /updateUser\(\{\s*password\s*\}\)/.test(authFlow),
     'setNewPassword() calls updateUser({ password })',
   );
@@ -113,6 +126,19 @@ async function run() {
   const resetPage = fs.readFileSync(path.resolve(__dirname, '../src/app/reset-password/page.tsx'), 'utf8');
   assert(/requestPasswordReset/.test(forgotPage), '/forgot-password calls requestPasswordReset()');
   assert(/setNewPassword/.test(resetPage) && /type="password"/.test(resetPage), '/reset-password renders a password field and calls setNewPassword()');
+
+  // THE REAL recovery fix (confirmed live 2026-09-16, second round): a
+  // server route can never see a URL fragment, so the actual detection
+  // has to be client-side, mounted globally (the fragment can land on any
+  // page — Supabase's Site URL fallback is the bare origin, not a route).
+  const recoveryRedirect = fs.readFileSync(path.resolve(__dirname, '../src/components/auth/RecoveryRedirect.tsx'), 'utf8');
+  assert(/window\.location\.hash/.test(recoveryRedirect), 'RecoveryRedirect manually parses window.location.hash — the SDK\'s own detectSessionInUrl does not auto-parse the implicit/fragment shape for a flowType:\'pkce\' client');
+  assert(/setSession\(\{\s*access_token/.test(recoveryRedirect), 'RecoveryRedirect calls setSession() directly with the tokens extracted from the fragment');
+  assert(/onAuthStateChange/.test(recoveryRedirect) && /PASSWORD_RECOVERY/.test(recoveryRedirect), 'RecoveryRedirect ALSO listens for the PASSWORD_RECOVERY auth event — defense-in-depth for a query-string (PKCE code) shape, should Supabase\'s template ever change');
+  assert(/reset-password/.test(recoveryRedirect), 'RecoveryRedirect redirects to /reset-password once a recovery session is detected');
+
+  const rootLayout = fs.readFileSync(path.resolve(__dirname, '../src/app/layout.tsx'), 'utf8');
+  assert(/<RecoveryRedirect\s*\/>/.test(rootLayout), 'RecoveryRedirect is mounted in the ROOT layout — present on every page, since the recovery fragment can land anywhere');
 
   const verifyCode = fs.readFileSync(path.resolve(__dirname, '../src/components/auth/VerifyCode.tsx'), 'utf8');
   assert(
@@ -201,8 +227,12 @@ async function run() {
     '/auth/confirm KEPT as a fallback — still handles token_hash + code');
   assert(!/verifyOtp\([^)]*email/.test(confirmRoute), '/auth/confirm never passes an email to verifyOtp');
   assert(
-    /type === 'recovery'[\s\S]*?\/reset-password/.test(confirmRoute),
-    "/auth/confirm routes a type='recovery' link to /reset-password instead of /feed or /onboarding",
+    /isRecoveryFlow\s*\|\|\s*type === 'recovery'[\s\S]*?\/reset-password/.test(confirmRoute),
+    "/auth/confirm routes to /reset-password (not /feed or /onboarding) on the ?next=recovery marker, with type='recovery' only as a secondary check",
+  );
+  assert(
+    /searchParams\.get\('next'\)\s*===\s*'recovery'/.test(confirmRoute),
+    "/auth/confirm reads its OWN ?next=recovery marker rather than depending solely on Supabase's own type param",
   );
 
   // anonymous session rejected regardless of infra
