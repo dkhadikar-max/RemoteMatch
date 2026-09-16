@@ -98,6 +98,26 @@ const jsonLdWebSite = {
   },
 };
 
+/**
+ * Deliberately UNCHANGED for the admin console — no headers()/host check
+ * here. Reading the request host in the ROOT layout would force Next.js to
+ * treat the ENTIRE app as dynamically rendered (headers() is a dynamic API,
+ * and the root layout wraps every route), silently costing every
+ * currently-static consumer page (guide, remote-jobs/[slug], etc.) its
+ * static generation — a real regression to the public app, not an
+ * acceptable price for admin chrome. Host-based chrome is instead handled
+ * WITHOUT any server-side host check at the root:
+ *   - Navbar (src/components/navigation/navbar.tsx) is already a client
+ *     component; it hides itself client-side on the admin host via the
+ *     same isAdminHost() helper middleware uses — zero effect on this
+ *     file's or the consumer app's static-ness.
+ *   - src/app/admin/layout.tsx (a NESTED, /admin/**-only layout) exports
+ *     its own static `metadata` (title, noindex) that Next.js merges over
+ *     this root's template for every admin page — no dynamic API needed,
+ *     since that segment only ever serves /admin/** regardless of host.
+ * Route-level admin/consumer separation is enforced by middleware.ts, not
+ * this file.
+ */
 export default function RootLayout({
   children,
 }: {

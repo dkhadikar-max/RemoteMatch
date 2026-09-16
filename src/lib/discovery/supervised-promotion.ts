@@ -154,3 +154,41 @@ export async function promoteCompanyToAllowlist(
     return { promoted: false, error: (err as Error).message };
   }
 }
+
+export interface RejectionResult {
+  rejected: boolean;
+  error?: string;
+}
+
+/**
+ * Rejects a discovered company — sets `pipeline_stage='rejected'` with a
+ * human-supplied reason. Added for the admin console (admin.remotematch.
+ * online) alongside promoteCompanyToAllowlist(), NOT a modification of it —
+ * that function is untouched above. Deliberately as small/symmetrical as
+ * the promotion path: no allowlist_employers/supply_sources writes, no
+ * ATS-board validation, since rejection has no downstream registry effect
+ * to get wrong.
+ */
+export async function rejectDiscoveredCompany(
+  companyId: string,
+  reason: string
+): Promise<RejectionResult> {
+  const admin = getSupabaseAdminClient();
+  if (!admin) {
+    return { rejected: false, error: 'supabase_admin_not_configured' };
+  }
+
+  const { error } = await admin
+    .from('supply_discovered_companies')
+    .update({
+      pipeline_stage: 'rejected',
+      rejection_reason: reason,
+      last_probed_at: new Date().toISOString(),
+    })
+    .eq('id', companyId);
+
+  if (error) {
+    return { rejected: false, error: error.message };
+  }
+  return { rejected: true };
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getJobById, isJobPermanentlyRemoved } from '@/lib/seo/data';
 import { isAccountVerified } from '@/lib/auth/get-authenticated-user';
+import { isAdminHost } from '@/lib/auth/admin-host';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -18,12 +19,31 @@ const isSupabaseConfigured = Boolean(
 const ONBOARDING_PREFIXES = ['/onboarding'];
 const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings'];
 
+// Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
+// Static assets are covered separately by the matcher below, not listed here.
+const ADMIN_PREFIXES = ['/admin', '/api/admin'];
+const ADMIN_LOGIN_PATH = '/admin/login';
+
 function matchesAny(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const onAdminHost = isAdminHost(request.headers.get('host'));
+  const inAdmin = matchesAny(pathname, ADMIN_PREFIXES);
+
+  // --- Host separation (checked first, before any other routing) ---
+  // The admin host serves ONLY the admin surface — everything else (the
+  // entire consumer app) is unreachable there. The consumer host serves
+  // everything EXCEPT the admin surface — defense in depth, so /admin/** is
+  // unreachable on the public domain even if someone guesses a path there.
+  if (onAdminHost && !inAdmin) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+  if (!onAdminHost && inAdmin) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
 
   // --- Frozen SEO behavior: unchanged from the pre-remediation baseline ---
   if (pathname.startsWith('/remote-jobs/view/')) {
@@ -92,6 +112,38 @@ export async function middleware(request: NextRequest) {
       }
       if (inOnboarding && onboarded) {
         return NextResponse.redirect(new URL('/feed', request.url));
+      }
+    }
+
+    // --- Admin-host gate (UX only — getAuthenticatedAdmin() inside every
+    //     /api/admin/** route is the real enforcement, exactly the same
+    //     relationship the onboarding gate above has to complete_onboarding().
+    //     Never trust this branch as the security boundary.)
+    //
+    //     Scoped to PAGE routes only (/admin/**, never /api/admin/**) — a
+    //     redirect response is wrong UX for a fetch() caller expecting
+    //     JSON, matching how PRODUCT_PREFIXES above never gates API routes
+    //     either. Every /api/admin/** route enforces its own auth via
+    //     getAuthenticatedAdmin() -> authErrorResponse(), which returns a
+    //     proper 401/403 JSON body instead. ---
+    if (onAdminHost && pathname.startsWith('/admin') && pathname !== ADMIN_LOGIN_PATH) {
+      if (!verified) {
+        return NextResponse.redirect(new URL(ADMIN_LOGIN_PATH, request.url));
+      }
+      let isActiveAdmin = false;
+      try {
+        const { data: adminRow } = await supabase
+          .from('admin_users')
+          .select('id')
+          .eq('id', userId)
+          .is('revoked_at', null)
+          .maybeSingle();
+        isActiveAdmin = Boolean(adminRow);
+      } catch {
+        isActiveAdmin = false;
+      }
+      if (!isActiveAdmin) {
+        return NextResponse.redirect(new URL(`${ADMIN_LOGIN_PATH}?forbidden=1`, request.url));
       }
     }
   }

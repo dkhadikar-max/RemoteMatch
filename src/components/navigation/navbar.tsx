@@ -9,6 +9,7 @@ import {
   ENTITLEMENT_CHANGED_EVENT,
   type ServerEntitlement,
 } from '@/lib/entitlement/client';
+import { isAdminHost } from '@/lib/auth/admin-host';
 
 /** The Supabase auth cookie is NOT httpOnly, so its absence is a reliable
  *  "definitely no session" signal — lets the navbar skip a guaranteed-401
@@ -97,6 +98,24 @@ export function Navbar() {
     const ch = email ? email.match(/[a-z0-9]/i)?.[0] : undefined;
     return (ch ?? '?').toUpperCase();
   })();
+
+  // Admin console (admin.remotematch.online) never shows the consumer nav —
+  // its own layout (src/app/admin/layout.tsx) renders a sidebar instead.
+  // Checked client-side (window.location.host) rather than via a server
+  // host-check in the shared root layout, deliberately: reading headers()
+  // there would force the ENTIRE app into dynamic rendering, costing every
+  // currently-static consumer page its static generation just to support
+  // admin chrome. Called AFTER every hook above (never before) so hook
+  // order stays identical between server and client renders — this only
+  // ever changes what JSX is RETURNED, never how many hooks run. Cost of
+  // this approach: on the admin host specifically, the consumer nav is
+  // present in the initial server-rendered HTML and disappears once React
+  // hydrates and re-evaluates this check — a brief, cosmetic-only flash,
+  // acceptable for a low-traffic internal tool, never occurring on the
+  // consumer host (this check is always false there).
+  if (typeof window !== 'undefined' && isAdminHost(window.location.host)) {
+    return null;
+  }
 
   return (
     <>
