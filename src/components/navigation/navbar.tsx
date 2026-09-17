@@ -54,6 +54,21 @@ export function Navbar() {
   const [ent, setEnt] = useState<ServerEntitlement | null>(null);
   const sessionPossible = !isLanding && !isAuthPage;
 
+  // Admin-host detection deferred to an effect (not evaluated directly in the
+  // render body) so the CLIENT'S FIRST render matches the SERVER'S: `window`
+  // exists during hydration too, not just after mount, so checking it inline
+  // here made hydration itself mismatch (server always renders the navbar,
+  // client's first render already returned null) — React doesn't reliably
+  // clean up that class of mismatch (a whole subtree present vs. absent) and
+  // was leaving the server-rendered header permanently orphaned in the DOM
+  // on admin.remotematch.online instead of removing it. Starting both
+  // renders at `false` and flipping via a post-mount effect turns the
+  // host-based hide into an ordinary re-render, which React handles cleanly.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    setIsAdmin(isAdminHost(window.location.host));
+  }, []);
+
   const refresh = useCallback(async () => {
     if (!sessionPossible || !hasAuthCookie()) {
       setEnt(null);
@@ -101,19 +116,18 @@ export function Navbar() {
 
   // Admin console (admin.remotematch.online) never shows the consumer nav —
   // its own layout (src/app/admin/layout.tsx) renders a sidebar instead.
-  // Checked client-side (window.location.host) rather than via a server
-  // host-check in the shared root layout, deliberately: reading headers()
-  // there would force the ENTIRE app into dynamic rendering, costing every
-  // currently-static consumer page its static generation just to support
-  // admin chrome. Called AFTER every hook above (never before) so hook
-  // order stays identical between server and client renders — this only
-  // ever changes what JSX is RETURNED, never how many hooks run. Cost of
-  // this approach: on the admin host specifically, the consumer nav is
-  // present in the initial server-rendered HTML and disappears once React
-  // hydrates and re-evaluates this check — a brief, cosmetic-only flash,
-  // acceptable for a low-traffic internal tool, never occurring on the
-  // consumer host (this check is always false there).
-  if (typeof window !== 'undefined' && isAdminHost(window.location.host)) {
+  // Checked client-side (see the isAdmin effect above) rather than via a
+  // server host-check in the shared root layout, deliberately: reading
+  // headers() there would force the ENTIRE app into dynamic rendering,
+  // costing every currently-static consumer page its static generation just
+  // to support admin chrome. Called AFTER every hook above (never before)
+  // so hook order stays identical between server and client renders — this
+  // only ever changes what JSX is RETURNED, never how many hooks run. Cost
+  // of this approach: on the admin host specifically, the consumer nav is
+  // present in the initial server-rendered HTML and briefly visible until
+  // the post-mount effect flips `isAdmin` — never occurring on the consumer
+  // host (isAdmin stays false there for the page's whole lifetime).
+  if (isAdmin) {
     return null;
   }
 

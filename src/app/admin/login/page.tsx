@@ -81,6 +81,21 @@ function AdminLoginContent() {
 
             {error && <p className="text-xs font-medium text-[var(--danger)]">{error}</p>}
 
+            {/* Absolute cross-host link, deliberately not a relative <Link>:
+                account recovery is a consumer-app flow (same Supabase Auth
+                identity system, no separate admin recovery flow exists), and
+                a relative /forgot-password would 404 here — middleware.ts
+                blocks every path outside /admin/** and /api/admin/** on this
+                host. */}
+            <p className="text-right text-[11px]">
+              <a
+                href="https://remotematch.online/forgot-password"
+                className="font-semibold text-[var(--red)] hover:underline"
+              >
+                Forgot password?
+              </a>
+            </p>
+
             <button
               type="submit"
               disabled={pending || !email || !password}
