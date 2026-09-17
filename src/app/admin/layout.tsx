@@ -13,7 +13,10 @@ import type { Metadata } from 'next';
  * route group) never gets a sidebar or an auth requirement to render.
  */
 export const metadata: Metadata = {
-  title: 'RemoteMatch Admin',
+  // `absolute` bypasses the root layout's '%s | RemoteMatch' title template
+  // (which would otherwise render "RemoteMatch Admin | RemoteMatch") — this
+  // is a distinct application, not a templated page of the consumer site.
+  title: { absolute: 'RemoteMatch Admin' },
   robots: { index: false, follow: false },
 };
 
