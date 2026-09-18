@@ -25,7 +25,11 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: 'Remote Jobs Directory — Curated Roles Matched to Your Experience | RemoteMatch',
+  // `absolute` bypasses the root layout's '%s | RemoteMatch' title template
+  // (which would otherwise render "...RemoteMatch | RemoteMatch") — same
+  // fix as src/app/admin/layout.tsx, same reason: this title already ends
+  // with its own "| RemoteMatch" suffix.
+  title: { absolute: 'Remote Jobs Directory — Curated Roles Matched to Your Experience | RemoteMatch' },
   description:
     'Browse verified remote software engineering, product, design, and data jobs. Transparent salaries, verified remote scope, and match insights before you apply.',
   alternates: {

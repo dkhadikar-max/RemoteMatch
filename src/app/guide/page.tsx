@@ -5,7 +5,11 @@ import { ArrowRight, Clock, Calendar, BookOpen, Filter } from 'lucide-react';
 import { SEO_GUIDE_ARTICLES, SEO_CATEGORIES, buildBreadcrumbSchema } from '@/lib/seo/data';
 
 export const metadata: Metadata = {
-  title: 'Remote Job Search Guides — Tactical Advice for Remote Professionals | RemoteMatch',
+  // `absolute` bypasses the root layout's '%s | RemoteMatch' title template
+  // (which would otherwise render "...RemoteMatch | RemoteMatch") — same
+  // fix as src/app/admin/layout.tsx, same reason: this title already ends
+  // with its own "| RemoteMatch" suffix.
+  title: { absolute: 'Remote Job Search Guides — Tactical Advice for Remote Professionals | RemoteMatch' },
   description:
     'Tactical guides on remote job matching, evaluating requirements, crafting tailored proposals, navigating timezones, and negotiating remote salaries.',
   alternates: {

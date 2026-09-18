@@ -48,6 +48,12 @@ export function Navbar() {
   // /remote-jobs: an anonymous landing-page visitor doesn't have real
   // Applications/Profile state for this bar to reflect anyway.
   const isLandingForMobileNav = isLanding;
+  // Same overlap class again, confirmed via screenshot on both /guide and
+  // /guide/[slug]: their long-form cards/article text run under the fixed
+  // bar's footprint the same way /remote-jobs and the landing page did, and
+  // a public guide reader doesn't have real Applications/Profile state for
+  // this bar to reflect either.
+  const isGuideDirectory = pathname?.startsWith('/guide') ?? false;
 
   // Server-authoritative entitlement. `null` until it resolves AND whenever
   // there is no session — the navbar never renders a fabricated quota/plan.
@@ -239,15 +245,21 @@ export function Navbar() {
           <div className="flex items-center gap-3">
             {isLanding ? (
               <>
+                {/* Hidden below sm: on a narrow viewport this pair wrapped
+                    onto multiple lines next to the logo (no responsive
+                    treatment here, unlike the center nav's `hidden md:flex`)
+                    — both CTAs are already duplicated prominently in the
+                    hero below, so the header keeps only the primary one on
+                    small screens. */}
                 <Link
                   href="/feed"
-                  className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
+                  className="hidden sm:inline-flex rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors shadow-sm"
                 >
                   Browse jobs
                 </Link>
                 <Link
                   href="/onboarding"
-                  className="soft-button primary text-xs !py-2 !px-4"
+                  className="soft-button primary text-xs !py-2 !px-4 whitespace-nowrap"
                 >
                   Find your matches →
                 </Link>
@@ -285,7 +297,7 @@ export function Navbar() {
           mobile (see isRemoteJobsDirectory above), and on the landing page
           where it overlaps marketing section headings while scrolling (see
           isLandingForMobileNav above). */}
-      {!isAuthPage && !isRemoteJobsDirectory && !isLandingForMobileNav && (
+      {!isAuthPage && !isRemoteJobsDirectory && !isLandingForMobileNav && !isGuideDirectory && (
       <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"

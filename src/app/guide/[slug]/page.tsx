@@ -21,7 +21,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!article) return {};
 
   return {
-    title: `${article.title} — Remote Job Guide | RemoteMatch`,
+    // `absolute` bypasses the root layout's '%s | RemoteMatch' title
+    // template — same fix as src/app/admin/layout.tsx and src/app/guide/
+    // page.tsx, same reason: this title already ends with its own
+    // "| RemoteMatch" suffix.
+    title: { absolute: `${article.title} — Remote Job Guide | RemoteMatch` },
     description: article.description,
     alternates: {
       canonical: `https://remotematch.com/guide/${article.slug}`,
