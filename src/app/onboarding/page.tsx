@@ -18,6 +18,7 @@ import {
 import { localStore } from '@/lib/db/mock-seed';
 import { parseResumeWithAI } from '@/lib/ai/resume';
 import { analyzeResumeWithAI } from '@/lib/ai/resume-intelligence';
+import { extractPdfText, PdfTextExtractionError } from '@/lib/resume/extract-pdf-text';
 import { ResumeIntelligenceDashboard } from '@/components/onboarding/resume-intelligence-dashboard';
 import { EmploymentType, ProfileStrengthAnalysis, AIUncertaintyItem } from '@/types/byn';
 import {
@@ -68,6 +69,9 @@ export default function OnboardingPage() {
   const [fullName, setFullName] = useState('');
   const [headline, setHeadline] = useState('');
   const [hasParsed, setHasParsed] = useState(false);
+  const [resumeFileName, setResumeFileName] = useState('');
+  const [isExtractingPdf, setIsExtractingPdf] = useState(false);
+  const [pdfExtractionError, setPdfExtractionError] = useState<string | null>(null);
 
   // Resume Intelligence Analysis State
   const [intelligenceAnalysis, setIntelligenceAnalysis] = useState<ProfileStrengthAnalysis | null>(null);
@@ -171,6 +175,26 @@ export default function OnboardingPage() {
     setIntelligenceAnalysis(analysis);
     setIsParsing(false);
     setStep(7); // Move to Intelligence Dashboard view
+  };
+
+  const handleResumeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file after a fix
+    if (!file) return;
+
+    setPdfExtractionError(null);
+    setIsExtractingPdf(true);
+    try {
+      const text = await extractPdfText(file);
+      setResumeText(text);
+      setResumeFileName(file.name);
+    } catch (err) {
+      setPdfExtractionError(
+        err instanceof PdfTextExtractionError ? err.message : 'Could not read this PDF. Please try again.',
+      );
+    } finally {
+      setIsExtractingPdf(false);
+    }
   };
 
   const handleResolveUncertainty = (
@@ -754,7 +778,39 @@ export default function OnboardingPage() {
                   </p>
                 </div>
 
-                {/* Paste Experience Area */}
+                {/* PDF Upload */}
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider block">
+                    Resume (PDF)
+                  </label>
+                  <label
+                    htmlFor="resume-pdf-upload"
+                    className="flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-[var(--line)] bg-[var(--surface-soft)] p-6 text-center transition-colors hover:border-[var(--red)]"
+                  >
+                    <UploadCloud className="size-5 text-[var(--muted)]" />
+                    <span className="text-xs font-medium text-[var(--ink)]">
+                      {isExtractingPdf
+                        ? 'Reading your resume...'
+                        : resumeFileName || 'Click to upload your resume PDF'}
+                    </span>
+                    <span className="text-[11px] text-[var(--muted)]">PDF files only</span>
+                    <input
+                      id="resume-pdf-upload"
+                      type="file"
+                      accept="application/pdf,.pdf"
+                      onChange={handleResumeFileChange}
+                      disabled={isExtractingPdf}
+                      className="sr-only"
+                    />
+                  </label>
+                  {pdfExtractionError && (
+                    <p className="text-xs font-medium text-[var(--danger)]">{pdfExtractionError}</p>
+                  )}
+                </div>
+
+                {/* Extracted text — auto-filled from the PDF, still editable so
+                    a bad extraction (odd formatting, a scanned page) can be
+                    fixed by hand rather than forcing a re-upload. */}
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider block">
                     Resume Content
@@ -762,7 +818,7 @@ export default function OnboardingPage() {
                   <textarea
                     value={resumeText}
                     onChange={(e) => setResumeText(e.target.value)}
-                    placeholder="Paste your resume, past roles, bullet points, tech stack, and achievements..."
+                    placeholder="Upload a PDF above, or type your resume, past roles, bullet points, tech stack, and achievements here..."
                     rows={8}
                     className="w-full rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 text-xs font-mono text-[var(--ink)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--red)] resize-none leading-relaxed"
                   />
