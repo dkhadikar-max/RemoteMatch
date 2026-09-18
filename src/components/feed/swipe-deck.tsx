@@ -8,6 +8,7 @@ import { SwipeControls } from './swipe-controls';
 import { JobDetailsModal } from './job-details-modal';
 import { CheckCircle2, Check, X, RotateCcw, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import { recordFunnelEventClient } from '@/lib/funnel/client';
 
 interface SwipeDeckProps {
   opportunities: CanonicalOpportunity[];
@@ -40,6 +41,17 @@ export function SwipeDeck({
 
   const currentOpp = deck[0];
   const nextOpp = deck[1];
+
+  // Funnel Instrumentation — fires once per distinct card becoming the
+  // front of the stack, including a card brought back by rewind (treated
+  // as a genuine second view, not suppressed — keeps this a simple id-watch
+  // with no extra dedup state). Never touches swipe/keyboard behavior
+  // (M-adjacent-2(b) stays parked, untouched by this addition).
+  useEffect(() => {
+    if (currentOpp) {
+      recordFunnelEventClient('job_viewed', { opportunity_id: currentOpp.id });
+    }
+  }, [currentOpp?.id]);
 
   // Motion values for front card drag & tilt
   const x = useMotionValue(0);

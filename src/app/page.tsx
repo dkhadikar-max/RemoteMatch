@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -8,6 +8,8 @@ import {
   CircleCheck,
   MapPin,
 } from 'lucide-react';
+import { recordFunnelEventClient } from '@/lib/funnel/client';
+import { getOrCreateAnonymousId } from '@/lib/funnel/anonymous-id';
 
 const PREVIEW_JOBS = [
   {
@@ -54,6 +56,18 @@ const PREVIEW_JOBS = [
 export default function LandingPage() {
   const [activeIdx, setActiveIdx] = useState(0);
   const current = PREVIEW_JOBS[activeIdx];
+
+  // Funnel Instrumentation — top of funnel. Fires on every mount, no
+  // dedup (a repeat visit is a real repeat landing_viewed row; reporting-
+  // time dedup, if ever wanted, belongs to the future reporting script,
+  // not this wiring). Skipped entirely if no anonymous id is available
+  // (private browsing / blocked storage) rather than fabricating one.
+  useEffect(() => {
+    const anonymousId = getOrCreateAnonymousId();
+    if (anonymousId) {
+      recordFunnelEventClient('landing_viewed', { anonymous_id: anonymousId });
+    }
+  }, []);
 
   return (
     <main className="page">

@@ -11,6 +11,7 @@ import { FilterModal } from '@/components/feed/filter-modal';
 import { UpgradeModal, UpgradeReason } from '@/components/premium/upgrade-modal';
 import { applyFilters } from '@/lib/feed/apply-filters';
 import { SlidersHorizontal, Check } from 'lucide-react';
+import { recordFunnelEventClient } from '@/lib/funnel/client';
 
 export default function FeedPage() {
   const [opportunities, setOpportunities] = useState<CanonicalOpportunity[]>([]);
@@ -113,6 +114,11 @@ export default function FeedPage() {
       await hydrateLocalProfileFromServer();
       await refreshOpportunities();
     })();
+    // Funnel Instrumentation — fires once per mount, independent of
+    // whether hydration/opportunity-loading above succeeds; a page view is
+    // a page view regardless of data-load outcome. Fire-and-forget, never
+    // blocks the real feed load.
+    recordFunnelEventClient('feed_viewed');
   }, []);
 
   const filteredOpportunities = useMemo(() => {

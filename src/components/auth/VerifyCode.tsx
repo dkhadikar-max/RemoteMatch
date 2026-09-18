@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { KeyRound, Send, CheckCircle2 } from 'lucide-react';
 import { verifyEmailOtp, resendCode } from '@/lib/auth/auth-flow';
+import { recordFunnelEventClient } from '@/lib/funnel/client';
+import { getOrCreateAnonymousId } from '@/lib/funnel/anonymous-id';
 
 function maskEmail(email: string): string {
   const [user, domain] = email.split('@');
@@ -36,6 +38,17 @@ export function VerifyCode({
     setMessage(null);
     const result = await verifyEmailOtp(email, code);
     if (result.success) {
+      // Funnel Instrumentation — bridges the anonymous pre-signup id (if
+      // landing_viewed ever ran for this browser) to the just-created,
+      // now-verified account. Awaited so it completes before the hard
+      // navigation below can cancel it in flight — but
+      // recordFunnelEventClient() never throws, so a funnel-recording
+      // failure (or no anonymous id at all) can never block or fail the
+      // real sign-in this event is only observing.
+      const anonymousId = getOrCreateAnonymousId();
+      if (anonymousId) {
+        await recordFunnelEventClient('signup_attributed', { anonymous_id: anonymousId });
+      }
       // Full-document navigation, NOT router.push: verifyOtp has written the
       // auth cookie synchronously by the time it resolves, and a top-level
       // request is guaranteed to carry it — so middleware sees the verified
