@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LoadingState, ErrorState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 export default function OpportunityDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +22,7 @@ export default function OpportunityDetailPage() {
     setError(null);
     try {
       const res = await fetch(`/api/admin/opportunities/${id}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRecord(data.opportunity);
     } catch (e) {

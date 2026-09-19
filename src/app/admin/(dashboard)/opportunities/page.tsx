@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/DataTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface OpportunityRow {
   id: string;
@@ -41,7 +42,7 @@ export default function OpportunitiesPage() {
     if (status) params.set('status', status);
     try {
       const res = await fetch(`/api/admin/opportunities?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.opportunities);
       setTotal(data.total);

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { StatCard } from '@/components/admin/StatCard';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface ErrorRow {
   id: string;
@@ -28,7 +29,7 @@ export default function TranslationPage() {
     setError(null);
     try {
       const res = await fetch('/api/admin/translation');
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       setData(await res.json());
     } catch (e) {
       setError((e as Error).message);

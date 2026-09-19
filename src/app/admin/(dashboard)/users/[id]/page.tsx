@@ -7,6 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 import { StatCard } from '@/components/admin/StatCard';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface UserDetail {
   user: {
@@ -31,7 +32,7 @@ export default function UserDetailPage() {
     setError(null);
     try {
       const res = await fetch(`/api/admin/users/${id}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       setData(await res.json());
     } catch (e) {
       setError((e as Error).message);

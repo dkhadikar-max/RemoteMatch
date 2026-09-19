@@ -3,6 +3,8 @@ import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { recordAdminAction } from '@/lib/admin/audit-log';
+import { must } from '@/lib/supabase/query-helpers';
+import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** GET — list every admin, active and revoked (for a full audit trail). */
 export async function GET(req: NextRequest) {
@@ -55,7 +57,12 @@ export async function POST(req: NextRequest) {
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data: targetProfile } = await db.from('profiles').select('id, email').ilike('email', email).maybeSingle();
+  let targetProfile: { id: string; email: string } | null;
+  try {
+    targetProfile = must(await db.from('profiles').select('id, email').ilike('email', email).maybeSingle(), 'profiles').data;
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
   if (!targetProfile) {
     return NextResponse.json({ error: 'No RemoteMatch account exists with that email.' }, { status: 404 });
   }

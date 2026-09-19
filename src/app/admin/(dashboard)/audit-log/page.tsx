@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/DataTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface AuditEntry {
   id: number;
@@ -39,7 +40,7 @@ export default function AuditLogPage() {
     if (action) params.set('action', action);
     try {
       const res = await fetch(`/api/admin/audit-log?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.entries);
       setTotal(data.total);

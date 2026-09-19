@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { fetchAllRows } from '@/lib/supabase/query-helpers';
+import { queryErrorResponse } from '@/lib/admin/sections';
 
 const PAGE_SIZE = 30;
 
@@ -43,18 +45,42 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const ids = (profiles ?? []).map((p) => p.id);
-  const [swipeCounts, appCounts] = await Promise.all([
-    ids.length ? admin.from('swipes').select('profile_id').in('profile_id', ids) : Promise.resolve({ data: [] as { profile_id: string }[] }),
-    ids.length ? admin.from('applications').select('profile_id').in('profile_id', ids) : Promise.resolve({ data: [] as { profile_id: string }[] }),
-  ]);
+
+  // Complete per-user counts: paginated (a page of users can own more than
+  // the 1,000 rows PostgREST returns from a single un-ranged select), and a
+  // failed lookup is an explicit 500 — never a silent 0 swipes / 0 applications.
+  const readOwnedRows = (table: 'swipes' | 'applications') =>
+    ids.length
+      ? fetchAllRows<{ id: string; profile_id: string }>(
+          (afterId, pageSize) => {
+            let q = admin
+              .from(table)
+              .select('id, profile_id')
+              .in('profile_id', ids)
+              .order('id', { ascending: true })
+              .limit(pageSize);
+            if (afterId) q = q.gt('id', afterId);
+            return q;
+          },
+          { label: table }
+        )
+      : Promise.resolve([] as { id: string; profile_id: string }[]);
+
+  let swipeRows: { id: string; profile_id: string }[];
+  let appRows: { id: string; profile_id: string }[];
+  try {
+    [swipeRows, appRows] = await Promise.all([readOwnedRows('swipes'), readOwnedRows('applications')]);
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 
   const countByProfile = (rows: { profile_id: string }[]) => {
     const m: Record<string, number> = {};
     for (const r of rows) m[r.profile_id] = (m[r.profile_id] ?? 0) + 1;
     return m;
   };
-  const swipeMap = countByProfile(swipeCounts.data ?? []);
-  const appMap = countByProfile(appCounts.data ?? []);
+  const swipeMap = countByProfile(swipeRows);
+  const appMap = countByProfile(appRows);
 
   const users = (profiles ?? []).map((p) => ({
     ...p,

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/DataTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface UserRow {
   id: string;
@@ -33,7 +34,7 @@ export default function UsersPage() {
     if (planTier) params.set('planTier', planTier);
     try {
       const res = await fetch(`/api/admin/users?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.users);
       setTotal(data.total);

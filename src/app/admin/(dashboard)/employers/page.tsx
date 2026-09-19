@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/DataTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface EmployerRow {
   id: string;
@@ -35,7 +36,7 @@ export default function EmployersPage() {
     if (reviewStatus) params.set('reviewStatus', reviewStatus);
     try {
       const res = await fetch(`/api/admin/employers?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.employers);
       setTotal(data.total);

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LoadingState, ErrorState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface AdminRow {
   id: string;
@@ -27,7 +28,7 @@ export default function SettingsPage() {
     setError(null);
     try {
       const res = await fetch('/api/admin/admins');
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setAdmins(data.admins);
     } catch (e) {

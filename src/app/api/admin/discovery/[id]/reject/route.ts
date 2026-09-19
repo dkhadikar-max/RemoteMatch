@@ -4,6 +4,8 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { rejectDiscoveredCompany } from '@/lib/discovery/supervised-promotion';
 import { recordAdminAction } from '@/lib/admin/audit-log';
+import { must } from '@/lib/supabase/query-helpers';
+import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** POST /api/admin/discovery/[id]/reject — requires a real reason, same
  *  "explicit confirmation server-side, not just client-hidden" requirement
@@ -32,11 +34,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data: before } = await db
-    .from('supply_discovered_companies')
-    .select('pipeline_stage')
-    .eq('id', params.id)
-    .maybeSingle();
+  // A failed lookup (e.g. the staging table is absent) is a 500, not "not found".
+  let before: { pipeline_stage: string } | null;
+  try {
+    before = must(
+      await db.from('supply_discovered_companies').select('pipeline_stage').eq('id', params.id).maybeSingle(),
+      'supply_discovered_companies'
+    ).data;
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 
   if (!before) {
     return NextResponse.json({ error: 'Discovered company not found.' }, { status: 404 });

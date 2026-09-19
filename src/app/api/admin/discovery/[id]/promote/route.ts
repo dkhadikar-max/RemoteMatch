@@ -4,6 +4,8 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { promoteCompanyToAllowlist } from '@/lib/discovery/supervised-promotion';
 import { recordAdminAction } from '@/lib/admin/audit-log';
+import { must } from '@/lib/supabase/query-helpers';
+import { queryErrorResponse } from '@/lib/admin/sections';
 import type { DiscoveredCompany } from '@/types/discovery';
 
 /**
@@ -29,13 +31,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data: row, error: fetchErr } = await db
-    .from('supply_discovered_companies')
-    .select('*')
-    .eq('id', params.id)
-    .single();
-
-  if (fetchErr || !row) {
+  // 404 only when the lookup succeeded and matched nothing. A failed lookup
+  // (e.g. the staging table does not exist because migration 026 is not
+  // applied) is a 500 that says so — it previously read "not found".
+  let row;
+  try {
+    row = must(
+      await db.from('supply_discovered_companies').select('*').eq('id', params.id).maybeSingle(),
+      'supply_discovered_companies'
+    ).data;
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
+  if (!row) {
     return NextResponse.json({ error: 'Discovered company not found.' }, { status: 404 });
   }
 

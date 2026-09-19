@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/DataTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface SourceRow {
   id: string;
@@ -37,7 +38,7 @@ export default function SourcesPage() {
     if (platform) params.set('platform', platform);
     try {
       const res = await fetch(`/api/admin/sources?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.sources);
       setTotal(data.total);

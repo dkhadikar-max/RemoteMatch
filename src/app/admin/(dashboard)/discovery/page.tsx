@@ -5,6 +5,7 @@ import { DataTable, Pagination, type DataTableColumn } from '@/components/admin/
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { LoadingState, ErrorState, EmptyState } from '@/components/admin/States';
+import { describeFailure } from '@/components/admin/api';
 
 interface DiscoveredCompanyRow {
   id: string;
@@ -61,7 +62,7 @@ export default function DiscoveryPage() {
     if (minConfidence) params.set('minConfidence', minConfidence);
     try {
       const res = await fetch(`/api/admin/discovery?${params}`);
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
+      if (!res.ok) throw new Error(await describeFailure(res));
       const data = await res.json();
       setRows(data.candidates);
       setTotal(data.total);

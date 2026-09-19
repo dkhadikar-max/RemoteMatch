@@ -3,6 +3,8 @@ import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { recordAdminAction } from '@/lib/admin/audit-log';
+import { must } from '@/lib/supabase/query-helpers';
+import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** GET — the full opportunity record, for safe inspection. */
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -17,10 +19,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const admin = getSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data, error } = await admin.from('opportunities').select('*').eq('id', params.id).single();
-  if (error || !data) return NextResponse.json({ error: 'Opportunity not found.' }, { status: 404 });
-
-  return NextResponse.json({ opportunity: data });
+  // 404 only when the lookup SUCCEEDED and matched nothing — a failed query
+  // is a 500, not "not found".
+  try {
+    const res = must(await admin.from('opportunities').select('*').eq('id', params.id).maybeSingle(), 'opportunities');
+    if (!res.data) return NextResponse.json({ error: 'Opportunity not found.' }, { status: 404 });
+    return NextResponse.json({ opportunity: res.data });
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 }
 
 /**
@@ -58,7 +65,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data: before } = await db.from('opportunities').select('status, is_permanently_removed').eq('id', params.id).maybeSingle();
+  let before: { status: string; is_permanently_removed: boolean | null } | null;
+  try {
+    before = must(
+      await db.from('opportunities').select('status, is_permanently_removed').eq('id', params.id).maybeSingle(),
+      'opportunities'
+    ).data;
+  } catch (err) {
+    return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
   if (!before) return NextResponse.json({ error: 'Opportunity not found.' }, { status: 404 });
 
   const { error: updateErr } = await db
