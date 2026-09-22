@@ -46,6 +46,8 @@ import {
   createNormalizedJobKey,
 } from './pipeline';
 import { passesFreshnessGate } from './freshness-gate';
+import type { LifecycleReport, SyncMode } from './catalog-sync-plan';
+import { planCatalogSyncReadOnly, runCorrectedCatalogSync, type RollbackEntry } from './catalog-sync-apply';
 
 /**
  * Supply Discovery gate C3: the 3 new ATS sources, gated for the fresh
@@ -96,13 +98,54 @@ export interface SyncSummary {
   expiredByAbsence: number;
   draftCount: number;
   explicitlyExpiredCount: number;
+  /** Item 1b: present only when CATALOG_SYNC_MODE is shadow/observe/full. */
+  lifecycle?: LifecycleReport;
+  /** shadow mode only: the read-only plan failed (the legacy sync still ran). */
+  shadowPlanError?: string;
+}
+
+/**
+ * Phase A Item 1b (docs/phase-a-item-1b-spec.md). Options beyond the two the
+ * legacy path has always accepted are only read by the shadow/observe/full
+ * paths in catalog-sync-apply.ts.
+ */
+export interface SyncOptions {
+  absenceScanSourceIdPrefix?: string;
+  allowLiveProviderFetch?: boolean;
+  /** Overrides CATALOG_SYNC_MODE. */
+  mode?: SyncMode;
+  /** Run budget for the deadline-bounded phase (link verification). */
+  deadlineMs?: number;
+  /** One-shot release of the blast-radius limiter. Overrides CATALOG_SYNC_RELEASE_LIMITER. */
+  releaseExpiryLimiter?: boolean;
+  /** Days an unobservable windowed-source row may go unseen before it is retired; null disables. */
+  retirementDays?: number | null;
+  /** Receives every status-change id list before it is written (default: console log). */
+  rollbackSink?: (entry: RollbackEntry) => void | Promise<void>;
+  /** Item 1b v2.1 rule L evidence: bookkeeping (needs fetchStartedAt) | backstop-only | off.
+   *  Default: bookkeeping when the fetch result carries fetchStartedAt, else off. */
+  employerScopeEvidence?: 'bookkeeping' | 'backstop-only' | 'off';
+}
+
+/** legacy (default) | shadow | observe | full. Anything unrecognised is legacy. */
+export function resolveSyncMode(explicit?: string): SyncMode {
+  const raw = (explicit ?? process.env.CATALOG_SYNC_MODE ?? 'legacy').trim().toLowerCase();
+  if (raw === 'shadow' || raw === 'observe' || raw === 'full' || raw === 'legacy') return raw;
+  console.warn(`[catalog-sync] unrecognised CATALOG_SYNC_MODE "${raw}" — using "legacy".`);
+  return 'legacy';
 }
 
 function isWeakDescription(description: string): boolean {
   return (description || '').trim().length < WEAK_DESCRIPTION_MIN_LENGTH;
 }
 
-export type ProviderFetchResult = { outcomes: ProviderRunOutcome[]; successfulRaw: Map<string, RawJobPayload[]> };
+export type ProviderFetchResult = {
+  outcomes: ProviderRunOutcome[];
+  successfulRaw: Map<string, RawJobPayload[]>;
+  /** Item 1b v2.1 rule L: when the real provider fetch STARTED (ms). Set only by the dispatcher for real
+   *  fetches; its presence turns on the employer-scope bookkeeping evidence. Injected results omit it. */
+  fetchStartedAt?: number;
+};
 
 async function runProviderFetches(): Promise<ProviderFetchResult> {
   // Curated retired from active supply (Supply Discovery gate C3, per
@@ -148,7 +191,63 @@ async function runProviderFetches(): Promise<ProviderFetchResult> {
 }
 
 /**
- * The main sync entrypoint. Fetches all providers, upserts jobs from
+ * The sync entrypoint. Chooses a lifecycle implementation by CATALOG_SYNC_MODE
+ * (default `legacy`, so deploying this is a no-op until the variable is set):
+ *
+ *   legacy  — the original path below, byte-for-byte. Known defects: reads
+ *             capped at 1,000 rows, swallowed write errors, absence treated
+ *             as removal even for windowed feeds. Kept until `full` is proven.
+ *   shadow  — legacy runs and writes exactly as before; additionally a
+ *             read-only plan of what the corrected path WOULD do is attached
+ *             as `summary.lifecycle`. Adds reads, never writes.
+ *   observe — corrected path (complete reads, batched checked writes,
+ *             evidence-bounded absence) with every expiry withheld.
+ *   full    — corrected path including expiry, behind the blast-radius limiter.
+ */
+export async function syncOpportunitiesToCatalog(
+  fetchResult?: ProviderFetchResult,
+  options?: SyncOptions
+): Promise<SyncSummary> {
+  const mode = resolveSyncMode(options?.mode);
+  if (mode === 'legacy') return syncOpportunitiesToCatalogLegacy(fetchResult, options);
+
+  if (!fetchResult && !options?.allowLiveProviderFetch) {
+    throw new Error(
+      'syncOpportunitiesToCatalog() was called with no injected fetchResult, which means a REAL fetch ' +
+        'across every registered provider is about to run. This requires the caller to explicitly pass ' +
+        '{ allowLiveProviderFetch: true } — see the guard in the legacy path for why this is a code-level ' +
+        'parameter and not an environment variable.'
+    );
+  }
+  // Fetch once so shadow's plan and legacy's writes see identical data. The start time is taken BEFORE the
+  // providers run: employer bookkeeping stamped at or after it proves that employer was fetched this run.
+  let fetched: ProviderFetchResult;
+  if (fetchResult) fetched = fetchResult;
+  else {
+    const fetchStartedAt = Date.now();
+    fetched = { ...(await runProviderFetches()), fetchStartedAt };
+  }
+
+  if (mode === 'shadow') {
+    let lifecycle: LifecycleReport | undefined;
+    let shadowPlanError: string | undefined;
+    try {
+      // Planned FIRST, against the pre-write database state.
+      lifecycle = await planCatalogSyncReadOnly(fetched, options);
+    } catch (err) {
+      shadowPlanError = (err as Error).message; // must never stop the real sync
+    }
+    const summary = await syncOpportunitiesToCatalogLegacy(fetched, options);
+    if (lifecycle) summary.lifecycle = lifecycle;
+    if (shadowPlanError) summary.shadowPlanError = shadowPlanError;
+    return summary;
+  }
+
+  return runCorrectedCatalogSync(fetched, options, mode);
+}
+
+/**
+ * The legacy sync. Fetches all providers, upserts jobs from
  * providers that succeeded, and applies feed-absence accounting scoped only
  * to those same successful providers.
  *
@@ -186,7 +285,7 @@ async function runProviderFetches(): Promise<ProviderFetchResult> {
  * of an accidental side effect of anyone else running that suite. Every
  * OTHER test suite passes `fetchResult` and never reaches this check at all.
  */
-export async function syncOpportunitiesToCatalog(
+async function syncOpportunitiesToCatalogLegacy(
   fetchResult?: ProviderFetchResult,
   options?: { absenceScanSourceIdPrefix?: string; allowLiveProviderFetch?: boolean }
 ): Promise<SyncSummary> {
