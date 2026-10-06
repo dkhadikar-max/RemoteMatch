@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
   getJobById,
-  getActiveJobs,
+  getRelatedJobs,
   isJobIndexable,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
@@ -91,8 +91,9 @@ export default async function PublicJobDetailPage({ params }: Props) {
   // build). This read needs no session state at all, so the public client
   // is also the more correct choice on its own merits, not just a workaround.
   const supabase = createSupabasePublicClient();
-  const activeJobs = supabase ? await getActiveJobs(supabase) : [];
-  const relatedJobs = activeJobs.filter((j) => j.sourceId !== job.sourceId).slice(0, 3);
+  // Bounded read: 3 rows from the database, NOT the whole catalog filtered in
+  // memory (that cost ~21 MB of Supabase egress per page view).
+  const relatedJobs = supabase ? await getRelatedJobs(supabase, job.sourceId, 3) : [];
 
   // Match relevant category for breadcrumb trail
   const matchedCategory = SEO_CATEGORIES.find((cat) => {

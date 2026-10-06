@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CanonicalOpportunity } from '@/types/byn';
-import { getActiveOpportunities, getOpportunityBySourceIdAnyStatus } from '../ingestion/catalog-read';
+import { getActiveOpportunities, getOpportunityBySourceIdAnyStatus, getRelatedActiveOpportunities } from '../ingestion/catalog-read';
 
 export interface SeoFaqItem {
   q: string;
@@ -524,6 +524,19 @@ export const SEO_GUIDE_ARTICLES: SeoGuideArticle[] = [
  */
 export async function getActiveJobs(supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
   return getActiveOpportunities(supabase, { translationSafe: true });
+}
+
+/**
+ * The "related jobs" cards on a job page: up to `limit` OTHER active,
+ * translation-safe listings. A bounded query — never use getActiveJobs() for
+ * this; that reads the entire catalog per page view.
+ */
+export async function getRelatedJobs(
+  supabase: SupabaseClient,
+  excludeSourceId: string,
+  limit = 3
+): Promise<CanonicalOpportunity[]> {
+  return getRelatedActiveOpportunities(supabase, excludeSourceId, limit);
 }
 
 

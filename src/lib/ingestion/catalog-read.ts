@@ -196,6 +196,34 @@ export async function getActiveOpportunities(
   return allRows.map(rowToCanonicalOpportunity);
 }
 
+/** A few OTHER active listings, for the "related jobs" cards on a job page.
+ *
+ *  Exists because those cards used to call getActiveOpportunities() — a read
+ *  of the WHOLE catalog (~21 MB over the wire at ~23k rows) on every job-page
+ *  view — only to keep `.slice(0, 3)` of it. This asks the database for just
+ *  `limit` rows (default 3), so a page view now transfers a few KB.
+ *
+ *  Same visibility rules as the full read: RLS limits an anon/public client
+ *  to status = 'active', and the multilingual gate (translationSafe) is
+ *  applied so an untranslated non-English listing is never surfaced.
+ *  Deliberately unordered, like the read it replaces: an ORDER BY would make
+ *  the database sort the whole active set to pick 3 rows. */
+export async function getRelatedActiveOpportunities(
+  supabase: SupabaseClient,
+  excludeSourceId: string,
+  limit = 3
+): Promise<CanonicalOpportunity[]> {
+  const n = Math.min(Math.max(Math.floor(limit), 1), 20);
+  const { data, error } = await supabase
+    .from('opportunities')
+    .select(OPPORTUNITY_COLUMNS)
+    .or('source_language.is.null,source_language.eq.en,translation_status.eq.ok')
+    .neq('source_id', excludeSourceId)
+    .limit(n);
+  if (error) throw new Error(`Could not read related opportunities: ${error.message}`);
+  return ((data ?? []) as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity);
+}
+
 
 
 /** Looks up a single opportunity by its `opp-${source}-${sourceId}` id
