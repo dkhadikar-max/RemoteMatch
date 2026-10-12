@@ -3,6 +3,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { getJobById, isJobPermanentlyRemoved } from '@/lib/seo/data';
 import { isAccountVerified } from '@/lib/auth/get-authenticated-user';
 import { isAdminHost } from '@/lib/auth/admin-host';
+import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -132,13 +133,21 @@ export async function middleware(request: NextRequest) {
       }
       let isActiveAdmin = false;
       try {
-        const { data: adminRow } = await supabase
-          .from('admin_users')
-          .select('id')
-          .eq('id', userId)
-          .is('revoked_at', null)
-          .maybeSingle();
-        isActiveAdmin = Boolean(adminRow);
+        // admin_users has no client policy and is revoked from anon/authenticated
+        // (migration 029), so the caller's own session client can never read it —
+        // that read always came back empty and bounced every real admin. Look it
+        // up with the service-role client; the caller's identity (userId) was
+        // already established by supabase.auth.getUser() above.
+        const adminDb = getSupabaseAdminClient();
+        if (adminDb) {
+          const { data: adminRow } = await adminDb
+            .from('admin_users')
+            .select('id')
+            .eq('id', userId)
+            .is('revoked_at', null)
+            .maybeSingle();
+          isActiveAdmin = Boolean(adminRow);
+        }
       } catch {
         isActiveAdmin = false;
       }
