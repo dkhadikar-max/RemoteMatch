@@ -15,12 +15,19 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { hasRequiredEnv, adminClient, anonKeyClient, uniqueEmail } from './helpers/verified-session';
+import { hasRequiredEnv, adminClient, anonKeyClient, uniqueEmail, sessionCookieHeader } from './helpers/verified-session';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 let passed = 0, failed = 0, skipped = 0;
 function assert(c: boolean, m: string) { if (c) { passed++; console.log(`  ✓ ${m}`); } else { failed++; console.error(`  ✗ ${m}`); } }
 function skip(m: string) { skipped++; console.log(`  – SKIP: ${m}`); }
+
+// PAGE routes authenticate from the session COOKIE (middleware), not the bearer header, and only
+// exist on the admin host. Returns the redirect Location (or the status) without following it.
+async function adminPageGate(cookie: string | null): Promise<{ status: number; location: string | null }> {
+  const res = await fetch(`${BASE_URL}/admin`, { redirect: 'manual', headers: cookie ? { Cookie: cookie } : {} });
+  return { status: res.status, location: res.headers.get('location') };
+}
 
 const TEST_PASSWORD = 'Admin-Suite-Test-Pass-1';
 
@@ -48,6 +55,19 @@ async function main() {
   assert(
     /pathname\.startsWith\('\/admin'\)/.test(middlewareSrc),
     "middleware's admin redirect-UX gate is scoped to page routes, not /api/admin/** (which returns JSON via getAuthenticatedAdmin() instead)",
+  );
+
+  // Regression: admin_users is revoked from anon/authenticated (migration 029), so a
+  // session-client read of it is always denied — which bounced every real admin to
+  // /admin/login?forbidden=1. The membership lookup must use the service-role client.
+  const adminGateBlock = middlewareSrc.slice(middlewareSrc.indexOf('isActiveAdmin'));
+  assert(
+    /getSupabaseAdminClient\(\)/.test(adminGateBlock) && /adminDb\s*\n?\s*\.from\('admin_users'\)/.test(adminGateBlock),
+    "middleware's admin_users membership lookup uses the service-role client",
+  );
+  assert(
+    !/\bsupabase\s*\n?\s*\.from\('admin_users'\)/.test(middlewareSrc),
+    "middleware never reads admin_users through the caller's own session client (always permission-denied)",
   );
 
   const migrationSrc = fs.readFileSync(path.resolve(__dirname, '../supabase/migrations/029_admin_console.sql'), 'utf8');
@@ -102,6 +122,21 @@ async function main() {
     const forbiddenBody = await (await fetch(`${BASE_URL}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${nonAdminToken}` } })).json();
     assert(/not authorized for admin access/i.test(forbiddenBody.error || ''), 'the 403 message is the admin-specific one, distinct from the generic unverified-account 403');
 
+    // Page gate (middleware): is BASE_URL an admin host at all? (/admin/login is the one
+    // un-gated admin page; on a consumer host every /admin/** path is a 404.)
+    const loginProbe = await fetch(`${BASE_URL}/admin/login`, { redirect: 'manual' });
+    const pageGateTestable = loginProbe.status === 200;
+    if (!pageGateTestable) skip('BASE_URL is not an admin host (set ADMIN_HOST_OVERRIDE on the server) — page-gate checks skipped');
+    if (pageGateTestable) {
+      const anon = await adminPageGate(null);
+      assert(anon.status === 307 && /\/admin\/login$/.test(anon.location ?? ''), `GET /admin with no session -> redirect to /admin/login (got ${anon.status} ${anon.location})`);
+      const nonAdminPage = await adminPageGate(sessionCookieHeader(nonAdminSession.session));
+      assert(
+        nonAdminPage.status === 307 && /\/admin\/login\?forbidden=1$/.test(nonAdminPage.location ?? ''),
+        `GET /admin as a verified NON-admin -> redirect to /admin/login?forbidden=1 (got ${nonAdminPage.status} ${nonAdminPage.location})`,
+      );
+    }
+
     // --- 3. Active admin — the real access path ---
     console.log('\n3. ACTIVE ADMIN');
     const adminEmail = uniqueEmail();
@@ -126,11 +161,24 @@ async function main() {
       'dashboard returns real numeric counts, not fabricated/placeholder values',
     );
 
+    if (pageGateTestable) {
+      const adminPage = await adminPageGate(sessionCookieHeader(adminSession.session));
+      assert(adminPage.status === 200, `GET /admin as an ACTIVE admin -> 200, not bounced to forbidden (got ${adminPage.status} ${adminPage.location ?? ''})`);
+    }
+
     // --- 4. REVOKED admin — must lose access immediately ---
     console.log('\n4. REVOKED ADMIN');
     await admin.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', adminUser.user.id);
     const revokedRes = await fetch(`${BASE_URL}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${adminToken}` } });
     assert(revokedRes.status === 403, `GET /api/admin/dashboard as a REVOKED admin (same still-valid token) -> 403 (got ${revokedRes.status})`);
+
+    if (pageGateTestable) {
+      const revokedPage = await adminPageGate(sessionCookieHeader(adminSession.session));
+      assert(
+        revokedPage.status === 307 && /forbidden=1/.test(revokedPage.location ?? ''),
+        `GET /admin as a REVOKED admin -> redirect to forbidden (got ${revokedPage.status} ${revokedPage.location})`,
+      );
+    }
 
     // --- 5. IDOR-class check: admin API never trusts a client-supplied identity ---
     console.log('\n5. NO CLIENT-SUPPLIED IDENTITY TRUSTED');
