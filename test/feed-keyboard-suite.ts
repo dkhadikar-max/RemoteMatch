@@ -101,10 +101,11 @@ for (const m of modalFlags) {
 }
 
 console.log('\n5. Scope');
-const changed = Array.from(new Set([
-  ...execSync('git diff --name-only 4c3fc95', { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean),
-  ...execSync('git ls-files --others --exclude-standard', { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean),
-]));
+// This branch's OWN changes: committed since the merge-base with origin/main (three-dot, so sibling PRs merged into
+// main later don't count), plus uncommitted and untracked files. Falls back to the original base commit offline.
+const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return lines('git diff --name-only 4c3fc95 HEAD'); } })();
+const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
 const allowed = new Set(['src/lib/feed/deck-keys.ts', 'src/components/feed/swipe-deck.tsx', 'src/app/feed/page.tsx', 'test/feed-keyboard-suite.ts', 'test/funnel-emission-wiring-suite.ts']);
 assert(changed.every((f) => allowed.has(f)), 'branch touches only the deck, the feed page, the pure helper, this suite and the funnel wiring guard literal', changed.filter((f) => !allowed.has(f)).join(', '));
 
