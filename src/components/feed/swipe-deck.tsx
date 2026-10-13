@@ -120,7 +120,7 @@ export function SwipeDeck({
   if (!currentOpp) {
     return (
       <div className="soft-card flex flex-col items-center justify-center h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-8 text-center space-y-4 rounded-3xl border border-[var(--line)]">
-        <div className="grid size-12 place-items-center rounded-2xl bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
+        <div className="grid size-12 place-items-center rounded-2xl bg-[#ecfdf5] text-[#04714f] border border-[#a7f3d0]">
           <CheckCircle2 size={24} />
         </div>
         <h3 className="text-xl font-bold text-[var(--ink)]">
@@ -163,7 +163,7 @@ export function SwipeDeck({
             className="absolute -top-16 z-50 flex items-center justify-between gap-3 w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-4 py-3 shadow-[0_4px_20px_rgba(76,44,30,0.06)] text-xs"
           >
             <div className="flex items-center gap-2 text-[var(--ink)]">
-              <Check size={15} className="text-[#059669]" />
+              <Check size={15} className="text-[#04714f]" />
               <span className="font-semibold line-clamp-1">
                 Saved & Analyzed: {lastInterestedOpp.company}
               </span>
@@ -207,7 +207,7 @@ export function SwipeDeck({
           {/* Visual Stamp: INTERESTED */}
           <motion.div
             style={{ opacity: interestedOpacity }}
-            className="pointer-events-none absolute top-8 left-8 z-30 flex items-center gap-1.5 rounded-2xl border-2 border-[#059669] bg-[#ecfdf5] px-4 py-2 text-sm font-bold tracking-wider text-[#059669] -rotate-12 shadow-md"
+            className="pointer-events-none absolute top-8 left-8 z-30 flex items-center gap-1.5 rounded-2xl border-2 border-[#059669] bg-[#ecfdf5] px-4 py-2 text-sm font-bold tracking-wider text-[#04714f] -rotate-12 shadow-md"
           >
             <Check className="size-5 stroke-[3]" />
             <span>INTERESTED</span>

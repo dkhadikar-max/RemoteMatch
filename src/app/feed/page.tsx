@@ -323,14 +323,14 @@ export default function FeedPage() {
 
       {/* Bottom Trust Indicators: Remote · Eligible */}
       <div className="mt-6 sm:mt-8 flex items-center justify-center gap-4 text-xs text-[var(--muted)] select-none">
-        <span className="flex items-center gap-1.5 font-medium text-[#059669]">
+        <span className="flex items-center gap-1.5 font-medium text-[#04714f]">
           <Check size={14} className="stroke-[3]" />
           <span>Remote</span>
         </span>
         {personalized && (
           <>
             <span className="text-[var(--muted)]/40">·</span>
-            <span className="flex items-center gap-1.5 font-medium text-[#059669]">
+            <span className="flex items-center gap-1.5 font-medium text-[#04714f]">
               <Check size={14} className="stroke-[3]" />
               <span>Eligible</span>
             </span>

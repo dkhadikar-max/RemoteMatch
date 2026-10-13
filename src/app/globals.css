@@ -13,14 +13,18 @@
     --surface-soft: #fff2eb;
     --line: color-mix(in srgb, #201e1d 16%, transparent);
     --ink: #201e1d;
-    --muted: #82796a;
+    /* WCAG AA (4.5:1) on every surface this text sits on — bg, surface, surface-soft, white. Was #82796a (3.2–3.9:1).
+       Contrast is asserted by test/contrast-suite.ts. */
+    --muted: #676054;
 
     /* RemoteMatch Terracotta Accent System (was coral-red) */
-    --red: #c67139;
-    --red-dark: #8c491a;
+    /* Deeper terracotta: text/icons in --red and light text ON --red (primary buttons) now meet 4.5:1.
+       Was #c67139 (3.0–3.6:1). --red-dark stays darker than --red for hover. */
+    --red: #91522a;
+    --red-dark: #773f1a;
     --red-soft: #fff2eb;
     --red-soft-border: #ffe1d0;
-    --primary: #c67139;
+    --primary: #91522a;
     --primary-foreground: #f5ead8;
 
     /* Semantic Match Indicators — sage green, the design's second accent */

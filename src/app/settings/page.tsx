@@ -319,7 +319,7 @@ function SettingsContent() {
   const accountCard = (
     <div className="soft-card p-6 sm:p-8 space-y-4 border border-[var(--line)]">
       <h2 className="text-lg font-bold text-[var(--ink)] flex items-center gap-2">
-        <ShieldCheck size={18} className="text-[#059669]" />
+        <ShieldCheck size={18} className="text-[#04714f]" />
         Account
       </h2>
       <p className="text-xs text-[var(--muted)]">
@@ -560,7 +560,7 @@ function SettingsContent() {
                     <span>{isSavingProfile ? 'Saving…' : isSaved ? 'Changes saved!' : 'Save changes'}</span>
                   </button>
                   {isSaved && (
-                    <span className="text-xs font-medium text-[#059669] flex items-center gap-1">
+                    <span className="text-xs font-medium text-[#04714f] flex items-center gap-1">
                       <CheckCircle2 size={13} />
                       <span>Saved to your account</span>
                     </span>
@@ -628,7 +628,7 @@ function SettingsContent() {
                     <span>{isSavingLinks ? 'Saving…' : linksSaved ? 'Saved!' : 'Save links'}</span>
                   </button>
                   {linksSaved && (
-                    <span className="text-xs font-medium text-[#059669] flex items-center gap-1">
+                    <span className="text-xs font-medium text-[#04714f] flex items-center gap-1">
                       <CheckCircle2 size={13} />
                       <span>Links updated</span>
                     </span>
@@ -658,7 +658,7 @@ function SettingsContent() {
             <div className="space-y-6">
               {upgradeSuccess && (
                 <div className="flex items-center gap-3 p-4 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] text-xs">
-                  <CheckCircle2 size={18} className="text-[#059669] shrink-0" />
+                  <CheckCircle2 size={18} className="text-[#04714f] shrink-0" />
                   <div>
                     <span className="font-semibold text-[var(--ink)]">Welcome to RemoteMatch Pro</span>
                     <p className="text-[var(--muted)] mt-0.5">
@@ -709,7 +709,7 @@ function SettingsContent() {
                   <ul className="space-y-2.5 text-xs text-[var(--muted)] pt-1">
                     {['15 saves per day', '5 proposal generations per day', 'Role, remote policy & seniority filters', 'Application tracker'].map((f) => (
                       <li key={f} className="flex items-center gap-2">
-                        <CheckCircle2 size={14} className="text-[#059669] shrink-0" />
+                        <CheckCircle2 size={14} className="text-[#04714f] shrink-0" />
                         <span>{f}</span>
                       </li>
                     ))}
@@ -736,7 +736,7 @@ function SettingsContent() {
                   <ul className="space-y-2.5 text-xs text-[var(--ink)] font-medium pt-1">
                     {['Unlimited saves', 'Unlimited proposal materials', 'Rewind accidental passes', 'Precision location, salary & timezone filters'].map((f) => (
                       <li key={f} className="flex items-center gap-2">
-                        <CheckCircle2 size={14} className="text-[#059669] shrink-0" />
+                        <CheckCircle2 size={14} className="text-[#04714f] shrink-0" />
                         <span>{f}</span>
                       </li>
                     ))}
@@ -764,7 +764,7 @@ function SettingsContent() {
                 <h2 className="text-lg font-bold text-[var(--ink)]">Account preferences</h2>
                 <p className="text-xs text-[var(--muted)]">Manage notifications and privacy preferences.</p>
                 <div className="pt-2">
-                  <span className="text-xs font-semibold text-[#059669] bg-[#ecfdf5] border border-[#a7f3d0] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-[#04714f] bg-[#ecfdf5] border border-[#a7f3d0] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5">
                     <ShieldCheck size={14} />
                     Privacy Protected · Zero Third-Party Tracking
                   </span>

@@ -135,7 +135,7 @@ export function FilterModal({
             <span className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
               Basic Preferences
             </span>
-            <span className="text-[11px] font-medium text-[#059669] bg-[#ecfdf5] border border-[#a7f3d0] px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-medium text-[#04714f] bg-[#ecfdf5] border border-[#a7f3d0] px-2 py-0.5 rounded-full">
               Free & Pro
             </span>
           </div>

@@ -316,7 +316,7 @@ ${initialResumeTweaks.bulletRewrites
                     <>
                       <span>·</span>
                       <span className="inline-flex items-center gap-1">
-                        <ShieldCheck size={10} className="text-[#059669]" />
+                        <ShieldCheck size={10} className="text-[#04714f]" />
                         {employerDirectApplyLabel(opportunity.source)}
                       </span>
                     </>
@@ -504,7 +504,7 @@ ${initialResumeTweaks.bulletRewrites
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-3 space-y-1.5">
-                      <span className="text-[11px] font-bold text-[#059669] uppercase tracking-wider">Why this could fit</span>
+                      <span className="text-[11px] font-bold text-[#04714f] uppercase tracking-wider">Why this could fit</span>
                       {careerTransition.transferableSkills.length > 0 ? (
                         <p className="text-xs text-[var(--ink)] leading-snug">
                           Your experience with{' '}
@@ -544,7 +544,7 @@ ${initialResumeTweaks.bulletRewrites
                 {/* Column 1: Why it fits (Green) */}
                 <div className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5 space-y-4 shadow-sm">
                   <div className="flex items-center gap-2 text-xs font-bold text-[var(--ink)] uppercase tracking-wider pb-2 border-b border-[var(--line)]">
-                    <CircleCheck size={16} className="text-[#059669]" />
+                    <CircleCheck size={16} className="text-[#04714f]" />
                     <span>Why it fits</span>
                   </div>
 
@@ -554,7 +554,7 @@ ${initialResumeTweaks.bulletRewrites
                         key={idx}
                         className="flex items-start gap-2.5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-3 text-xs"
                       >
-                        <Check size={14} className="text-[#059669] stroke-[3] shrink-0 mt-0.5" />
+                        <Check size={14} className="text-[#04714f] stroke-[3] shrink-0 mt-0.5" />
                         <span className="font-medium text-[var(--ink)] leading-snug">{displayStrength(item)}</span>
                       </div>
                     ))}
@@ -739,8 +739,8 @@ ${initialResumeTweaks.bulletRewrites
                       >
                         {copiedBulletIdx === idx ? (
                           <>
-                            <Check size={12} className="text-[#059669]" />
-                            <span className="text-[#059669] font-medium">Copied</span>
+                            <Check size={12} className="text-[#04714f]" />
+                            <span className="text-[#04714f] font-medium">Copied</span>
                           </>
                         ) : (
                           <>
@@ -786,7 +786,7 @@ ${initialResumeTweaks.bulletRewrites
                       ({dailyProposalsCount} of 5 used today)
                     </span>
                   ) : (
-                    <span className="text-[11px] text-[#059669] font-semibold ml-2">
+                    <span className="text-[11px] text-[#04714f] font-semibold ml-2">
                       (Unlimited · Pro)
                     </span>
                   )}
@@ -824,8 +824,8 @@ ${initialResumeTweaks.bulletRewrites
                 >
                   {copiedCoverLetter ? (
                     <>
-                      <Check size={12} className="text-[#059669]" />
-                      <span className="text-[#059669] font-medium">Copied</span>
+                      <Check size={12} className="text-[#04714f]" />
+                      <span className="text-[#04714f] font-medium">Copied</span>
                     </>
                   ) : (
                     <>

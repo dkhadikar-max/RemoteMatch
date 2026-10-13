@@ -155,7 +155,7 @@ export default function StagingControlRoom() {
               <p className="text-xs text-[var(--muted)]">
                 Verified listings active in candidate feed
               </p>
-              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#059669] font-medium">
+              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#04714f] font-medium">
                 <CheckCircle2 size={13} /> {data.system.totalOpportunities} total parsed
               </div>
             </div>
@@ -172,7 +172,7 @@ export default function StagingControlRoom() {
               <p className="text-xs text-[var(--muted)]">
                 {data.metrics.qualityGuardrail.label}
               </p>
-              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#059669] font-medium">
+              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#04714f] font-medium">
                 <ShieldCheck size={13} /> High-yield conversion confirmed
               </div>
             </div>
@@ -189,7 +189,7 @@ export default function StagingControlRoom() {
               <p className="text-xs text-[var(--muted)]">
                 {data.metrics.northStar.label}
               </p>
-              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#059669] font-medium">
+              <div className="pt-2 border-t border-[var(--line)] flex items-center gap-1.5 text-xs text-[#04714f] font-medium">
                 <CheckCircle2 size={13} /> Exceeds beta launch threshold
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function StagingControlRoom() {
                 <div>
                   <div className="flex justify-between text-xs font-mono mb-1">
                     <span className="text-[var(--muted)]">Dead-Link Rate</span>
-                    <span className="text-[#059669] font-semibold">{data.system.deadLinkRate}%</span>
+                    <span className="text-[#04714f] font-semibold">{data.system.deadLinkRate}%</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-[var(--line)] overflow-hidden">
                     <div className="h-full bg-[#059669] rounded-full" style={{ width: `${data.system.deadLinkRate * 10}%` }} />
@@ -263,7 +263,7 @@ export default function StagingControlRoom() {
               <div className="space-y-2.5 my-2">
                 <div className="flex justify-between items-center text-xs font-mono">
                   <span className="text-[var(--muted)]">AI Error Rate:</span>
-                  <span className="text-[#059669] font-semibold">{data.system.aiErrorRate}%</span>
+                  <span className="text-[#04714f] font-semibold">{data.system.aiErrorRate}%</span>
                 </div>
                 <div className="flex justify-between items-center text-xs font-mono">
                   <span className="text-[var(--muted)]">Median AI Latency:</span>
@@ -271,7 +271,7 @@ export default function StagingControlRoom() {
                 </div>
                 <div className="flex justify-between items-center text-xs font-mono">
                   <span className="text-[var(--muted)]">API Health:</span>
-                  <span className="text-[#059669] font-semibold">{data.system.apiHealthPercent}%</span>
+                  <span className="text-[#04714f] font-semibold">{data.system.apiHealthPercent}%</span>
                 </div>
                 <div className="flex justify-between items-center text-xs font-mono pt-1 border-t border-[var(--line)]">
                   <span className="text-[var(--muted)]">Stripe Gateway:</span>
@@ -395,7 +395,7 @@ export default function StagingControlRoom() {
 
           <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-3.5 text-xs text-[var(--muted)] flex items-center justify-between">
             <span>Hypothesis: {data.calibration.hypothesis}</span>
-            <span className="text-[#059669] font-semibold">Empirical validation supports hypothesis</span>
+            <span className="text-[#04714f] font-semibold">Empirical validation supports hypothesis</span>
           </div>
         </div>
 
@@ -421,26 +421,26 @@ export default function StagingControlRoom() {
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-[var(--muted)]">Regression Test Suite:</span>
-                <span className="text-[#059669] font-bold">{data.freezeStatus.regressionStatus}</span>
+                <span className="text-[#04714f] font-bold">{data.freezeStatus.regressionStatus}</span>
               </div>
             </div>
 
             <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 space-y-2 text-xs">
               <div className="flex justify-between py-1.5 border-b border-[var(--line)]">
                 <span className="text-[var(--muted)]">Gate 1 (RLS Isolation):</span>
-                <span className="text-[#059669] font-medium">{data.freezeStatus.stagingGates.gate1_RLS}</span>
+                <span className="text-[#04714f] font-medium">{data.freezeStatus.stagingGates.gate1_RLS}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-[var(--line)]">
                 <span className="text-[var(--muted)]">Gate 2 (Live Supply):</span>
-                <span className="text-[#059669] font-medium">{data.freezeStatus.stagingGates.gate2_LiveSupply}</span>
+                <span className="text-[#04714f] font-medium">{data.freezeStatus.stagingGates.gate2_LiveSupply}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-[var(--line)]">
                 <span className="text-[var(--muted)]">Gate 3 (AI Factuality):</span>
-                <span className="text-[#059669] font-medium">{data.freezeStatus.stagingGates.gate3_AIFactuality}</span>
+                <span className="text-[#04714f] font-medium">{data.freezeStatus.stagingGates.gate3_AIFactuality}</span>
               </div>
               <div className="flex justify-between py-1.5">
                 <span className="text-[var(--muted)]">Staging Smoke Test:</span>
-                <span className="text-[#059669] font-medium">{data.freezeStatus.stagingGates.smokeTest}</span>
+                <span className="text-[#04714f] font-medium">{data.freezeStatus.stagingGates.smokeTest}</span>
               </div>
             </div>
           </div>

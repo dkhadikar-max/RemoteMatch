@@ -144,7 +144,7 @@ export function JobDetailsModal({
                     key={i}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--bg)] px-2.5 py-1 text-xs text-[var(--ink)] font-medium"
                   >
-                    <Check size={12} className="text-[#059669]" />
+                    <Check size={12} className="text-[#04714f]" />
                     {skill}
                   </span>
                 ))}
@@ -165,7 +165,7 @@ export function JobDetailsModal({
               negative claim, for every other source today. */}
           {employerDirectApplyLabel(opportunity.source) && (
             <p className="text-[11px] text-[var(--muted)] flex items-center gap-1.5">
-              <ShieldCheck size={12} className="text-[#059669]" />
+              <ShieldCheck size={12} className="text-[#04714f]" />
               {employerDirectApplyLabel(opportunity.source)}
             </p>
           )}

@@ -97,7 +97,7 @@ export function DidYouApplyModal({
         {isSubmitted && selectedOutcome === 'applied' ? (
           /* Success Confirmation & Obvious Next Step */
           <div className="py-6 flex flex-col items-center text-center space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="grid size-14 place-items-center rounded-2xl bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
+            <div className="grid size-14 place-items-center rounded-2xl bg-[#ecfdf5] text-[#04714f] border border-[#a7f3d0]">
               <CheckCircle2 size={30} />
             </div>
             <div>

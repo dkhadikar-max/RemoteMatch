@@ -103,15 +103,15 @@ export default function LandingPage() {
 
           <div className="mt-8 flex flex-wrap gap-5 text-xs text-[var(--muted)]">
             <span className="flex items-center gap-1.5 font-medium">
-              <CircleCheck size={16} className="text-[#059669]" />
+              <CircleCheck size={16} className="text-[#04714f]" />
               <span>Know your chances before you apply</span>
             </span>
             <span className="flex items-center gap-1.5 font-medium">
-              <CircleCheck size={16} className="text-[#059669]" />
+              <CircleCheck size={16} className="text-[#04714f]" />
               <span>Eligibility verified</span>
             </span>
             <span className="flex items-center gap-1.5 font-medium">
-              <CircleCheck size={16} className="text-[#059669]" />
+              <CircleCheck size={16} className="text-[#04714f]" />
               <span>Track every application</span>
             </span>
           </div>
@@ -181,7 +181,7 @@ export default function LandingPage() {
 
           {/* Why it matches */}
           <div className="mt-5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-4 text-xs">
-            <p className="font-semibold text-[#059669] flex items-center gap-1.5">
+            <p className="font-semibold text-[#04714f] flex items-center gap-1.5">
               <Check size={14} className="stroke-[3]" />
               <span>Why it matches</span>
             </p>
@@ -314,19 +314,19 @@ export default function LandingPage() {
 
               <ul className="space-y-3 text-xs text-[var(--muted)]">
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>15 saves per day</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>5 proposal generations per day</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Basic role & remote filters</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Application tracker</span>
                 </li>
               </ul>
@@ -355,19 +355,19 @@ export default function LandingPage() {
 
               <ul className="space-y-3 text-xs text-[var(--ink)] font-medium">
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Unlimited saves</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Unlimited proposal materials</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Rewind accidental passes</span>
                 </li>
                 <li className="flex items-center gap-2">
-                  <Check size={15} className="text-[#059669] stroke-[3]" />
+                  <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Advanced salary, timezone & seniority filters</span>
                 </li>
               </ul>
