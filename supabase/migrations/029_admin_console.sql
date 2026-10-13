@@ -70,7 +70,7 @@ COMMENT ON TABLE admin_audit_log IS
   'foreign key to admin_users — a row must remain fully readable even after '
   'the acting admin is later revoked or their auth.users row is ever removed; '
   'admin_email is captured at write time as the durable label. Closed '
-  '`action`/`target_type` vocabulary by design (mirrors ai_call_events\' '
+  '`action`/`target_type` vocabulary by design (mirrors ai_call_events'' '
   '`outcome` CHECK, migration 022) — extend the CHECK constraint in a future '
   'migration as new privileged actions are added, never widen it to free text.';
 
