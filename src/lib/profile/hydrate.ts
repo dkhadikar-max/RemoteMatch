@@ -33,10 +33,13 @@ export interface ServerOnboarding {
  * (planTier / quota), which `localStore` merges from /api/profile elsewhere.
  * Full read-path migration off `localStore` is a separate, later gate.
  */
-export async function hydrateLocalProfileFromServer(): Promise<void> {
+export async function hydrateLocalProfileFromServer(
+  fetchImpl: typeof fetch = fetch,
+  store: Pick<typeof localStore, 'getProfile' | 'updateProfile'> = localStore,
+): Promise<void> {
   let d: ServerOnboarding;
   try {
-    const res = await fetch('/api/onboarding', { cache: 'no-store' });
+    const res = await fetchImpl('/api/onboarding', { cache: 'no-store' });
     if (!res.ok) return; // unauthenticated / not configured — leave the fixture as-is
     d = (await res.json()) as ServerOnboarding;
   } catch {
@@ -49,7 +52,16 @@ export async function hydrateLocalProfileFromServer(): Promise<void> {
     return;
   }
 
-  const current = localStore.getProfile();
+  const current = store.getProfile();
+
+  // A section is overwritten ONLY when the server actually has data for it. A legacy account can have an
+  // onboarding date but empty server rows; copying those empties over the local profile would wipe real local
+  // content (and, before this guard, turned a profile into a blank one that was still scored as "personalized").
+  const hasIntentData =
+    d.employmentTypes.length > 0 || d.targetRoles.length > 0 || d.yearsOfExperience != null || d.minSalary != null;
+  const hasLocationData =
+    Boolean(d.currentCountry) || Boolean(d.currentTimezone) || d.workPreference != null ||
+    d.allowedCountries.length > 0 || d.willingTimezones.length > 0;
 
   const yoe: ProfileIntent['yearsOfExperience'] =
     d.yearsOfExperience === '0-1' || d.yearsOfExperience === '2-3' || d.yearsOfExperience === '4-6' ||
@@ -66,7 +78,7 @@ export async function hydrateLocalProfileFromServer(): Promise<void> {
     fullName: d.fullName || current.fullName,
     headline: d.headline || current.headline,
     rawResumeText: d.rawResumeText || current.rawResumeText,
-    intent: {
+    ...(hasIntentData ? { intent: {
       id: current.intent?.id ?? 'intent-server',
       profileId: current.id,
       employmentTypes: d.employmentTypes as EmploymentType[],
@@ -76,14 +88,14 @@ export async function hydrateLocalProfileFromServer(): Promise<void> {
       preferredCurrency: d.preferredCurrency || 'USD',
       availabilityStatus: current.intent?.availabilityStatus ?? 'immediately',
       updatedAt: new Date().toISOString(),
-    },
-    skills: d.skills.map((s, i) => ({
+    } } : {}),
+    ...(d.skills.length > 0 ? { skills: d.skills.map((s, i) => ({
       id: `s-server-${i}`,
       profileId: current.id,
       skillName: s.name,
       isPrimary: s.isPrimary,
-    })),
-    location: {
+    })) } : {}),
+    ...(hasLocationData ? { location: {
       id: current.location?.id ?? 'loc-server',
       profileId: current.id,
       currentCountry: d.currentCountry || current.location?.currentCountry || 'Worldwide',
@@ -91,8 +103,8 @@ export async function hydrateLocalProfileFromServer(): Promise<void> {
       workPreference: workPref,
       allowedCountries: d.allowedCountries,
       willingTimezones: d.willingTimezones,
-    },
+    } } : {}),
   };
 
-  localStore.updateProfile(patch);
+  store.updateProfile(patch);
 }

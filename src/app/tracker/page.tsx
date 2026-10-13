@@ -49,14 +49,9 @@ interface ResolvedOpportunity {
   remoteType: string;
   salaryMin?: number;
   salaryMax?: number;
-  // Never populated by GET /api/applications/opportunities (computing a live
-  // fitScore needs the caller's profile + the scoring engine — out of scope
-  // here). Kept only so the existing `opp.fitScore ?? 92` fallback chain
-  // below compiles and behaves byte-identically to before this ticket — it
-  // was already always undefined under the old localStore path too, since
-  // neither normalizeOpportunity() nor rowToCanonicalOpportunity() ever set
-  // it. The `?? 92` fabricated-fallback itself is a separate, deliberately
-  // out-of-scope Tracker integrity item.
+  // Never populated by GET /api/applications/opportunities (a live score needs the caller's profile + the
+  // scoring engine). The tracker therefore shows the decision-snapshot score when one was recorded, and no
+  // percentage at all otherwise — there is no fabricated fallback.
   fitScore?: number;
 }
 
@@ -294,7 +289,11 @@ export default function TrackerPage() {
               // live-recomputed fitScore — the decision-time value is what
               // P0's outcome data is keyed on, so the tracker should show
               // the same number the dataset uses.
-              const fitScore = app.decisionSnapshot?.fitScore ?? opp.fitScore ?? 92;
+              // No fabricated fallback: with neither a recorded snapshot score nor a real
+              // catalog score, no percentage is shown.
+              const snapshotScore = app.decisionSnapshot?.fitScore;
+              const fitScore: number | null =
+                typeof snapshotScore === 'number' ? snapshotScore : typeof opp.fitScore === 'number' ? opp.fitScore : null;
               const status = app.status;
 
               // Step indicator active status
@@ -312,10 +311,14 @@ export default function TrackerPage() {
                         <span className="font-bold text-xs text-[var(--ink)] uppercase tracking-wider">
                           {opp.company}
                         </span>
-                        <span className="text-xs text-[var(--muted)]/40">·</span>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--red)] bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full">
-                          {fitScore}% match
-                        </span>
+                        {fitScore !== null && (
+                          <>
+                            <span className="text-xs text-[var(--muted)]/40">·</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--red)] bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-2 py-0.5 rounded-full">
+                              {fitScore}% match
+                            </span>
+                          </>
+                        )}
                       </div>
                       <h2 className="text-lg font-bold text-[var(--ink)] mt-0.5">
                         {opp.title}
