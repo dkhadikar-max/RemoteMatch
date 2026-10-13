@@ -16,7 +16,8 @@ interface SourceRow {
   consecutive_fetch_failures: number;
   last_fetch_attempt_at: string | null;
   last_successful_fetch_at: string | null;
-  lifetime_jobs_ingested: number;
+  /** null = not tracked (no ingestion path records it yet) — never rendered as 0. */
+  lifetime_jobs_ingested: number | null;
   health: 'healthy' | 'failing' | 'stale' | 'never_run';
 }
 
@@ -61,7 +62,10 @@ export default function SourcesPage() {
     { key: 'failures', header: 'Consecutive failures', render: (r) => <span className="tabular-nums">{r.consecutive_fetch_failures}</span> },
     { key: 'last_attempt', header: 'Last attempt', render: (r) => r.last_fetch_attempt_at ? new Date(r.last_fetch_attempt_at).toLocaleString() : '—' },
     { key: 'last_success', header: 'Last success', render: (r) => r.last_successful_fetch_at ? new Date(r.last_successful_fetch_at).toLocaleString() : '—' },
-    { key: 'lifetime', header: 'Lifetime ingested', render: (r) => <span className="tabular-nums">{r.lifetime_jobs_ingested}</span> },
+    { key: 'lifetime', header: 'Lifetime ingested', render: (r) =>
+      r.lifetime_jobs_ingested === null
+        ? <span className="text-[var(--muted)]" title="No ingestion path records this counter yet, so no count is shown.">Not tracked</span>
+        : <span className="tabular-nums">{r.lifetime_jobs_ingested}</span> },
   ];
 
   return (

@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { toSourceView } from '@/lib/admin/source-view';
 
 const PAGE_SIZE = 30;
-const STALE_HOURS = 72; // a source untouched this long, while "active", reads as stale — a display heuristic only, not a DB flag
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,8 +27,7 @@ export async function GET(req: NextRequest) {
     .from('supply_sources')
     .select(
       'id, platform_slug, board, employer_name, acquisition_method, status, ' +
-        'consecutive_fetch_failures, last_fetch_attempt_at, last_successful_fetch_at, ' +
-        'lifetime_jobs_ingested, created_at',
+        'consecutive_fetch_failures, last_fetch_attempt_at, last_successful_fetch_at, created_at',
       { count: 'exact' }
     )
     .order('last_fetch_attempt_at', { ascending: false, nullsFirst: false });
@@ -50,20 +49,12 @@ export async function GET(req: NextRequest) {
     consecutive_fetch_failures: number;
     last_fetch_attempt_at: string | null;
     last_successful_fetch_at: string | null;
-    lifetime_jobs_ingested: number;
     created_at: string;
   }
 
   const now = Date.now();
-  const sources = ((data ?? []) as unknown as SourceRow[]).map((s) => {
-    const lastAttempt = s.last_fetch_attempt_at ? new Date(s.last_fetch_attempt_at).getTime() : null;
-    const staleHours = lastAttempt ? (now - lastAttempt) / (3600 * 1000) : null;
-    let health: 'healthy' | 'failing' | 'stale' | 'never_run' = 'never_run';
-    if (s.consecutive_fetch_failures > 0) health = 'failing';
-    else if (staleHours !== null && staleHours > STALE_HOURS && s.status === 'active') health = 'stale';
-    else if (lastAttempt !== null) health = 'healthy';
-    return { ...s, health };
-  });
+  // lifetime_jobs_ingested is reported as null ("not tracked") — see toSourceView.
+  const sources = ((data ?? []) as unknown as SourceRow[]).map((s) => toSourceView(s, now));
 
   return NextResponse.json({ sources, total: count ?? 0, page, pageSize: PAGE_SIZE });
 }
