@@ -4,15 +4,11 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { fetchAllRows, isMissingRelation, must, mustCount, QueryError } from '@/lib/supabase/query-helpers';
 import { runSections, partialFailureResponse } from '@/lib/admin/sections';
+import { classifyFeedPipeline, EXPECTED_INTERVAL_HOURS } from '@/lib/admin/sync-status';
 
 const HOUR_MS = 3600 * 1000;
-/** The cadence the C1/C3 cron is meant to run at. Observed, not configured:
- *  the schedule itself lives in Railway and is not readable by this app. */
-const EXPECTED_INTERVAL_HOURS = 6;
-/** Run-age thresholds against that expectation: one missed run is
- *  "degraded", more is "stale". */
-const HEALTHY_MAX_AGE_HOURS = EXPECTED_INTERVAL_HOURS + 1;
-const DEGRADED_MAX_AGE_HOURS = EXPECTED_INTERVAL_HOURS * 2 + 1;
+// The C1/C3 cadence thresholds and the status rules live in src/lib/admin/sync-status.ts (pure, tested). The
+// schedule itself is configured in Railway and is not readable by this app — it is only ever OBSERVED.
 /** A career-page source untouched for this long has no recurring schedule
  *  behind it. */
 const C5_UNSCHEDULED_AFTER_HOURS = 48;
@@ -51,7 +47,7 @@ async function newestTimestamp(
  * What changed vs. the first version of this route, which was wrong:
  *  - It hard-coded C1/C3 as `cadence: 'manual'`, `enabled: false`, "not on a
  *    configured Railway cron". False: the sync cron has been running every 6
- *    hours (00/06/12/18 UTC). The cadence is now OBSERVED from the two most
+ *    hours (00/06/12/18 UTC) at the time. The cadence is now OBSERVED from the two most
  *    recent runs' newest `last_seen_in_feed_at` timestamps, and the run's
  *    age against that expectation drives healthy / degraded / stale.
  *  - It ignored every query error. A failed section is now reported as
@@ -172,16 +168,8 @@ export async function GET(req: NextRequest) {
     const ageHours = latest ? (now - new Date(latest).getTime()) / HOUR_MS : null;
     const observedInterval = latest && previous ? round1((new Date(latest).getTime() - new Date(previous).getTime()) / HOUR_MS) : null;
 
-    let status: PipelineStatus = 'no_evidence';
-    if (ageHours !== null) {
-      status = ageHours <= HEALTHY_MAX_AGE_HOURS ? 'healthy' : ageHours <= DEGRADED_MAX_AGE_HOURS ? 'degraded' : 'stale';
-    }
-    const cadence =
-      observedInterval === null
-        ? 'unknown (only one run observed)'
-        : Math.abs(observedInterval - EXPECTED_INTERVAL_HOURS) <= 1
-          ? `every ~${EXPECTED_INTERVAL_HOURS}h (observed)`
-          : `observed ${observedInterval}h between the last two runs (expected ${EXPECTED_INTERVAL_HOURS}h)`;
+    // A recent run is NOT a schedule: "healthy" requires an observed ~6h cadence (see classifyFeedPipeline).
+    const { status, enabled, cadence } = classifyFeedPipeline({ ageHours, observedIntervalHours: observedInterval });
 
     const times = groupTimes(c1c3Sources);
     c1c3 = {
@@ -189,7 +177,7 @@ export async function GET(req: NextRequest) {
       label: 'C1 Aggregators + C3 ATS',
       status,
       cadence,
-      enabled: status === 'healthy' || status === 'degraded',
+      enabled,
       expectedIntervalHours: EXPECTED_INTERVAL_HOURS,
       observedIntervalHours: observedInterval,
       lastRunAgeHours: ageHours === null ? null : round1(ageHours),

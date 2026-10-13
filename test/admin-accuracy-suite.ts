@@ -148,7 +148,10 @@ async function run() {
     assert(!/cadence:\s*'manual'/.test(sync), "sync-health: no pipeline hard-codes cadence: 'manual'");
     assert(!/not on a configured Railway cron/.test(sync), 'sync-health: the false "not on a configured Railway cron" claim is gone');
     assert(/migration 026/.test(sync) && /'unavailable'/.test(sync), 'sync-health: C6 reports unavailable and names migration 026 when the table is absent');
-    assert(/EXPECTED_INTERVAL_HOURS\s*=\s*6/.test(sync), 'sync-health: expects the 6-hour cadence');
+    // The cadence constant moved with the status rules into src/lib/admin/sync-status.ts (admin cleanup PR); the
+    // route must still use it, and the rule file must still expect 6 hours.
+    const syncRules = fs.readFileSync(path.join(ROOT, 'src/lib/admin/sync-status.ts'), 'utf8');
+    assert(/EXPECTED_INTERVAL_HOURS\s*=\s*6/.test(syncRules) && /EXPECTED_INTERVAL_HOURS/.test(sync), 'sync-health: expects the 6-hour cadence');
 
     const syncPage = fs.readFileSync(path.join(ROOT, 'src/app/admin/(dashboard)/sync-health/page.tsx'), 'utf8');
     assert(!/not a bug, it reflects that no pipeline/.test(syncPage) && !/Manual \/ not scheduled/.test(syncPage), 'sync-health page: the false "manual" explanation is gone');
@@ -239,7 +242,7 @@ async function run() {
         assert(pipes.length === 3 && !!byId.c1_c3 && !!byId.c5 && !!byId.c6, `sync-health: reports C1/C3, C5 and C6 (${pipes.map((p) => p.id).join(',')})`);
         assert(byId.c1_c3.cadence !== 'manual' && !/not on a configured Railway cron/.test(byId.c1_c3.note), 'sync-health: C1/C3 is NOT reported as manual / unscheduled');
         assert(byId.c1_c3.expectedIntervalHours === 6, 'sync-health: C1/C3 expects the 6-hour cadence');
-        assert(['healthy', 'degraded', 'stale', 'no_evidence'].includes(byId.c1_c3.status), `sync-health: C1/C3 has a derived status (${byId.c1_c3.status})`);
+        assert(['healthy', 'degraded', 'stale', 'no_evidence', 'recent_activity', 'not_scheduled'].includes(byId.c1_c3.status), `sync-health: C1/C3 has a derived status (${byId.c1_c3.status})`);
         assert(byId.c1_c3.status !== 'healthy' || (byId.c1_c3.enabled === true && String(byId.c1_c3.cadence).includes('6h')), `sync-health: a healthy C1/C3 reads as running on the observed 6h cadence ("${byId.c1_c3.cadence}")`);
         assert(byId.c5.cadence === 'not scheduled' && ['not_scheduled', 'recent_activity'].includes(byId.c5.status) && byId.c5.enabled === false, `sync-health: C5 is reported as unscheduled (${byId.c5.status})`);
         if (c6TablePresent) {

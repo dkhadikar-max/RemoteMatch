@@ -10,6 +10,7 @@ import {
   type ServerEntitlement,
 } from '@/lib/entitlement/client';
 import { isAdminHost } from '@/lib/auth/admin-host';
+import { shouldFetchEntitlement } from '@/lib/entitlement/should-fetch';
 
 /** The Supabase auth cookie is NOT httpOnly, so its absence is a reliable
  *  "definitely no session" signal — lets the navbar skip a guaranteed-401
@@ -76,7 +77,9 @@ export function Navbar() {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!sessionPossible || !hasAuthCookie()) {
+    // Never on the admin host: the navbar is hidden there and /api/profile 404s on every admin page load and every
+    // focus / visibility event. Evaluated inside the callback — client-only — so hydration is unaffected.
+    if (!shouldFetchEntitlement({ host: window.location.host, sessionPossible, hasAuthCookie: hasAuthCookie() })) {
       setEnt(null);
       return;
     }
