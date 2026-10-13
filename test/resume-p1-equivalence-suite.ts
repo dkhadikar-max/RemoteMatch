@@ -104,9 +104,12 @@ async function main() {
   console.log('\n1. Golden outputs (recorded from the unchanged base) are byte-identical');
   const recorded = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
   const now = JSON.parse(JSON.stringify(golden));
-  for (const key of ['analyzer', 'jobSpecific', 'check', 'matcher'] as const) {
+  // P1b INTENTIONALLY replaced generateJobSpecificResumeAnalysis (invented template text → data-derived suggestions);
+  // that function is therefore no longer pinned to the P1 golden and is covered by test/resume-p1b-suite.ts instead.
+  for (const key of ['analyzer', 'check', 'matcher'] as const) {
     assert(JSON.stringify(now[key]) === JSON.stringify(recorded[key]), `${key}: output identical to the recorded base output (${(recorded[key] as unknown[]).length} cases)`);
   }
+  assert(JSON.stringify(now.jobSpecific) !== JSON.stringify(recorded.jobSpecific), 'jobSpecific: deliberately CHANGED by P1b (the old golden documents the invented text that was removed)');
   assert((recorded.analyzer as any[]).some(([n, r]) => n.startsWith('C++') && 'threw' in r), 'the golden corpus really includes the known C++ analyser crash (so "identical" includes unfixed legacy quirks — they are P-later, not P1)');
 
   console.log('\n2. Extracted PDF functions == the original inline expressions');
@@ -166,18 +169,28 @@ async function main() {
   const ri = fs.readFileSync(path.join(root, 'src/lib/ai/resume-intelligence.ts'), 'utf8');
   assert((ri.match(/@deprecated/g) ?? []).length >= 2, 'analyzeResumeHeuristically and analyzeResumeWithAI carry @deprecated notices');
 
-  console.log('\n4. Scope — no matching, scoring, persistence, API or snapshot change');
+  console.log('\n4. Scope — no matching, scoring, persistence, API or snapshot change (pinned to the P1 commit itself)');
+  // These guards describe what the P1 commit changed. They read that immutable commit (not the branch diff), so they
+  // stay true when later PRs (e.g. P1b) are stacked on top of P1 or merged after it.
+  const P1_COMMIT = 'c9e9eaf';
   const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-  const stackBase = (() => { try { execSync('git rev-parse --verify origin/fix/resume-step-honesty', { cwd: root, stdio: 'ignore' }); execSync('git merge-base --is-ancestor origin/fix/resume-step-honesty origin/main', { cwd: root, stdio: 'ignore' }); return 'origin/main'; } catch { return 'origin/fix/resume-step-honesty'; } })();
-  const committed = (() => { try { return lines(`git diff --name-only ${stackBase}...HEAD`); } catch { return []; } })();
-  const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
-  const allowed = new Set(['src/lib/ai/resume.ts', 'src/lib/ai/resume-intelligence.ts', 'src/lib/resume/extract-pdf-text.ts', 'test/resume-p1-equivalence-suite.ts', 'test/fixtures/resume-p1-golden.json', 'test/openai-reasoning-effort-suite.ts', 'test/resume-honesty-suite.ts']);
-  assert(changed.every((f) => allowed.has(f)), `only the retired module, the deprecation notice, the PDF-join extraction, this suite and the two guard literals it forced changed (vs ${stackBase})`, changed.filter((f) => !allowed.has(f)).join(', '));
-  const frozen = ['src/lib/matching/', 'src/app/', 'src/components/', 'supabase/', 'src/lib/db/', 'src/lib/onboarding/', 'src/middleware.ts'];
-  assert(changed.every((f) => !frozen.some((x) => f.startsWith(x))), 'matcher, pages/components, API routes (incl. swipe/snapshots), migrations, stores, onboarding contract and middleware untouched');
-  const riDiff = (() => { try { return execSync(`git diff ${stackBase}...HEAD -- src/lib/ai/resume-intelligence.ts && git diff HEAD -- src/lib/ai/resume-intelligence.ts`, { cwd: root, encoding: 'utf8' }); } catch { return ''; } })();
-  const codeLines = riDiff.split('\n').filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l)).filter((l) => !/^[+-]\s*(\/\/|\/\*|\*|$)/.test(l));
-  assert(codeLines.length === 0, 'resume-intelligence.ts diff is COMMENTS ONLY (no code line added or removed)', codeLines.slice(0, 3).join(' | '));
+  let p1Files: string[] | null = null;
+  let p1RiDiff = '';
+  try {
+    execSync(`git cat-file -e ${P1_COMMIT}`, { cwd: root, stdio: 'ignore' });
+    p1Files = lines(`git show --name-only --pretty=format: ${P1_COMMIT}`);
+    p1RiDiff = execSync(`git show ${P1_COMMIT} -- src/lib/ai/resume-intelligence.ts`, { cwd: root, encoding: 'utf8' });
+  } catch { /* commit not present (e.g. squash-merged): the checks below are skipped, with a note */ }
+  if (p1Files === null) {
+    console.log('  note: the P1 commit is not in this clone (squash-merge?) — its scope / comments-only guards are skipped.');
+  } else {
+    const allowedP1 = new Set(['src/lib/ai/resume.ts', 'src/lib/ai/resume-intelligence.ts', 'src/lib/resume/extract-pdf-text.ts', 'test/resume-p1-equivalence-suite.ts', 'test/fixtures/resume-p1-golden.json', 'test/openai-reasoning-effort-suite.ts', 'test/resume-honesty-suite.ts']);
+    assert(p1Files.every((f) => allowedP1.has(f)), 'the P1 commit changed only the retired module, the deprecation notice, the PDF-join extraction, this suite and the two guard literals it forced', p1Files.filter((f) => !allowedP1.has(f)).join(', '));
+    const frozenP1 = ['src/lib/matching/', 'src/app/', 'src/components/', 'supabase/', 'src/lib/db/', 'src/lib/onboarding/', 'src/middleware.ts'];
+    assert(p1Files.every((f) => !frozenP1.some((x) => f.startsWith(x))), 'the P1 commit left matcher, pages/components, API routes (incl. swipe/snapshots), migrations, stores, onboarding contract and middleware untouched');
+    const p1Code = p1RiDiff.split('\n').filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l)).filter((l) => !/^[+-]\s*(\/\/|\/\*|\*|$)/.test(l));
+    assert(p1Code.length === 0, "the P1 commit's change to resume-intelligence.ts is COMMENTS ONLY (no code line added or removed)", p1Code.slice(0, 3).join(' | '));
+  }
 
   console.log('\n' + '='.repeat(78));
   console.log(`RESULT: ${passed} passed, ${failed} failed`);
