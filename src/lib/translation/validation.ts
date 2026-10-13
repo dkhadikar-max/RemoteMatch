@@ -55,6 +55,11 @@ export function validateTranslatedTitle(
   translatedTitle: string,
   originalTitle?: string
 ): TranslationValidationResult {
+  // Model output is untrusted: anything that is not a string is a validation
+  // failure (the row is recorded as an error), never a TypeError at `.trim()`.
+  if (typeof translatedTitle !== 'string') {
+    return { valid: false, reason: `Translated title is not a string (${translatedTitle === null ? 'null' : typeof translatedTitle}).` };
+  }
   const trimmed = translatedTitle.trim();
 
   if (trimmed.length < MIN_TITLE_LENGTH) {
@@ -87,6 +92,12 @@ export function validateTranslatedDescription(
   translatedDescription: string,
   originalDescription: string
 ): TranslationValidationResult {
+  if (typeof translatedDescription !== 'string') {
+    return { valid: false, reason: `Translated description is not a string (${translatedDescription === null ? 'null' : typeof translatedDescription}).` };
+  }
+  // The source text comes from our own database, but a missing one must not turn
+  // a length comparison into a crash either.
+  originalDescription = typeof originalDescription === 'string' ? originalDescription : '';
   const trimmed = translatedDescription.trim();
 
   if (trimmed.length < MIN_DESCRIPTION_LENGTH) {
