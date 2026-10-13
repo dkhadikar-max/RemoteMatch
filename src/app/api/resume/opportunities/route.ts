@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
-import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
+import { getResumeEligibilityRows, asEligibilityOpportunity } from '@/lib/resume/eligibility-index';
 import { loadServerProfile } from '@/lib/profile/server-profile';
 import {
   selectRelevantOpportunities,
@@ -43,11 +43,17 @@ export async function GET(req: NextRequest) {
   // (extracted, byte-identical output to what this route built inline
   // before; see its own doc comment). Behavior-preserving: this route's
   // JSON response shape and content are unchanged.
-  const [profile, { data: dismissals }, catalog] = await Promise.all([
+  //
+  // Egress: the catalog side of this route needs only four narrow fields per
+  // listing (what checkHardEligibility() and the skill counts read), and it is the
+  // same for every caller — so it comes from a shared, cached slim read
+  // (src/lib/resume/eligibility-index.ts), not a whole-catalog read per request.
+  const [profile, { data: dismissals }, eligibilityRows] = await Promise.all([
     loadServerProfile(supabase, user),
     supabase.from('profile_skill_dismissals').select('skill_key').eq('profile_id', user.id),
-    getActiveOpportunities(supabase),
+    getResumeEligibilityRows(),
   ]);
+  const catalog = eligibilityRows.map(asEligibilityOpportunity);
 
   const skillNames = profile.skills.map((s) => s.skillName);
 

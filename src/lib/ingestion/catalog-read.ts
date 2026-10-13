@@ -17,24 +17,62 @@ import { CanonicalOpportunity } from '@/types/byn';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { getFreshnessWindowBounds } from './freshness-gate';
 
-const OPPORTUNITY_COLUMNS =
-  'id, type, title, company, company_logo, description, source, source_id, source_url, ' +
+/**
+ * Exactly the columns rowToCanonicalOpportunity() reads — nothing more. Every
+ * byte selected here is paid for in Supabase egress on every catalog read
+ * (~70 MB uncompressed at ~23k rows), so a column the mapper never touches
+ * must not be in this list. test/egress-trim-suite.ts pins the two together
+ * (column list == the `row.<field>` set the mapper reads), so adding a field
+ * to the mapper without selecting it — or selecting one it ignores — fails.
+ *
+ * Deliberately NOT selected, because the mapper ignores them:
+ *   - `id` (the CanonicalOpportunity id is derived `opp-${source}-${source_id}`,
+ *     never the table's UUID — see the file header);
+ *   - the translation bookkeeping columns (migration 028: source_language,
+ *     original_title, original_description, translated_at, translation_model,
+ *     translated_content_hash, translation_status). They are written and read
+ *     by the translation pass (translate-pending.ts, with its own SELECTs) and
+ *     FILTERED on server-side via `translationSafe` below — a filter needs no
+ *     SELECT. original_description alone carries a full second copy of the
+ *     description for every translated row.
+ */
+export const OPPORTUNITY_COLUMNS =
+  'type, title, company, company_logo, description, source, source_id, source_url, ' +
   'official_url, canonical_url_hash, content_hash, employment_type, remote_type, ' +
   'eligible_countries, excluded_countries, timezone_requirements, salary_min, salary_max, ' +
   'salary_currency, salary_period, required_skills, preferred_skills, experience_requirement, quality_score, ' +
   'source_quality, description_completeness, salary_quality, remote_policy_confidence, ' +
   'explicit_remote_scope, status, posted_at, is_permanently_removed, link_checked_at, ' +
-  'superseded_by_opportunity_id, ' +
-  // Translation columns (migration 028). NULL values are handled gracefully in
-  // rowToCanonicalOpportunity() — a pre-028 schema returns NULLs for all of these,
-  // which the mapping treats as "not yet processed" (same as the initial state).
-  'source_language, original_title, original_description, ' +
-  'translated_at, translation_model, translated_content_hash, translation_status';
+  'superseded_by_opportunity_id';
 
+/** The four columns the sitemap actually needs (URL id, category matching on
+ *  title/skills, lastModified from posted_at). No description, no company, no
+ *  URLs — see getSitemapJobEntries(). */
+export const SITEMAP_COLUMNS = 'source_id, title, posted_at, required_skills';
 
+/**
+ * THE multilingual gate (migration 028), shared by every user-facing and SEO read.
+ * A listing is visible only if BOTH hold:
+ *   1. TRANSLATION_SAFE_OR — source_language is NULL (pass not run yet), 'en', or
+ *      translation_status = 'ok' (a non-English row that was successfully translated);
+ *   2. TRANSLATION_NOT_ERROR_OR — translation_status is NOT 'error'.
+ * (2) closes a hole in (1): a row whose translation FAILED without a known language
+ * keeps source_language NULL, which (1) alone lets through — an untranslated foreign
+ * listing visible forever. `translation_status.neq.error` alone would drop NULL-status
+ * rows (SQL three-valued logic), hence the explicit `is.null` branch.
+ * The translation pass leaves rows PENDING (status NULL, still visible) on a
+ * batch-level failure such as a quota error, so this rule only ever hides rows that
+ * failed individually and definitively.
+ */
+export const TRANSLATION_SAFE_OR = 'source_language.is.null,source_language.eq.en,translation_status.eq.ok';
+export const TRANSLATION_NOT_ERROR_OR = 'translation_status.is.null,translation_status.neq.error';
+
+/** Applies the multilingual gate to a PostgREST query (two ANDed .or() filters). */
+export function applyTranslationSafe<Q extends { or(filters: string): Q }>(query: Q): Q {
+  return query.or(TRANSLATION_SAFE_OR).or(TRANSLATION_NOT_ERROR_OR);
+}
 
 interface OpportunityRow {
-  id: string;
   type: string;
   title: string;
   company: string;
@@ -78,15 +116,6 @@ interface OpportunityRow {
   // any real-infra test that touches the opportunities catalog read path
   // until the migration is confirmed applied.
   superseded_by_opportunity_id: string | null;
-  // Translation columns (migration 028). All nullable — NULL means the
-  // translation pass has not yet run for this row.
-  source_language: string | null;
-  original_title: string | null;
-  original_description: string | null;
-  translated_at: string | null;
-  translation_model: string | null;
-  translated_content_hash: string | null;
-  translation_status: string | null;
 }
 
 
@@ -162,9 +191,12 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
  *    (a) source_language IS NULL   — pass not yet run (briefly invisible)
  *    (b) source_language = 'en'    — English, no translation needed
  *    (c) translation_status = 'ok' — non-English, successfully translated
+ *  AND, in every case, translation_status is not 'error' (see
+ *  TRANSLATION_NOT_ERROR_OR above: a row whose translation failed is hidden even
+ *  when no source language was ever detected for it).
  *  This MUST be set for every user-facing feed path and every SEO/sitemap
- *  path (Decision 4). A non-English row with translation_status = 'error'
- *  is NEVER shown to users or indexed. */
+ *  path (Decision 4). A row with translation_status = 'error' is NEVER shown to
+ *  users or indexed. */
 export async function getActiveOpportunities(
   supabase: SupabaseClient,
   options?: { freshOnly?: boolean; translationSafe?: boolean }
@@ -180,9 +212,7 @@ export async function getActiveOpportunities(
       query = query.gte('posted_at', windowFrom).lte('posted_at', windowTo);
     }
     if (options?.translationSafe) {
-      query = query.or(
-        'source_language.is.null,source_language.eq.en,translation_status.eq.ok'
-      );
+      query = applyTranslationSafe(query);
     }
     query = query.range(from, from + pageSize - 1);
     const { data, error } = await query;
@@ -217,7 +247,8 @@ export async function getRelatedActiveOpportunities(
   const { data, error } = await supabase
     .from('opportunities')
     .select(OPPORTUNITY_COLUMNS)
-    .or('source_language.is.null,source_language.eq.en,translation_status.eq.ok')
+    .or(TRANSLATION_SAFE_OR)
+    .or(TRANSLATION_NOT_ERROR_OR)
     .neq('source_id', excludeSourceId)
     .limit(n);
   if (error) throw new Error(`Could not read related opportunities: ${error.message}`);
@@ -225,6 +256,206 @@ export async function getRelatedActiveOpportunities(
 }
 
 
+
+/** What the sitemap needs from one active listing — see SITEMAP_COLUMNS. */
+export interface SitemapJobEntry {
+  sourceId: string;
+  title: string;
+  postedAt: string;
+  requiredSkills: string[];
+}
+
+/** Every active, translation-safe listing, reduced to the four fields the
+ *  sitemap uses. Replaces getActiveJobs() (the whole catalog, descriptions
+ *  and all) for sitemap.xml — same visibility rules, a fraction of the bytes.
+ *
+ *  Same gates as getActiveJobs(): RLS limits an anon/public client to
+ *  status = 'active', and the multilingual gate (translationSafe) is applied
+ *  so an untranslated non-English listing is never indexed.
+ *
+ *  Unlike the full read, this pages over a DETERMINISTIC order
+ *  (source, source_id — the table's natural key). `.range()` without an
+ *  ORDER BY gives no guarantee that pages don't overlap or skip rows while the
+ *  catalog is being written to, which for a sitemap means missing or repeated
+ *  URLs; the sort is on ~23k narrow keys, cheap next to the bytes it saves. */
+export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
+  const entries: SitemapJobEntry[] = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('opportunities')
+      .select(SITEMAP_COLUMNS)
+      .or(TRANSLATION_SAFE_OR)
+      .or(TRANSLATION_NOT_ERROR_OR)
+      .order('source', { ascending: true })
+      .order('source_id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const row of data as unknown as Array<{
+      source_id: string;
+      title: string;
+      posted_at: string;
+      required_skills: string[] | null;
+    }>) {
+      entries.push({
+        sourceId: row.source_id,
+        title: row.title,
+        postedAt: row.posted_at,
+        requiredSkills: row.required_skills ?? [],
+      });
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return entries;
+}
+
+/** The columns the directory/category hubs need to decide MEMBERSHIP and
+ *  ORDER without loading a single description — see getCatalogIndexEntries(). */
+export const CATALOG_INDEX_COLUMNS =
+  'source_id, title, posted_at, required_skills, remote_type, eligible_countries, experience_requirement';
+
+/** One active listing reduced to what category membership + ordering need. */
+export interface CatalogIndexEntry {
+  sourceId: string;
+  title: string;
+  /** ISO timestamp, or '' when the row has none (sorted last). */
+  postedAt: string;
+  requiredSkills: string[];
+  remoteType: string;
+  eligibleCountries: string[];
+  experienceRequirement?: string;
+}
+
+/**
+ * The slim catalog index behind the paginated directory and category hubs:
+ * every active, translation-safe listing's membership fields (~7 narrow
+ * columns, no description/company/URLs), newest first. Callers keep it behind
+ * a long TTL cache (src/lib/seo/directory.ts) so a page view costs a 24-row
+ * slice fetch, not a catalog read.
+ *
+ * Same visibility rules as getActiveJobs(): RLS (active only) via whichever
+ * client is passed, plus the multilingual translationSafe gate. Pages over a
+ * deterministic (source, source_id) order — see getSitemapJobEntries().
+ */
+export async function getCatalogIndexEntries(supabase: SupabaseClient): Promise<CatalogIndexEntry[]> {
+  const entries: CatalogIndexEntry[] = [];
+  const pageSize = 1000;
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('opportunities')
+      .select(CATALOG_INDEX_COLUMNS)
+      .or(TRANSLATION_SAFE_OR)
+      .or(TRANSLATION_NOT_ERROR_OR)
+      .order('source', { ascending: true })
+      .order('source_id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(`Could not read the catalog index: ${error.message}`);
+    if (!data || data.length === 0) break;
+    for (const row of data as unknown as Array<{
+      source_id: string;
+      title: string;
+      posted_at: string | null;
+      required_skills: string[] | null;
+      remote_type: string | null;
+      eligible_countries: string[] | null;
+      experience_requirement: string | null;
+    }>) {
+      entries.push({
+        sourceId: row.source_id,
+        title: row.title,
+        postedAt: row.posted_at ?? '',
+        requiredSkills: row.required_skills ?? [],
+        remoteType: row.remote_type ?? '',
+        eligibleCountries: row.eligible_countries ?? [],
+        experienceRequirement: row.experience_requirement ?? undefined,
+      });
+    }
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  // Newest first; '' (no date) last; sourceId breaks ties so the order is total.
+  entries.sort((a, b) => (a.postedAt === b.postedAt ? (a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0) : a.postedAt < b.postedAt ? 1 : -1));
+  return entries;
+}
+
+/**
+ * Full CanonicalOpportunity rows for a short list of source ids (one page of a
+ * hub — tens of rows), returned in the order of `sourceIds`. Same gates as the
+ * full read (RLS active-only + translationSafe). Ids that no longer resolve
+ * (expired since the index was built) are simply absent; a source_id shared by
+ * two sources resolves to the first row seen, matching the "first match wins"
+ * convention the job page already uses.
+ */
+export async function getOpportunitiesBySourceIds(supabase: SupabaseClient, sourceIds: string[]): Promise<CanonicalOpportunity[]> {
+  const ids = Array.from(new Set(sourceIds)).slice(0, 100);
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('opportunities')
+    .select(OPPORTUNITY_COLUMNS)
+    .in('source_id', ids)
+    .or(TRANSLATION_SAFE_OR)
+    .or(TRANSLATION_NOT_ERROR_OR);
+  if (error) throw new Error(`Could not read opportunities by source id: ${error.message}`);
+  const bySourceId = new Map<string, CanonicalOpportunity>();
+  for (const row of (data ?? []) as unknown as OpportunityRow[]) {
+    if (!bySourceId.has(row.source_id)) bySourceId.set(row.source_id, rowToCanonicalOpportunity(row));
+  }
+  const out: CanonicalOpportunity[] = [];
+  for (const id of ids) {
+    const o = bySourceId.get(id);
+    if (o) out.push(o);
+  }
+  return out;
+}
+
+/**
+ * One page of active, translation-safe listings matching every term, answered
+ * by the database (ILIKE on title / company / description / remote type, plus
+ * the term as a whole skill tag in its common casings), newest first, with an
+ * exact total for pagination. Terms MUST already be sanitised
+ * (buildSearchTerms() in src/lib/seo/directory.ts) — they are embedded in a
+ * PostgREST filter and an ILIKE pattern.
+ *
+ * Never loads the catalog: cost is one page of rows however large it grows.
+ */
+export async function searchActiveOpportunitiesPage(
+  supabase: SupabaseClient,
+  terms: string[],
+  range: { from: number; to: number }
+): Promise<{ rows: CanonicalOpportunity[]; total: number }> {
+  let query = supabase
+    .from('opportunities')
+    .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
+    .or(TRANSLATION_SAFE_OR)
+    .or(TRANSLATION_NOT_ERROR_OR);
+  for (const t of terms) {
+    const cap = t.charAt(0).toUpperCase() + t.slice(1);
+    const skillVariants = Array.from(new Set([t, cap, t.toUpperCase()]));
+    const clauses = [
+      `title.ilike.*${t}*`,
+      `company.ilike.*${t}*`,
+      `description.ilike.*${t}*`,
+      `remote_type.ilike.*${t}*`,
+      ...skillVariants.map((v) => `required_skills.cs.{${v}}`),
+    ];
+    // Several .or() calls are ANDed by PostgREST: every term must match somewhere.
+    query = query.or(clauses.join(','));
+  }
+  const { data, count, error } = await query
+    .order('posted_at', { ascending: false, nullsFirst: false })
+    .order('source_id', { ascending: true })
+    .range(range.from, range.to);
+  if (error) throw new Error(`Could not search opportunities: ${error.message}`);
+  return { rows: ((data ?? []) as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity), total: count ?? 0 };
+}
 
 /** Looks up a single opportunity by its `opp-${source}-${sourceId}` id
  *  string (the format used everywhere else in the app — swipes,

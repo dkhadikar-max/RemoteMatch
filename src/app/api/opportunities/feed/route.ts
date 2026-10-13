@@ -3,8 +3,7 @@ import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { PersonProfile } from '@/types/byn';
 import { scoreOpportunitiesForFeed, checkHardEligibility } from '@/lib/matching/engine';
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { getActiveOpportunities } from '@/lib/ingestion/catalog-read';
+import { getFeedCatalog } from '@/lib/feed/catalog-cache';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { deriveEffectiveDecisions, applyBehavioralPersonalization, type SwipeRow, type EffectiveDecision } from '@/lib/feed/behavioral-personalization';
 
@@ -125,8 +124,6 @@ async function loadEffectiveDecisions(auth: ResolvedAuth): Promise<Map<string, E
 }
 
 async function loadActiveCatalog() {
-  const supabase = createSupabaseServerClient();
-  if (!supabase) return null;
   // Supply Discovery gate C3-B: the 48-hour freshness promise applies to
   // THE FEED specifically (this is the one place a user is told "here are
   // opportunities for you right now") — global across every source, per
@@ -136,13 +133,14 @@ async function loadActiveCatalog() {
   // statistics are deliberately excluded).
   //
   // Multilingual gate (Decision 1 + Decision 4): translationSafe excludes
-  // non-English rows where translation has not yet succeeded. Fail-closed:
-  // a listing with translation_status = 'error' and source_language != 'en'
-  // is NEVER shown to users. Rows with source_language IS NULL (not yet
-  // processed) are also excluded — they become visible on the next sync
-  // cycle once the translation pass runs and marks them 'n/a' (English)
-  // or 'ok' (translated).
-  return getActiveOpportunities(supabase, { freshOnly: true, translationSafe: true });
+  // non-English rows where translation has not yet succeeded, and any row whose
+  // translation FAILED (translation_status = 'error'). Fail-closed.
+  //
+  // Egress: the catalog is identical for every caller, so it is read ONCE and
+  // shared (src/lib/feed/catalog-cache.ts), not once per request. The 48-hour
+  // window is re-applied to the cached rows in memory on every call, so a
+  // listing still drops out exactly 48 hours after it was posted.
+  return getFeedCatalog();
 }
 
 

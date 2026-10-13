@@ -6,6 +6,7 @@ import {
   reconcileCrossProviderDuplicates,
 } from '@/lib/ingestion/catalog-sync';
 import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
+import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
 
 
 /**
@@ -36,6 +37,8 @@ export async function POST(req: NextRequest) {
 
     if (action === 'revalidate') {
       const result = await revalidateStaleLinks();
+      // Link checks can expire listings: drop the in-memory read caches (best effort, never fails the sync).
+      try { invalidateCatalogCaches(); } catch { /* a cache must never fail a sync */ }
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
@@ -62,6 +65,11 @@ export async function POST(req: NextRequest) {
     // reconcile against.
     const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
     const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
+
+    // The sync wrote to the catalog: drop the in-memory read caches (feed, hubs, sitemap, resume) so
+    // the next request sees the new rows instead of waiting out a TTL. Best effort — a cache must
+    // never fail a sync that has already written.
+    try { invalidateCatalogCaches(); } catch { /* ignore */ }
 
     return NextResponse.json({ success: true, action: 'sync', ...result, translation, reconciliation });
 

@@ -575,40 +575,67 @@ export async function getJobById(id: string): Promise<CanonicalOpportunity | und
  * doesn't persist — strictly more accurate for the same underlying fact,
  * not a behavior change for any job that was correctly classified before.
  */
-export async function getJobsForCategory(categorySlug: string, supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
-  const activeJobs = await getActiveJobs(supabase);
-  const cat = SEO_CATEGORIES.find((c) => c.slug === categorySlug);
-  if (!cat) return activeJobs;
+/** The listing fields a category hub's membership rule reads. A subset of
+ *  CanonicalOpportunity, so the same rule can run over the slim catalog index
+ *  (src/lib/seo/catalog-index.ts) without loading descriptions. */
+export interface CategoryMatchFields {
+  title: string;
+  requiredSkills: string[];
+  remoteType?: string;
+  eligibleCountries?: string[];
+  experienceRequirement?: string;
+}
+
+/**
+ * Does a listing belong on this category hub? The single source of truth for
+ * category membership — getJobsForCategory() (full objects) and the paginated
+ * hub pages (slim index) both use it, so they cannot drift. The rules are the
+ * ones getJobsForCategory() has always applied, extracted unchanged.
+ */
+export function matchesCategory(cat: SeoCategory, j: CategoryMatchFields): boolean {
+  const eligible = j.eligibleCountries ?? [];
 
   if (cat.type === 'location') {
     if (cat.slug === 'worldwide') {
-      return activeJobs.filter((j) => j.remoteType === 'Worldwide');
+      return j.remoteType === 'Worldwide';
     }
     if (cat.slug === 'united-states') {
-      return activeJobs.filter((j) => j.remoteType === 'US' || j.eligibleCountries.some((c) => c === 'US' || c === 'USA'));
+      return j.remoteType === 'US' || eligible.some((c) => c === 'US' || c === 'USA');
     }
     if (cat.slug === 'europe') {
-      return activeJobs.filter((j) => j.remoteType === 'EU/EEA' || j.eligibleCountries.some((c) => c === 'EU' || c === 'UK' || c === 'EEA'));
+      return j.remoteType === 'EU/EEA' || eligible.some((c) => c === 'EU' || c === 'UK' || c === 'EEA');
     }
   }
 
   if (cat.type === 'seniority') {
     if (cat.slug === 'senior') {
-      return activeJobs.filter((j) => j.experienceRequirement === '7-10' || j.title.toLowerCase().includes('senior') || j.title.toLowerCase().includes('lead') || j.title.toLowerCase().includes('staff'));
+      const t = j.title.toLowerCase();
+      return j.experienceRequirement === '7-10' || t.includes('senior') || t.includes('lead') || t.includes('staff');
     }
     if (cat.slug === 'entry-level') {
-      return activeJobs.filter((j) => j.experienceRequirement === '0-1' || j.experienceRequirement === '2-3');
+      return j.experienceRequirement === '0-1' || j.experienceRequirement === '2-3';
     }
   }
 
   const slugLower = cat.slug.replace('-', ' ');
-  return activeJobs.filter((j) => {
-    const titleLower = j.title.toLowerCase();
-    const skillsLower = (j.requiredSkills || []).map((t) => t.toLowerCase());
-    const matchesTag = cat.tags.some((t) => skillsLower.includes(t.toLowerCase()));
-    const matchesTitle = titleLower.includes(slugLower) || (slugLower === 'software engineering' && (titleLower.includes('engineer') || titleLower.includes('developer')));
-    return matchesTag || matchesTitle;
-  });
+  const titleLower = j.title.toLowerCase();
+  const skillsLower = (j.requiredSkills || []).map((t) => t.toLowerCase());
+  const matchesTag = cat.tags.some((t) => skillsLower.includes(t.toLowerCase()));
+  const matchesTitle = titleLower.includes(slugLower) || (slugLower === 'software engineering' && (titleLower.includes('engineer') || titleLower.includes('developer')));
+  return matchesTag || matchesTitle;
+}
+
+/**
+ * Reference implementation: reads the WHOLE catalog. Page renders must not use
+ * it (one full read per request ≈ 21 MB over the wire at ~23k rows) — they use
+ * getCategoryPage() in src/lib/seo/directory.ts. Kept because test/seo-audit.ts
+ * and the equivalence tests use it as the behavior the paginated path must match.
+ */
+export async function getJobsForCategory(categorySlug: string, supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
+  const activeJobs = await getActiveJobs(supabase);
+  const cat = SEO_CATEGORIES.find((c) => c.slug === categorySlug);
+  if (!cat) return activeJobs;
+  return activeJobs.filter((j) => matchesCategory(cat, j));
 }
 
 /**
@@ -617,6 +644,9 @@ export async function getJobsForCategory(categorySlug: string, supabase: Supabas
  * and required skills. Location terms are matched against remoteType,
  * since the raw location string isn't persisted (see getJobsForCategory).
  */
+// Reference implementation: reads the WHOLE catalog. Page renders must not use it —
+// /remote-jobs uses loadSearchPage()/loadHubPage() (src/lib/seo/directory.ts). Kept for
+// test/seo-audit.ts and the equivalence tests in test/directory-egress-suite.ts.
 export async function searchJobs(query: string | undefined, categorySlug: string | undefined, supabase: SupabaseClient): Promise<CanonicalOpportunity[]> {
   const pool = categorySlug ? await getJobsForCategory(categorySlug, supabase) : await getActiveJobs(supabase);
   if (!query || !query.trim()) return pool;
