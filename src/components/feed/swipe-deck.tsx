@@ -9,6 +9,7 @@ import { JobDetailsModal } from './job-details-modal';
 import { CheckCircle2, Check, X, RotateCcw, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { recordFunnelEventClient } from '@/lib/funnel/client';
+import { deckKeyAction } from '@/lib/feed/deck-keys';
 
 interface SwipeDeckProps {
   opportunities: CanonicalOpportunity[];
@@ -18,6 +19,8 @@ interface SwipeDeckProps {
   planTier?: 'free' | 'pro';
   dailyRightSwipesCount?: number;
   onRequireUpgrade?: (reason: 'rewind' | 'swipes') => void;
+  /** True while a modal rendered over the feed (filter, upgrade, …) is open: the keyboard shortcuts must not act. */
+  paused?: boolean;
 }
 
 export function SwipeDeck({
@@ -28,6 +31,7 @@ export function SwipeDeck({
   planTier = 'free',
   dailyRightSwipesCount = 0,
   onRequireUpgrade,
+  paused = false,
 }: SwipeDeckProps) {
   const [deck, setDeck] = useState<CanonicalOpportunity[]>(opportunities);
   const [selectedOpp, setSelectedOpp] = useState<CanonicalOpportunity | null>(null);
@@ -96,26 +100,24 @@ export function SwipeDeck({
     }
   }, [onRewind, opportunities, planTier, onRequireUpgrade]);
 
-  // Keyboard navigation
+  // Keyboard navigation. A swipe is a persisted decision, so whether the deck owns a key event is decided by the
+  // tested pure function deckKeyAction (paused behind a modal, modifiers, auto-repeat, focus in a control, …).
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isDetailsOpen) return;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        handleSwipe('passed');
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        handleSwipe('interested');
-      } else if (e.key === ' ' && currentOpp) {
-        e.preventDefault();
+      const action = deckKeyAction(e, { paused, detailsOpen: isDetailsOpen, hasCard: Boolean(currentOpp) });
+      if (!action) return;
+      e.preventDefault();
+      if (action === 'details') {
         setSelectedOpp(currentOpp);
         setIsDetailsOpen(true);
+      } else {
+        handleSwipe(action);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSwipe, currentOpp, isDetailsOpen]);
+  }, [handleSwipe, currentOpp, isDetailsOpen, paused]);
 
   if (!currentOpp) {
     return (

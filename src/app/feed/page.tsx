@@ -318,6 +318,8 @@ export default function FeedPage() {
           planTier={profile.planTier}
           dailyRightSwipesCount={profile.dailyRightSwipesCount || 0}
           onRequireUpgrade={handleRequireUpgrade}
+          // Keyboard shortcuts must not swipe/save a job behind an open modal.
+          paused={isFilterModalOpen || isUpgradeModalOpen}
         />
       </div>
 
