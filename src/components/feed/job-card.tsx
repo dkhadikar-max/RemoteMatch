@@ -22,10 +22,9 @@ const COMPANY_COLORS: Record<string, string> = {
 };
 
 export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobCardProps) {
-  const fitScore = opportunity.fitScore ?? 94;
-  const fitLabel =
-    opportunity.fitBadge ??
-    (fitScore >= 80 ? 'Strong fit' : fitScore >= 65 ? 'Competitive' : 'Moderate fit');
+  // A fit percentage is shown ONLY when the server really scored this job against a usable profile.
+  // There is no fallback number: an unscored card (no / incomplete profile) shows no percentage at all.
+  const fitScore: number | null = typeof opportunity.fitScore === 'number' ? opportunity.fitScore : null;
 
   // L-adjacent-1 — real skill-match summary (deriveSkillMatchSummary,
   // computed page-side in feed/page.tsx from the user's actual
@@ -80,15 +79,17 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
             </div>
           </div>
 
-          {/* Right Coral-Red Score Box */}
-          <div className="rounded-2xl bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-3.5 py-2 text-center shrink-0 min-w-[76px]">
-            <div className="mono text-2xl font-bold text-[var(--red)] leading-none">
-              {fitScore}%
+          {/* Right Coral-Red Score Box — only for a real score */}
+          {fitScore !== null && (
+            <div className="rounded-2xl bg-[var(--red-soft)] border border-[var(--red-soft-border)] px-3.5 py-2 text-center shrink-0 min-w-[76px]">
+              <div className="mono text-2xl font-bold text-[var(--red)] leading-none">
+                {fitScore}%
+              </div>
+              <div className="text-[10px] font-semibold text-[var(--red)] mt-1 leading-tight uppercase tracking-wider">
+                match
+              </div>
             </div>
-            <div className="text-[10px] font-semibold text-[var(--red)] mt-1 leading-tight uppercase tracking-wider">
-              match
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Salary · Posting age — honest: real range or "Salary not listed" */}
@@ -112,18 +113,19 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
         <div className="mt-4 sm:mt-5 space-y-2 text-xs">
           <div>
             <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
-              Why it matches
+              {fitScore !== null ? 'Why it matches' : 'What the role asks for'}
             </span>
             <div className="flex items-center gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
               <Check size={14} className="stroke-[3] shrink-0" />
               <span>
-                {hasSkillMatch
+                {fitScore !== null && hasSkillMatch
                   ? `${opportunity.skillsMatchedCount} skills match your experience`
                   : `${opportunity.requiredSkills.length} skills required for this role`}
               </span>
             </div>
           </div>
 
+          {fitScore !== null && (
           <div>
             <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
               What may be missing
@@ -141,6 +143,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -150,7 +153,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           href={`/match/${opportunity.id}`}
           className="rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] flex-1 text-xs font-semibold text-center justify-center py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center"
         >
-          See why it matches
+          {fitScore !== null ? 'See why it matches' : 'View details'}
         </Link>
 
         <a

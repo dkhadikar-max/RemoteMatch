@@ -5,6 +5,7 @@ import { scoreOpportunitiesForFeed, checkHardEligibility } from '@/lib/matching/
 import { classifyCareerTransition } from '@/lib/matching/career-transition';
 import { getFeedCatalog } from '@/lib/feed/catalog-cache';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
+import { isUsableProfile } from '@/lib/profile/usable';
 import { deriveEffectiveDecisions, applyBehavioralPersonalization, type SwipeRow, type EffectiveDecision } from '@/lib/feed/behavioral-personalization';
 
 /**
@@ -171,7 +172,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Service temporarily unavailable.' }, { status: 503 });
     }
 
-    if (isScorableProfile(profile)) {
+    // Scored only when the profile is structurally scorable AND usable (>= 1 skill or target role). An EMPTY
+    // profile used to be scored and shown as a personalized feed; it now gets the plain catalog with an
+    // explicit `personalized: false` + reason, so the UI can say so instead of implying a match.
+    if (isScorableProfile(profile) && isUsableProfile(profile)) {
       // M-adjacent-1 — discoverability-only: a cross-provider duplicate
       // (reconcileCrossProviderDuplicates(), src/lib/ingestion/catalog-sync.ts)
       // is excluded from the scored card list only. `status` is never
@@ -213,10 +217,16 @@ export async function POST(req: NextRequest) {
       const effectiveDecisions = await loadEffectiveDecisions(auth);
       const personalized = applyBehavioralPersonalization(withTransition, effectiveDecisions);
 
-      return NextResponse.json({ success: true, opportunities: personalized, scored: true });
+      return NextResponse.json({ success: true, opportunities: personalized, scored: true, personalized: true });
     }
 
-    return NextResponse.json({ success: true, opportunities, scored: false });
+    return NextResponse.json({
+      success: true,
+      opportunities,
+      scored: false,
+      personalized: false,
+      reason: profile ? 'profile_incomplete' : 'no_profile',
+    });
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }

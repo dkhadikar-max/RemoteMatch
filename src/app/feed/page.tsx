@@ -5,6 +5,8 @@ import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement, notifyEntitlementChanged } from '@/lib/entitlement/client';
 import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
+import { isUsableProfile } from '@/lib/profile/usable';
+import { IncompleteProfileNotice } from '@/components/feed/incomplete-profile-notice';
 import { deriveSkillMatchSummary } from '@/lib/match/actionable-skill-gaps';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
@@ -18,6 +20,9 @@ export default function FeedPage() {
   const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [swipedCount, setSwipedCount] = useState(0);
+  // True only when the server actually scored this feed against a usable profile. Anything else is a plain,
+  // unscored job list and the page must not claim otherwise.
+  const [personalized, setPersonalized] = useState(false);
 
   // Gating & Filter state
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
@@ -69,6 +74,7 @@ export default function FeedPage() {
     const swipedIds = new Set(swipes.map((s) => s.opportunityId));
 
     let scored: Array<CanonicalOpportunity & { fitScore?: number; fitBadge?: string }> = [];
+    let isPersonalized = false;
     try {
       const res = await fetch('/api/opportunities/feed', {
         method: 'POST',
@@ -78,6 +84,7 @@ export default function FeedPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         scored = (data.opportunities as typeof scored).filter((opp) => !swipedIds.has(opp.id));
+        isPersonalized = data.personalized === true;
       }
     } catch {
       // Network failure: show an empty deck rather than falling back to any
@@ -89,7 +96,7 @@ export default function FeedPage() {
     // Never inside engine.ts, never a fabricated fallback when currentProfile
     // is somehow absent (the fields simply stay undefined and job-card.tsx
     // renders its own honest no-data fallback).
-    const withSkillMatch = currentProfile
+    const withSkillMatch = currentProfile && isPersonalized && isUsableProfile(currentProfile)
       ? scored.map((opp) => {
           const summary = deriveSkillMatchSummary(currentProfile, opp);
           return {
@@ -102,6 +109,7 @@ export default function FeedPage() {
       : scored;
 
     setOpportunities(withSkillMatch);
+    setPersonalized(isPersonalized);
     setSwipedCount(swipes.length);
     setIsLoading(false);
   };
@@ -229,14 +237,22 @@ export default function FeedPage() {
   const rightSwipesCount = profile.dailyRightSwipesCount || 0;
   const savesRemaining = Math.max(15 - rightSwipesCount, 0);
   const hasActiveFilters = Object.values(activeFilters).some((v) => v !== undefined);
+  // The preference rail / heading show only roles the user really saved — never an invented default.
+  const savedRole = profile.intent?.targetRoles?.find((r) => typeof r === 'string' && r.trim()) ?? null;
 
   return (
     <div className="flex-1 flex flex-col items-center px-3 sm:px-4 py-3 sm:py-6 md:py-8 max-w-5xl mx-auto w-full">
+      {!personalized && <IncompleteProfileNotice />}
+
       {/* Desktop Context Rail */}
       <div className="hidden md:flex items-center justify-between w-full max-w-[560px] mb-3 text-xs text-[var(--muted)] px-1">
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-[var(--ink)]">Your preferences:</span>
-          <span>Remote · Full-time · {profile.intent?.targetRoles[0] || 'Engineering'}</span>
+          {personalized && savedRole && (
+            <>
+              <span className="font-semibold text-[var(--ink)]">Your preferences:</span>
+              <span>Remote · Full-time · {savedRole}</span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {isFree ? (
@@ -256,14 +272,16 @@ export default function FeedPage() {
         <div>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)]" />
-            Jobs picked for you
+            {personalized ? 'Jobs picked for you' : 'Remote jobs'}
           </span>
           <p className="text-[11px] text-[var(--muted)] mt-0.5 hidden sm:block">
-            A focused list of remote opportunities matched to your experience.
+            {personalized
+              ? 'A focused list of remote opportunities matched to your experience.'
+              : 'Recent remote opportunities, not yet matched to your experience.'}
           </p>
           <div className="flex items-center gap-2 mt-1">
             <h1 className="text-sm font-bold text-[var(--ink)]">
-              {activeFilters.targetRole || profile.intent?.targetRoles[0] || 'Full Stack Engineer'}
+              {activeFilters.targetRole || (personalized ? savedRole : null) || 'Remote jobs'}
             </h1>
             <span className="text-xs text-[var(--muted)]/40">·</span>
             <span className="text-xs text-[var(--muted)]">
@@ -309,11 +327,15 @@ export default function FeedPage() {
           <Check size={14} className="stroke-[3]" />
           <span>Remote</span>
         </span>
-        <span className="text-[var(--muted)]/40">·</span>
-        <span className="flex items-center gap-1.5 font-medium text-[#059669]">
-          <Check size={14} className="stroke-[3]" />
-          <span>Eligible</span>
-        </span>
+        {personalized && (
+          <>
+            <span className="text-[var(--muted)]/40">·</span>
+            <span className="flex items-center gap-1.5 font-medium text-[#059669]">
+              <Check size={14} className="stroke-[3]" />
+              <span>Eligible</span>
+            </span>
+          </>
+        )}
       </div>
 
       {/* Filter Modal */}

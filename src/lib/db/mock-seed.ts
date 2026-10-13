@@ -84,6 +84,80 @@ export const DEFAULT_DEMO_PROFILE: PersonProfile = {
   },
 };
 
+/**
+ * What a BROWSER starts with when nothing is stored and nothing has been hydrated from the server: an empty
+ * profile — no skills, no target roles, no location. The demo persona above must never stand in for a real
+ * signed-in user (it used to, so an account with no saved profile saw "Alex Chen" results and invented fit scores).
+ * An empty profile is "not usable" (src/lib/profile/usable.ts), so the feed shows unscored jobs and asks the user
+ * to complete their profile.
+ *
+ * Server-side (swipe/applications routes) the singleton still starts from DEFAULT_DEMO_PROFILE — that path is a
+ * separate, deliberately untouched defect (PR 2) and the persisted decision-snapshot contract is frozen.
+ */
+export function createEmptyProfile(): PersonProfile {
+  const now = new Date().toISOString();
+  return {
+    id: 'local-user',
+    email: '',
+    fullName: '',
+    planTier: 'free',
+    dailyEvaluationsCount: 0,
+    dailyRightSwipesCount: 0,
+    dailyProposalsCount: 0,
+    usageDate: now.slice(0, 10),
+    lastEvaluationResetAt: now,
+    createdAt: now,
+    updatedAt: now,
+    skills: [],
+    experiences: [],
+  };
+}
+
+/** Structural equality for plain JSON values, optionally ignoring top-level keys (timestamps that differ per load). */
+function sameValue(a: unknown, b: unknown, ignore: string[] = []): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a).filter((k) => !ignore.includes(k) && (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => !ignore.includes(k) && (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+/**
+ * Removes leftover DEMO-PERSONA content from a profile that was stored in this browser. Before this change the
+ * browser started from the persona, and `localStore.updateProfile()` persisted the WHOLE object — so a browser that
+ * onboarded (or merely loaded) still carries Alex Chen's experiences / intent / location / skills in localStorage.
+ *
+ * Deletion is conservative: a record is removed ONLY when it is field-for-field identical to the persona's record
+ * (ids alone are never enough — a user-edited record that kept a demo id is preserved), and the persona's name /
+ * headline / avatar are cleared only alongside the persona's own placeholder email. Idempotent.
+ */
+export function stripDemoPersonaContent(p: PersonProfile): PersonProfile {
+  const demo = DEFAULT_DEMO_PROFILE;
+  const out: PersonProfile = { ...p };
+
+  // The placeholder address is the marker that identity fields were never the user's own.
+  if (p.email === demo.email) {
+    out.email = '';
+    if (p.fullName === demo.fullName) out.fullName = '';
+    if (p.headline === demo.headline) out.headline = '';
+    if (p.avatarUrl === demo.avatarUrl) out.avatarUrl = undefined;
+  }
+
+  const isDemoSkills = Array.isArray(p.skills) && sameValue(p.skills, demo.skills);
+  if (isDemoSkills) {
+    out.skills = [];
+    if (p.profileStrength === demo.profileStrength) out.profileStrength = undefined;
+  }
+  if (Array.isArray(p.experiences)) {
+    out.experiences = p.experiences.filter((e) => !demo.experiences.some((d) => sameValue(e, d)));
+  }
+  if (p.intent && demo.intent && sameValue(p.intent, demo.intent, ['updatedAt'])) out.intent = undefined;
+  if (p.location && demo.location && sameValue(p.location, demo.location)) out.location = undefined;
+  return out;
+}
+
 const STORAGE_KEYS = {
   PROFILE: 'remotematch_profile',
   SWIPES: 'remotematch_swipes',
@@ -92,7 +166,8 @@ const STORAGE_KEYS = {
 
 // In-memory data store with browser localStorage synchronization
 class LocalRepository {
-  private profile: PersonProfile = DEFAULT_DEMO_PROFILE;
+  // Browser: empty (see createEmptyProfile). Server: the demo persona, unchanged (PR 2 territory).
+  private profile: PersonProfile = typeof window !== 'undefined' ? createEmptyProfile() : DEFAULT_DEMO_PROFILE;
   private opportunities: CanonicalOpportunity[] = CURATED_JOBS.map(normalizeOpportunity);
   private swipes: Array<{ opportunityId: string; action: 'interested' | 'passed'; date: string }> = [];
   private applications: Map<string, ApplicationRecord> = new Map();
@@ -108,7 +183,7 @@ class LocalRepository {
     try {
       const storedProfile = localStorage.getItem(STORAGE_KEYS.PROFILE);
       if (storedProfile) {
-        this.profile = JSON.parse(storedProfile);
+        this.profile = stripDemoPersonaContent(JSON.parse(storedProfile) as PersonProfile);
       }
 
       const storedSwipes = localStorage.getItem(STORAGE_KEYS.SWIPES);
