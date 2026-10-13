@@ -157,7 +157,7 @@ export function UpgradeModal({
           </span>
           {PRO_FEATURES.map((feat) => (
             <div key={feat} className="flex items-center gap-2 text-xs font-semibold text-[var(--ink)]">
-              <span className="grid size-4 place-items-center rounded-full bg-[#ecfdf5] text-[#059669] border border-[#a7f3d0]">
+              <span className="grid size-4 place-items-center rounded-full bg-[#ecfdf5] text-[#04714f] border border-[#a7f3d0]">
                 <Check size={11} strokeWidth={3} />
               </span>
               <span>{feat}</span>

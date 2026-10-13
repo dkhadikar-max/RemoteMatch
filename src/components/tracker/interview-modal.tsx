@@ -148,7 +148,7 @@ export function InterviewModal({
         {/* Preparation Focus Points */}
         <div className="p-3.5 rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--ink)]">
-            <CheckCircle2 size={15} className="text-[#059669]" />
+            <CheckCircle2 size={15} className="text-[#04714f]" />
             <span>What should you prepare for?</span>
           </div>
           <ul className="text-xs text-[#5c5550] space-y-1.5 list-disc pl-4">
@@ -182,7 +182,7 @@ export function InterviewModal({
           <button
             type="button"
             onClick={() => handleSave('offer')}
-            className="w-full sm:flex-1 rounded-xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#a7f3d0] text-[#059669] text-xs font-bold py-3 flex items-center justify-center gap-1.5 transition-colors shadow-sm min-h-[44px]"
+            className="w-full sm:flex-1 rounded-xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#a7f3d0] text-[#04714f] text-xs font-bold py-3 flex items-center justify-center gap-1.5 transition-colors shadow-sm min-h-[44px]"
           >
             <Award size={15} />
             <span>{isOfferSaved ? 'Offer Recorded! 🎉' : 'Record Offer Received'}</span>

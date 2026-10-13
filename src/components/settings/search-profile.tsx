@@ -404,7 +404,7 @@ export function SearchProfile({
               <span>{isSaving ? 'Saving…' : saved ? 'Saved!' : 'Save search profile'}</span>
             </button>
             {saved && (
-              <span className="text-xs font-medium text-[#059669] flex items-center gap-1">
+              <span className="text-xs font-medium text-[#04714f] flex items-center gap-1">
                 <CheckCircle2 size={13} />
                 <span>Saved to your account</span>
               </span>

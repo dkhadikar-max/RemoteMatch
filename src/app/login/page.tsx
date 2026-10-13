@@ -88,7 +88,7 @@ function LoginContent() {
             {message && (
               <p
                 className={`text-xs font-medium flex items-start gap-1.5 ${
-                  message.type === 'success' ? 'text-[#059669]' : 'text-[var(--red)]'
+                  message.type === 'success' ? 'text-[#04714f]' : 'text-[var(--red)]'
                 }`}
               >
                 {message.type === 'success' && <CheckCircle2 size={13} className="shrink-0 mt-0.5" />}

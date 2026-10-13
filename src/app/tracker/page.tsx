@@ -203,11 +203,11 @@ export default function TrackerPage() {
 
           {/* Card 3: Offers (Soft Green) */}
           <div className="rounded-3xl p-5 border border-[#a7f3d0] bg-[#ecfdf5]">
-            <p className="text-xs font-semibold text-[#059669] uppercase tracking-wider">Offers</p>
-            <p className="mono mt-2 text-3xl font-bold text-[#059669]">
+            <p className="text-xs font-semibold text-[#04714f] uppercase tracking-wider">Offers</p>
+            <p className="mono mt-2 text-3xl font-bold text-[#04714f]">
               {offerCount}
             </p>
-            <p className="mt-1 text-[11px] text-[#059669]">Received</p>
+            <p className="mt-1 text-[11px] text-[#04714f]">Received</p>
           </div>
 
           {/* Card 4: Not selected */}
@@ -401,7 +401,7 @@ export default function TrackerPage() {
                             isOffer ? 'bg-[#059669]' : 'bg-[var(--line)]'
                           }`} />
                         </div>
-                        <span className={isOffer ? 'font-semibold text-[#059669]' : ''}>Offer</span>
+                        <span className={isOffer ? 'font-semibold text-[#04714f]' : ''}>Offer</span>
                       </div>
                     </div>
                   </div>
@@ -418,16 +418,16 @@ export default function TrackerPage() {
                         </>
                       ) : status === 'applied' ? (
                         <>
-                          <CheckCircle2 size={15} className="text-[#059669] shrink-0" />
+                          <CheckCircle2 size={15} className="text-[#04714f] shrink-0" />
                           <span>
                             <strong className="text-[var(--ink)]">Applied:</strong> Ready for recruiter screening outreach.
                           </span>
                         </>
                       ) : status === 'offer' ? (
                         <>
-                          <Award size={15} className="text-[#059669] shrink-0" />
+                          <Award size={15} className="text-[#04714f] shrink-0" />
                           <span>
-                            <strong className="text-[#059669]">Offer Extended:</strong> Review compensation and terms.
+                            <strong className="text-[#04714f]">Offer Extended:</strong> Review compensation and terms.
                           </span>
                         </>
                       ) : (
@@ -464,7 +464,7 @@ export default function TrackerPage() {
                         <button
                           type="button"
                           onClick={() => openInterviewModal(app)}
-                          className="rounded-xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#a7f3d0] text-[#059669] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto"
+                          className="rounded-xl bg-[#ecfdf5] hover:bg-[#d1fae5] border border-[#a7f3d0] text-[#04714f] font-semibold px-3.5 py-1.5 text-xs shadow-sm transition-colors min-h-[36px] w-full sm:w-auto"
                         >
                           View offer details
                         </button>

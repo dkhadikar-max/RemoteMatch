@@ -115,7 +115,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
             <span className="text-[11px] font-semibold text-[var(--muted)] mb-1 block">
               {fitScore !== null ? 'Why it matches' : 'What the role asks for'}
             </span>
-            <div className="flex items-center gap-2 text-[#059669] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
+            <div className="flex items-center gap-2 text-[#04714f] font-medium bg-[#ecfdf5] border border-[#a7f3d0] px-3.5 py-2 rounded-xl">
               <Check size={14} className="stroke-[3] shrink-0" />
               <span>
                 {fitScore !== null && hasSkillMatch
