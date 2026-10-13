@@ -95,7 +95,9 @@ async function run() {
     assert(/useEffect\(\(\) => {[\s\S]*recordFunnelEventClient\('job_viewed', { opportunity_id: currentOpp\.id }\)[\s\S]*}, \[currentOpp\?\.id\]\)/.test(deckSrc), 'swipe-deck.tsx fires job_viewed from an effect keyed on currentOpp?.id');
     // M-adjacent-2(b) safety: the new effect must not touch the existing
     // keyboard-handling effect's own dependency array.
-    assert(deckSrc.includes('[handleSwipe, currentOpp, isDetailsOpen]'), 'the pre-existing keyboard effect\'s dependency array is unchanged — M-adjacent-2(b) stays untouched');
+    // Guard purpose: the FUNNEL work must not touch the keyboard effect. The array now also lists `paused`, added
+    // deliberately by the modal-keyboard fix (test/feed-keyboard-suite.ts); the funnel effect itself is unchanged.
+    assert(deckSrc.includes('[handleSwipe, currentOpp, isDetailsOpen, paused]'), 'the keyboard effect\'s dependency array is the one set by the modal-keyboard fix (funnel work leaves it alone)');
   }
 
   if (!hasRequiredEnv()) {
