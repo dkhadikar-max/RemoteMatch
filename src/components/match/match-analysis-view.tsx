@@ -129,7 +129,9 @@ export function MatchAnalysisView({
   // frozen engine.ts; engine.ts stays byte-for-byte untouched (this was an
   // explicit boundary), so the honest wording is substituted here, at render
   // time only, never at the source.
-  const displayStrength = (s: string) => s.replace('(Verified)', '(from your profile)');
+  // The engine also labels substring-matched skills "(Strong Evidence)"; that is not evidence of anything either, so the
+  // same honest wording is used (display only — scoring and engine output are unchanged).
+  const displayStrength = (s: string) => s.replace('(Verified)', '(from your profile)').replace('(Strong Evidence)', '(from your profile)');
 
   const fitScore = match.fitScore;
   const fitLabel =

@@ -419,7 +419,7 @@ export default function LandingPage() {
                 How does RemoteMatch work?
               </h3>
               <p className="font-medium text-[var(--ink)] leading-relaxed">
-                You tell us your role, seniority, and preferences, and we compare each remote job against your verified experience.
+                You tell us your role, seniority, and preferences, and we compare each remote job against the experience and preferences you give us.
               </p>
               <p className="text-[var(--muted)] leading-relaxed">
                 Every opportunity displays a clear fit score, lists matching capabilities, and highlights potential gaps before you invest time applying.
