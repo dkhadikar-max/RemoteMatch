@@ -187,6 +187,33 @@ async function main() {
   assert(kept.experiences.length === 0, "persona's lingering experiences are removed from an onboarded profile");
   const again = stripDemoPersonaContent(kept);
   assert(JSON.stringify(again) === JSON.stringify(kept), 'stripDemoPersonaContent is idempotent');
+
+  // Collision cases (review of PR #5): a user record that merely REUSES a persona id must never be deleted.
+  const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
+  const demoExp = DEFAULT_DEMO_PROFILE.experiences;
+  const editedExp = { ...clone(demoExp[0]), achievements: ['Led a migration I actually did.'] };
+  const sameIdOtherRole = { ...clone(demoExp[1]), roleTitle: 'Staff Engineer' };
+  const mixed = stripDemoPersonaContent({ ...clone(DEFAULT_DEMO_PROFILE), experiences: [editedExp, clone(demoExp[1])] });
+  assert(mixed.experiences.length === 1 && mixed.experiences[0].achievements[0] === 'Led a migration I actually did.',
+    'user-edited experience that kept a persona id+company is PRESERVED; the untouched persona one is removed');
+  const roleEdit = stripDemoPersonaContent({ ...clone(DEFAULT_DEMO_PROFILE), experiences: [clone(demoExp[0]), sameIdOtherRole] });
+  assert(roleEdit.experiences.length === 1 && roleEdit.experiences[0].roleTitle === 'Staff Engineer', 'edited role title on a persona id is preserved');
+  const edited = clone(DEFAULT_DEMO_PROFILE);
+  edited.skills[2] = { ...edited.skills[2], yearsUsed: 9 };
+  assert(stripDemoPersonaContent(edited).skills.length === DEFAULT_DEMO_PROFILE.skills.length, 'skills with any user edit are kept in full (no partial deletion)');
+  const intentEdit = clone(DEFAULT_DEMO_PROFILE);
+  intentEdit.intent = { ...intentEdit.intent!, targetRoles: ['Data Engineer'] };
+  assert(stripDemoPersonaContent(intentEdit).intent?.targetRoles[0] === 'Data Engineer', 'edited intent that kept id intent-1 is preserved');
+  const locEdit = clone(DEFAULT_DEMO_PROFILE);
+  locEdit.location = { ...locEdit.location!, currentCountry: 'India' };
+  assert(stripDemoPersonaContent(locEdit).location?.currentCountry === 'India', 'edited location that kept id loc-1 is preserved');
+  const realAlex = { ...clone(DEFAULT_DEMO_PROFILE), email: 'alex.real@example.org', skills: [skill('Go')], experiences: [] };
+  const realAlexOut = stripDemoPersonaContent(realAlex);
+  assert(realAlexOut.fullName === 'Alex Chen' && realAlexOut.headline === DEFAULT_DEMO_PROFILE.headline && realAlexOut.email === 'alex.real@example.org',
+    'a real person named Alex Chen (different email) keeps their name / headline / email');
+  const untouchedPersona = stripDemoPersonaContent(clone(DEFAULT_DEMO_PROFILE));
+  assert(untouchedPersona.skills.length === 0 && untouchedPersona.experiences.length === 0 && !untouchedPersona.intent && !untouchedPersona.location && untouchedPersona.fullName === '',
+    'the untouched persona (JSON round-tripped, as from storage) is still fully stripped');
   delete g.window; delete g.localStorage;
 
   // ── 5. Engine safety with an EMPTY profile ────────────────────────────────

@@ -113,30 +113,48 @@ export function createEmptyProfile(): PersonProfile {
   };
 }
 
+/** Structural equality for plain JSON values, optionally ignoring top-level keys (timestamps that differ per load). */
+function sameValue(a: unknown, b: unknown, ignore: string[] = []): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a).filter((k) => !ignore.includes(k) && (a as Record<string, unknown>)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => !ignore.includes(k) && (b as Record<string, unknown>)[k] !== undefined);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
 /**
  * Removes leftover DEMO-PERSONA content from a profile that was stored in this browser. Before this change the
  * browser started from the persona, and `localStore.updateProfile()` persisted the WHOLE object — so a browser that
  * onboarded (or merely loaded) still carries Alex Chen's experiences / intent / location / skills in localStorage.
- * Only entries that are exactly the persona's (same id AND same identifying value) are removed; anything the user
- * entered themselves, or that was hydrated from the server, is untouched. Idempotent.
+ *
+ * Deletion is conservative: a record is removed ONLY when it is field-for-field identical to the persona's record
+ * (ids alone are never enough — a user-edited record that kept a demo id is preserved), and the persona's name /
+ * headline / avatar are cleared only alongside the persona's own placeholder email. Idempotent.
  */
 export function stripDemoPersonaContent(p: PersonProfile): PersonProfile {
   const demo = DEFAULT_DEMO_PROFILE;
-  const isDemoSkills =
-    Array.isArray(p.skills) &&
-    p.skills.length === demo.skills.length &&
-    p.skills.every((sk, i) => sk.id === demo.skills[i].id && sk.skillName === demo.skills[i].skillName);
-  const demoExpIds = new Set(demo.experiences.map((e) => `${e.id}|${e.company}`));
   const out: PersonProfile = { ...p };
-  if (p.email === demo.email) out.email = '';
-  if (p.fullName === demo.fullName) out.fullName = '';
-  if (p.headline === demo.headline) out.headline = '';
-  if (p.avatarUrl === demo.avatarUrl) out.avatarUrl = undefined;
-  if (p.profileStrength === demo.profileStrength && isDemoSkills) out.profileStrength = undefined;
-  if (isDemoSkills) out.skills = [];
-  if (Array.isArray(p.experiences)) out.experiences = p.experiences.filter((e) => !demoExpIds.has(`${e.id}|${e.company}`));
-  if (p.intent && p.intent.id === demo.intent?.id) out.intent = undefined;
-  if (p.location && p.location.id === demo.location?.id) out.location = undefined;
+
+  // The placeholder address is the marker that identity fields were never the user's own.
+  if (p.email === demo.email) {
+    out.email = '';
+    if (p.fullName === demo.fullName) out.fullName = '';
+    if (p.headline === demo.headline) out.headline = '';
+    if (p.avatarUrl === demo.avatarUrl) out.avatarUrl = undefined;
+  }
+
+  const isDemoSkills = Array.isArray(p.skills) && sameValue(p.skills, demo.skills);
+  if (isDemoSkills) {
+    out.skills = [];
+    if (p.profileStrength === demo.profileStrength) out.profileStrength = undefined;
+  }
+  if (Array.isArray(p.experiences)) {
+    out.experiences = p.experiences.filter((e) => !demo.experiences.some((d) => sameValue(e, d)));
+  }
+  if (p.intent && demo.intent && sameValue(p.intent, demo.intent, ['updatedAt'])) out.intent = undefined;
+  if (p.location && demo.location && sameValue(p.location, demo.location)) out.location = undefined;
   return out;
 }
 
