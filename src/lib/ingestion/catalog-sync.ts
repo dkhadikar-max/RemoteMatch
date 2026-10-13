@@ -47,6 +47,13 @@ import {
 } from './pipeline';
 import { passesFreshnessGate } from './freshness-gate';
 import type { LifecycleReport, SyncMode } from './catalog-sync-plan';
+import {
+  TRANSLATION_STATE_COLUMNS,
+  decideTranslationUpdate,
+  applyTranslationDecision,
+  needsOriginalText,
+  loadOriginalTexts,
+} from './translation-preservation';
 import { planCatalogSyncReadOnly, runCorrectedCatalogSync, type RollbackEntry } from './catalog-sync-apply';
 
 /**
@@ -373,12 +380,24 @@ async function syncOpportunitiesToCatalogLegacy(
   // here, so they structurally cannot be touched by anything below.
   const { data: existingRows, error: fetchErr } = await admin
     .from('opportunities')
-    .select('id, source, source_id, status, consecutive_absences')
+    .select(`id, source, source_id, status, consecutive_absences, ${TRANSLATION_STATE_COLUMNS.join(', ')}`)
     .in('source', successfulSources);
   if (fetchErr) throw new Error(`Could not read existing opportunities: ${fetchErr.message}`);
 
+  // Translated rows keep their translation unless the SOURCE text really changed (translation-preservation.ts).
+  // Deciding that exactly needs the stored source text, which is loaded for translated rows only.
+  const existingList = (existingRows ?? []) as unknown as Array<Record<string, any>>;
+  const originalsNeeded = existingList.filter((r) => needsOriginalText(r)).map((r) => r.id as string);
+  if (originalsNeeded.length > 0) {
+    const { byId } = await loadOriginalTexts(admin, originalsNeeded);
+    for (const r of existingList) {
+      const o = byId.get(r.id as string);
+      if (o) { r.original_title = o.original_title; r.original_description = o.original_description; }
+    }
+  }
+
   const existingByKey = new Map(
-    (existingRows ?? []).map((r) => [`${r.source}:${r.source_id}`, r])
+    existingList.map((r) => [`${r.source}:${r.source_id}`, r])
   );
 
   // --- Upsert every job returned by a successful provider this cycle ---
@@ -455,6 +474,11 @@ async function syncOpportunitiesToCatalogLegacy(
       // our catalog presence, not the posting.
     };
 
+    // Translation-aware writes for EXISTING rows (translation-preservation.ts). Inserts below are untouched:
+    // a new row has no translation to preserve. 'normal' (every untranslated row) writes exactly what it always did.
+    const translationDecision = existing ? decideTranslationUpdate(existing as Record<string, any>, contentFields) : 'normal';
+    const { fields: updateFields, extra: translationExtra } = applyTranslationDecision(contentFields, translationDecision);
+
     if (weakDescription) {
       // Content-quality gate, not an availability question. 'draft' rows
       // never enter the unknown/active/expired lifecycle and are never
@@ -462,7 +486,7 @@ async function syncOpportunitiesToCatalogLegacy(
       // the same job, it naturally re-enters as 'unknown' below (since it
       // won't match this branch anymore) and gets verified like new.
       if (existing) {
-        await admin.from('opportunities').update({ ...contentFields, status: 'draft', last_seen_in_feed_at: new Date().toISOString() }).eq('id', existing.id);
+        await admin.from('opportunities').update({ ...updateFields, ...translationExtra, status: 'draft', last_seen_in_feed_at: new Date().toISOString() }).eq('id', existing.id);
       } else {
         await admin.from('opportunities').insert({
           ...contentFields,
@@ -488,7 +512,8 @@ async function syncOpportunitiesToCatalogLegacy(
         await admin
           .from('opportunities')
           .update({
-            ...contentFields,
+            ...updateFields,
+            ...translationExtra,
             status: 'expired',
             is_permanently_removed: override.isPermanentlyRemoved,
             last_seen_in_feed_at: new Date().toISOString(),
@@ -577,7 +602,7 @@ async function syncOpportunitiesToCatalogLegacy(
       // directly rather than link-checked, for the same reason as above.)
       await admin
         .from('opportunities')
-        .update({ ...contentFields, last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0 })
+        .update({ ...updateFields, ...translationExtra, last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0 })
         .eq('id', existing.id);
 
       if (skipsAutomatedVerification) {
@@ -598,7 +623,7 @@ async function syncOpportunitiesToCatalogLegacy(
     // that is revalidateStaleLinks()'s job, on its own cadence.
     await admin
       .from('opportunities')
-      .update({ ...contentFields, last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0 })
+      .update({ ...updateFields, ...translationExtra, last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0 })
       .eq('id', existing.id);
     summary.refreshedExistingActive++;
   }

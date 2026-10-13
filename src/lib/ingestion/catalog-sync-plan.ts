@@ -21,6 +21,7 @@
  * Both non-complete kinds age out only via the unseen-retirement rule.
  */
 import type { normalizeOpportunity } from './pipeline';
+import { decideTranslationUpdate, applyTranslationDecision, type TranslationState } from './translation-preservation';
 
 export type NormalizedOpp = ReturnType<typeof normalizeOpportunity>;
 export type SyncMode = 'legacy' | 'shadow' | 'observe' | 'full';
@@ -154,8 +155,15 @@ function valuesEqual(a: unknown, b: unknown): boolean {
  *  salary or remote-scope change would slip past it. A false "changed" is
  *  harmless (one ordinary per-row UPDATE, exactly the legacy behaviour); a
  *  false "unchanged" would silently drop an update, so this errs to "changed". */
-export function contentDiffers(existing: Partial<ContentFields>, fields: ContentFields): boolean {
+export function contentDiffers(existing: Partial<ContentFields> & TranslationState, fields: ContentFields): boolean {
+  // A TRANSLATED row holds English title/description, so comparing them with the feed's source-language text would
+  // report "changed" on every cycle (and the writer would then undo the translation). Translation-aware instead
+  // (translation-preservation.ts): unchanged source text => title/description/content_hash are not compared;
+  // changed source text => different, and the row must be written (and withdrawn).
+  const decision = decideTranslationUpdate(existing, fields as { title: unknown; description: unknown; content_hash: unknown });
+  if (decision === 'withdraw') return true;
   for (const name of CONTENT_FIELD_NAMES) {
+    if (decision === 'preserve' && (name === 'title' || name === 'description' || name === 'content_hash')) continue;
     if (!valuesEqual(existing[name], fields[name])) return true;
   }
   return false;
@@ -165,7 +173,7 @@ export function contentDiffers(existing: Partial<ContentFields>, fields: Content
 // Upsert planning
 // ---------------------------------------------------------------------------
 
-export interface ExistingRow extends Partial<ContentFields> {
+export interface ExistingRow extends Partial<ContentFields>, TranslationState {
   id: string;
   source: string;
   source_id: string;
@@ -286,13 +294,17 @@ export function planUpserts(
     const override = overrides.get(key);
     const weak = !override && policy.isWeakDescription(opp.description);
     const fields = buildContentFields(opp);
+    // Translation-aware field set for an EXISTING row ('normal' = exactly `fields`, so untranslated rows are unchanged).
+    const tr = existing
+      ? applyTranslationDecision(fields, decideTranslationUpdate(existing, fields as { title: unknown; description: unknown; content_hash: unknown }))
+      : { fields, extra: {} as { translation_status?: null } };
 
     if (weak) {
       if (existing) {
         if (existing.status === 'draft' && !contentDiffers(existing, fields)) {
           plan.draftTouchIds.push(existing.id);
         } else {
-          plan.contentUpdates.push({ id: existing.id, kind: 'draft', patch: { ...fields, status: 'draft', last_seen_in_feed_at: now } });
+          plan.contentUpdates.push({ id: existing.id, kind: 'draft', patch: { ...tr.fields, ...tr.extra, status: 'draft', last_seen_in_feed_at: now } });
         }
       } else {
         insert('draft', opp, fields);
@@ -306,7 +318,8 @@ export function planUpserts(
           id: existing.id,
           kind: 'override',
           patch: {
-            ...fields,
+            ...tr.fields,
+            ...tr.extra,
             status: 'expired',
             is_permanently_removed: override.isPermanentlyRemoved,
             last_seen_in_feed_at: now,
@@ -329,14 +342,14 @@ export function planUpserts(
 
     if (existing.status === 'expired') {
       // Reappearance: treated exactly like a new job, never assumed active.
-      plan.contentUpdates.push({ id: existing.id, kind: 'reappeared', patch: { ...fields, last_seen_in_feed_at: now, consecutive_absences: 0 } });
+      plan.contentUpdates.push({ id: existing.id, kind: 'reappeared', patch: { ...tr.fields, ...tr.extra, last_seen_in_feed_at: now, consecutive_absences: 0 } });
       if (skipsVerification) plan.curatedReactivateIds.push(existing.id);
       else plan.verify.push({ id: existing.id, source: opp.source, sourceId: opp.sourceId, officialUrl: opp.officialUrl, reason: 'reappeared' });
       continue;
     }
 
     if (contentDiffers(existing, fields)) {
-      plan.contentUpdates.push({ id: existing.id, kind: 'refresh', patch: { ...fields, last_seen_in_feed_at: now, consecutive_absences: 0 } });
+      plan.contentUpdates.push({ id: existing.id, kind: 'refresh', patch: { ...tr.fields, ...tr.extra, last_seen_in_feed_at: now, consecutive_absences: 0 } });
     } else {
       plan.touchIds.push(existing.id);
     }
