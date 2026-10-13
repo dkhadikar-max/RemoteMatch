@@ -156,8 +156,11 @@ assert(onboarding.includes('const handleRemoveSkill = (skill: string) => {') && 
 
 // ── 5. Scope ────────────────────────────────────────────────────────────────
 console.log('\n7. Scope — no matching, persistence, or snapshot changes');
-const sh = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-const changed = Array.from(new Set([...sh('git diff --name-only 4c3fc95'), ...sh('git ls-files --others --exclude-standard')]));
+// This branch's OWN changes: committed since the merge-base with origin/main (three-dot, so sibling PRs merged into
+// main later don't count), plus uncommitted and untracked files. Falls back to the original base commit offline.
+const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return lines('git diff --name-only 4c3fc95 HEAD'); } })();
+const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
 const allowed = new Set([
   'src/lib/resume/skill-evidence.ts', 'src/lib/resume/resume-check.ts', 'src/components/onboarding/resume-check-summary.tsx',
   'src/components/onboarding/resume-intelligence-dashboard.tsx', 'src/app/onboarding/page.tsx', 'src/app/page.tsx',
