@@ -24,6 +24,7 @@ import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabas
 import { fetchAllRows, QueryError } from '@/lib/supabase/query-helpers';
 import { normalizeOpportunity, deduplicateOpportunities, verifyLinkFreshness } from './pipeline';
 import { passesFreshnessGate } from './freshness-gate';
+import { TRANSLATION_STATE_COLUMNS, needsOriginalText, loadOriginalTexts } from './translation-preservation';
 import type { ProviderFetchResult, SyncSummary, SyncOptions } from './catalog-sync';
 import {
   ATS_EMPLOYER_SOURCES,
@@ -67,7 +68,7 @@ const DB_CONCURRENCY = 4;
 const UPDATE_CONCURRENCY = 6;
 const VERIFY_CONCURRENCY = 8;
 
-const EXISTING_COLUMNS = ['id', 'source', 'source_id', 'status', 'consecutive_absences', 'posted_at', ...CONTENT_FIELD_NAMES].join(', ');
+const EXISTING_COLUMNS = ['id', 'source', 'source_id', 'status', 'consecutive_absences', 'posted_at', ...CONTENT_FIELD_NAMES, ...TRANSLATION_STATE_COLUMNS].join(', ');
 const ACTIVE_SCAN_COLUMNS = 'id, source_id, consecutive_absences, posted_at, last_seen_in_feed_at, first_seen_at';
 
 type Admin = SupabaseClient;
@@ -179,6 +180,17 @@ async function loadExistingRows(admin: Admin, keysBySource: ReadonlyMap<string, 
     if (res.error) throw new QueryError(`existing-row lookup (${t.source})`, res.error.message, res.error.code);
     out.push(...((res.data ?? []) as unknown as ExistingRow[]));
   });
+  // Translated rows keep their translation unless the SOURCE text really changed (translation-preservation.ts).
+  // That is decided by an exact comparison with the stored source text, loaded for translated rows only.
+  const needing = out.filter((r) => needsOriginalText(r)).map((r) => r.id);
+  if (needing.length > 0) {
+    const { byId, requests } = await loadOriginalTexts(admin, needing);
+    ctx.requests += requests;
+    for (const r of out) {
+      const o = byId.get(r.id);
+      if (o) { r.original_title = o.original_title; r.original_description = o.original_description; }
+    }
+  }
   return out;
 }
 
