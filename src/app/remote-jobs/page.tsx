@@ -10,21 +10,22 @@ import {
   Filter,
   X,
 } from 'lucide-react';
+import { notFound } from 'next/navigation';
 import {
   SEO_CATEGORIES,
-  searchJobs,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
   formatSalaryRange,
   SeoFaqItem,
 } from '@/lib/seo/data';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { loadHubPage, loadSearchPage, parsePageParam } from '@/lib/seo/directory';
+import Pagination from '@/components/seo/Pagination';
 
 interface Props {
-  searchParams?: Promise<{ q?: string }> | { q?: string };
+  searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
 }
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   // `absolute` bypasses the root layout's '%s | RemoteMatch' title template
   // (which would otherwise render "...RemoteMatch | RemoteMatch") — same
   // fix as src/app/admin/layout.tsx, same reason: this title already ends
@@ -44,12 +45,32 @@ export const metadata: Metadata = {
   },
 };
 
+// Deep pages and search results are not worth indexing as landing pages — every
+// job on them is already in the sitemap — but their links should still be followed.
+export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
+  const resolved = searchParams ? await Promise.resolve(searchParams) : {};
+  const hasSearch = typeof resolved.q === 'string' && resolved.q.trim() !== '';
+  if (parsePageParam(resolved.page) > 1 || hasSearch) {
+    return { ...baseMetadata, robots: { index: false, follow: true } };
+  }
+  return baseMetadata;
+}
+
 export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
   const q = resolvedParams.q;
   const searchQuery = (typeof q === 'string' ? q : '')?.trim() || '';
-  const supabase = createSupabaseServerClient();
-  const jobs = supabase ? await searchJobs(searchQuery, undefined, supabase) : [];
+  // Bounded reads: a cached slim index + one page of rows (or a database-side
+  // search with LIMIT/OFFSET) — never the whole catalog. See src/lib/seo/directory.ts.
+  const hub = searchQuery
+    ? await loadSearchPage(searchQuery, resolvedParams.page)
+    : await loadHubPage(null, resolvedParams.page);
+  if (hub?.outOfRange) notFound();
+  const jobs = hub?.jobs ?? [];
+  const totalJobs = hub?.total ?? 0;
+  const currentPage = hub?.page ?? 1;
+  const totalPages = hub?.totalPages ?? 1;
+  const pageOffset = (currentPage - 1) * (hub?.pageSize ?? jobs.length);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
     { name: 'Home', url: 'https://remotematch.com' },
@@ -61,14 +82,14 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
     '@type': 'ItemList',
     name: 'Remote Jobs Directory',
     description: 'Vetted remote job listings curated by RemoteMatch.',
-    numberOfItems: jobs.length,
+    numberOfItems: totalJobs,
     itemListElement: jobs
       .map((job, index) => {
         const posting = buildJobPostingSchema(job);
         if (!posting) return null;
         return {
           '@type': 'ListItem',
-          position: index + 1,
+          position: pageOffset + index + 1,
           item: posting,
         };
       })
@@ -218,7 +239,9 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
               {searchQuery ? `Search Results for "${searchQuery}"` : 'Active Remote Positions'}
             </h2>
             <p className="text-xs text-[var(--muted)] mt-0.5">
-              Showing {jobs.length} verified position{jobs.length === 1 ? '' : 's'}
+              {totalJobs > jobs.length
+                ? `Showing ${pageOffset + 1}–${pageOffset + jobs.length} of ${totalJobs} verified positions`
+                : `Showing ${totalJobs} verified position${totalJobs === 1 ? '' : 's'}`}
             </p>
           </div>
           <Link
@@ -316,6 +339,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
             ))}
           </div>
         )}
+        <Pagination basePath="/remote-jobs" page={currentPage} totalPages={totalPages} query={searchQuery ? { q: searchQuery } : undefined} />
       </section>
 
       {/* Directory FAQ (3-Part Answer Structure) */}

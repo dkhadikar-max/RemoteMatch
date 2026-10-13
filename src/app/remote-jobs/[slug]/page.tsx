@@ -5,15 +5,16 @@ import { notFound } from 'next/navigation';
 import { ArrowRight, MapPin, DollarSign, Briefcase, Filter } from 'lucide-react';
 import {
   SEO_CATEGORIES,
-  getJobsForCategory,
   buildBreadcrumbSchema,
   buildJobPostingSchema,
   formatSalaryRange,
 } from '@/lib/seo/data';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { loadHubPage, parsePageParam } from '@/lib/seo/directory';
+import Pagination from '@/components/seo/Pagination';
 
 interface Props {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ page?: string }> | { page?: string };
 }
 
 export async function generateStaticParams() {
@@ -22,12 +23,16 @@ export async function generateStaticParams() {
   }));
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { slug } = await params;
   const category = SEO_CATEGORIES.find((c) => c.slug === slug);
   if (!category) return {};
+  const resolved = searchParams ? await Promise.resolve(searchParams) : {};
+  // Deep pages repeat the hub's copy; every job on them is already in the sitemap.
+  const deepPage = parsePageParam(resolved.page) > 1;
 
   return {
+    ...(deepPage ? { robots: { index: false, follow: true } } : {}),
     title: category.metaTitle,
     description: category.metaDescription,
     alternates: {
@@ -42,13 +47,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function RemoteCategoryPage({ params }: Props) {
+export default async function RemoteCategoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const category = SEO_CATEGORIES.find((c) => c.slug === slug);
   if (!category) notFound();
+  const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
 
-  const supabase = createSupabaseServerClient();
-  const jobs = supabase ? await getJobsForCategory(category.slug, supabase) : [];
+  // Bounded read: category membership from the cached slim index + one page of
+  // rows — never the whole catalog. See src/lib/seo/directory.ts.
+  const hub = await loadHubPage(category.slug, resolvedParams.page);
+  if (hub?.outOfRange) notFound();
+  const jobs = hub?.jobs ?? [];
+  const totalJobs = hub?.total ?? 0;
+  const currentPage = hub?.page ?? 1;
+  const totalPages = hub?.totalPages ?? 1;
+  const pageOffset = (currentPage - 1) * (hub?.pageSize ?? jobs.length);
   const otherCategories = SEO_CATEGORIES.filter((c) => c.slug !== category.slug);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
@@ -62,14 +75,14 @@ export default async function RemoteCategoryPage({ params }: Props) {
     '@type': 'ItemList',
     name: category.h1,
     description: category.metaDescription,
-    numberOfItems: jobs.length,
+    numberOfItems: totalJobs,
     itemListElement: jobs
       .map((job, index) => {
         const posting = buildJobPostingSchema(job);
         if (!posting) return null;
         return {
           '@type': 'ListItem',
-          position: index + 1,
+          position: pageOffset + index + 1,
           item: posting,
         };
       })
@@ -149,7 +162,9 @@ export default async function RemoteCategoryPage({ params }: Props) {
               {category.title} Listings
             </h2>
             <p className="text-xs text-[var(--muted)] mt-0.5">
-              Showing {jobs.length} verified active position{jobs.length === 1 ? '' : 's'}
+              {totalJobs > jobs.length
+                ? `Showing ${pageOffset + 1}–${pageOffset + jobs.length} of ${totalJobs} verified active positions`
+                : `Showing ${totalJobs} verified active position${totalJobs === 1 ? '' : 's'}`}
             </p>
           </div>
           <Link
@@ -234,6 +249,7 @@ export default async function RemoteCategoryPage({ params }: Props) {
             ))}
           </div>
         )}
+        <Pagination basePath={`/remote-jobs/${category.slug}`} page={currentPage} totalPages={totalPages} />
       </section>
 
       {/* Category FAQ Section (3-Part Answer Structure) */}
