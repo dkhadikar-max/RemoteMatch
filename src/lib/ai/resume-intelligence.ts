@@ -27,6 +27,13 @@ function classifyOpenAiError(err: unknown): AiCallOutcome {
   return 'other';
 }
 
+/**
+ * @deprecated NOT WIRED INTO ANY PRODUCTION PATH. Onboarding no longer calls this (it uses the facts-only
+ * src/lib/resume/resume-check.ts). Its output is largely hard-coded text (audit R-P0-1: gibberish scores 48/100 with
+ * "Clean chronological formatting"), it throws on skills such as "C++" (R-P1-1) and mislabels C#/.NET/Go (R-P1-2).
+ * Kept ONLY because test/verification-suite.ts, gate3-ai-factuality.ts and staging-smoke-test.ts still exercise it;
+ * do not call it from application code. Planned removal with those tests (see docs/resume-analysis-remediation-proposal.md).
+ */
 // Fallback rule-based analyzer
 export function analyzeResumeHeuristically(
   profile: PersonProfile,
@@ -152,6 +159,12 @@ export function analyzeResumeHeuristically(
   };
 }
 
+/**
+ * @deprecated NOT WIRED INTO ANY PRODUCTION PATH. It was only ever callable from the browser, where the API key is
+ * undefined, so it always fell back to analyzeResumeHeuristically (see above). Its parsed model output is returned
+ * without schema validation. Do not call it from application code; server-side, quote-verified extraction is
+ * proposed instead (docs/resume-analysis-remediation-proposal.md, phase P3).
+ */
 // Full AI Resume Intelligence Analysis (OpenAI gpt-5-mini)
 export async function analyzeResumeWithAI(
   profile: PersonProfile,

@@ -1,0 +1,1253 @@
+{
+  "analyzer": [
+    [
+      "garbage",
+      {
+        "ok": {
+          "overallScore": 48,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 50,
+              "feedback": "Consider refining role titles to match current remote market standards."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 50,
+              "feedback": "0 of 2 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 45,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 40,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 50,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "Core domain foundation",
+            "Remote collaboration"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Backend Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected Python, Go during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-python",
+              "skill": "Python",
+              "prompt": "We couldn't find evidence of Python experience in your resume. Do you have this experience?",
+              "resolved": false
+            },
+            {
+              "id": "uncert-go",
+              "skill": "Go",
+              "prompt": "We couldn't find evidence of Go experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "one word, six skills",
+      {
+        "ok": {
+          "overallScore": 48,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 50,
+              "feedback": "Consider refining role titles to match current remote market standards."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 50,
+              "feedback": "0 of 6 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 45,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 40,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 50,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "Core domain foundation",
+            "Remote collaboration"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Staff Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected React, Rust during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-react",
+              "skill": "React",
+              "prompt": "We couldn't find evidence of React experience in your resume. Do you have this experience?",
+              "resolved": false
+            },
+            {
+              "id": "uncert-rust",
+              "skill": "Rust",
+              "prompt": "We couldn't find evidence of Rust experience in your resume. Do you have this experience?",
+              "resolved": false
+            },
+            {
+              "id": "uncert-go",
+              "skill": "Go",
+              "prompt": "We couldn't find evidence of Go experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "empty text",
+      {
+        "ok": {
+          "overallScore": 48,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 50,
+              "feedback": "Consider refining role titles to match current remote market standards."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 50,
+              "feedback": "0 of 1 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 45,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 40,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 50,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "Core domain foundation",
+            "Remote collaboration"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Backend Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected Python during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-python",
+              "skill": "Python",
+              "prompt": "We couldn't find evidence of Python experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "C++ skill (throws today)",
+      {
+        "threw": "Invalid regular expression: /\\bC++\\b/i: Nothing to repeat"
+      }
+    ],
+    [
+      "C# and .NET",
+      {
+        "ok": {
+          "overallScore": 58,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 75,
+              "feedback": "Strong alignment with your selected target roles."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 50,
+              "feedback": "0 of 2 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 55,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 40,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 63,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "C#",
+            ".NET"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Backend Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected C#, .NET during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-c",
+              "skill": "C#",
+              "prompt": "We couldn't find evidence of C# experience in your resume. Do you have this experience?",
+              "resolved": false
+            },
+            {
+              "id": "uncert-net",
+              "skill": ".NET",
+              "prompt": "We couldn't find evidence of .NET experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "Go vs going",
+      {
+        "ok": {
+          "overallScore": 55,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 50,
+              "feedback": "Consider refining role titles to match current remote market standards."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 50,
+              "feedback": "0 of 1 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 45,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 90,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 50,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "Go"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Backend Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected Go during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-go",
+              "skill": "Go",
+              "prompt": "We couldn't find evidence of Go experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "realistic resume",
+      {
+        "ok": {
+          "overallScore": 85,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 96,
+              "feedback": "Strong alignment with your selected target roles."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 82,
+              "feedback": "4 of 5 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 70,
+              "feedback": "Good use of quantifiable metrics and business impact."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 90,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 89,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "Go",
+            "Python",
+            "PostgreSQL",
+            "Kubernetes"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Backend Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "You selected Rust during onboarding, but they lack prominent evidence.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": [
+            {
+              "id": "uncert-rust",
+              "skill": "Rust",
+              "prompt": "We couldn't find evidence of Rust experience in your resume. Do you have this experience?",
+              "resolved": false
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "no roles",
+      {
+        "ok": {
+          "overallScore": 68,
+          "dimensions": {
+            "relevance": {
+              "name": "Relevance",
+              "score": 50,
+              "feedback": "Consider refining role titles to match current remote market standards."
+            },
+            "evidence": {
+              "name": "Evidence",
+              "score": 90,
+              "feedback": "1 of 1 claimed skills are clearly demonstrated in your text."
+            },
+            "impact": {
+              "name": "Impact & Metrics",
+              "score": 45,
+              "feedback": "Bullet points would be significantly stronger with measurable results."
+            },
+            "atsReadability": {
+              "name": "ATS & Readability",
+              "score": 90,
+              "feedback": "Clean chronological formatting and standard industry terminology."
+            },
+            "targetAlignment": {
+              "name": "Target Alignment",
+              "score": 70,
+              "feedback": "Good baseline positioning for high-signal remote opportunities."
+            }
+          },
+          "strongAreas": [
+            "React"
+          ],
+          "improvementAreas": [
+            {
+              "title": "Strengthen Target Role Evidence",
+              "explanation": "Your target role (Software Engineer) requires clear strategic scope, but your resume currently emphasizes execution over leadership.",
+              "action": "Elevate architecture decisions and cross-functional ownership in your recent role."
+            },
+            {
+              "title": "Add Measurable Outcomes",
+              "explanation": "Several experience points describe responsibilities without showing business impact or metrics.",
+              "action": "Add percentages, latency improvements, user scale, or delivery speed outcomes."
+            },
+            {
+              "title": "Surface Underrepresented Capabilities",
+              "explanation": "Ensure your most valuable frameworks appear in the top half of your resume.",
+              "action": "Confirm where you used these tools or add project references."
+            }
+          ],
+          "uncertainties": []
+        }
+      }
+    ]
+  ],
+  "jobSpecific": [
+    [
+      [
+        "0/0",
+        {
+          "ok": [
+            {
+              "title": "Move your React experience higher",
+              "currentContext": "The employer specifically requests React for the Senior Full Stack Engineer role.",
+              "recommendation": "Elevate projects and achievements featuring React into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Node.js",
+              "currentContext": "Employer lists Node.js as a core qualification.",
+              "recommendation": "If you have adjacent experience with Node.js, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "0/1",
+        {
+          "ok": [
+            {
+              "title": "Move your Figma experience higher",
+              "currentContext": "The employer specifically requests Figma for the Staff Product Designer role.",
+              "recommendation": "Elevate projects and achievements featuring Figma into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Figma",
+              "currentContext": "Employer lists Figma as a core qualification.",
+              "recommendation": "If you have adjacent experience with Figma, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "0/2",
+        {
+          "ok": [
+            {
+              "title": "Move your Next.js experience higher",
+              "currentContext": "The employer specifically requests Next.js for the Senior Frontend Engineer (React/Next.js) role.",
+              "recommendation": "Elevate projects and achievements featuring Next.js into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Next.js",
+              "currentContext": "Employer lists Next.js as a core qualification.",
+              "recommendation": "If you have adjacent experience with Next.js, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "0/3",
+        {
+          "ok": [
+            {
+              "title": "Move your Product Management experience higher",
+              "currentContext": "The employer specifically requests Product Management for the Lead Product Manager - Developer Experience role.",
+              "recommendation": "Elevate projects and achievements featuring Product Management into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Product Management",
+              "currentContext": "Employer lists Product Management as a core qualification.",
+              "recommendation": "If you have adjacent experience with Product Management, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      [
+        "1/0",
+        {
+          "ok": [
+            {
+              "title": "Move your React experience higher",
+              "currentContext": "The employer specifically requests React for the Senior Full Stack Engineer role.",
+              "recommendation": "Elevate projects and achievements featuring React into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with React",
+              "currentContext": "Employer lists React as a core qualification.",
+              "recommendation": "If you have adjacent experience with React, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "1/1",
+        {
+          "ok": [
+            {
+              "title": "Move your Figma experience higher",
+              "currentContext": "The employer specifically requests Figma for the Staff Product Designer role.",
+              "recommendation": "Elevate projects and achievements featuring Figma into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Figma",
+              "currentContext": "Employer lists Figma as a core qualification.",
+              "recommendation": "If you have adjacent experience with Figma, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "1/2",
+        {
+          "ok": [
+            {
+              "title": "Move your Next.js experience higher",
+              "currentContext": "The employer specifically requests Next.js for the Senior Frontend Engineer (React/Next.js) role.",
+              "recommendation": "Elevate projects and achievements featuring Next.js into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Next.js",
+              "currentContext": "Employer lists Next.js as a core qualification.",
+              "recommendation": "If you have adjacent experience with Next.js, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "1/3",
+        {
+          "ok": [
+            {
+              "title": "Move your Product Management experience higher",
+              "currentContext": "The employer specifically requests Product Management for the Lead Product Manager - Developer Experience role.",
+              "recommendation": "Elevate projects and achievements featuring Product Management into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Product Management",
+              "currentContext": "Employer lists Product Management as a core qualification.",
+              "recommendation": "If you have adjacent experience with Product Management, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      [
+        "2/0",
+        {
+          "ok": [
+            {
+              "title": "Move your React experience higher",
+              "currentContext": "The employer specifically requests React for the Senior Full Stack Engineer role.",
+              "recommendation": "Elevate projects and achievements featuring React into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with React",
+              "currentContext": "Employer lists React as a core qualification.",
+              "recommendation": "If you have adjacent experience with React, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "2/1",
+        {
+          "ok": [
+            {
+              "title": "Move your Figma experience higher",
+              "currentContext": "The employer specifically requests Figma for the Staff Product Designer role.",
+              "recommendation": "Elevate projects and achievements featuring Figma into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Figma",
+              "currentContext": "Employer lists Figma as a core qualification.",
+              "recommendation": "If you have adjacent experience with Figma, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "2/2",
+        {
+          "ok": [
+            {
+              "title": "Move your Next.js experience higher",
+              "currentContext": "The employer specifically requests Next.js for the Senior Frontend Engineer (React/Next.js) role.",
+              "recommendation": "Elevate projects and achievements featuring Next.js into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Next.js",
+              "currentContext": "Employer lists Next.js as a core qualification.",
+              "recommendation": "If you have adjacent experience with Next.js, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ],
+      [
+        "2/3",
+        {
+          "ok": [
+            {
+              "title": "Move your Product Management experience higher",
+              "currentContext": "The employer specifically requests Product Management for the Lead Product Manager - Developer Experience role.",
+              "recommendation": "Elevate projects and achievements featuring Product Management into the top third of your resume to immediately establish relevance.",
+              "actionType": "reorder"
+            },
+            {
+              "title": "Strengthen impact on execution bullets",
+              "currentContext": "Typical current bullet: \"Built features and maintained web services.\"",
+              "recommendation": "Rewrite using your actual measured outcome, scope, and ownership: \"Architected core services handling high concurrency, reducing [insert your metric, e.g. delivery turnaround or latency by X%].\"",
+              "actionType": "rewrite"
+            },
+            {
+              "title": "Surface demonstrated experience with Product Management",
+              "currentContext": "Employer lists Product Management as a core qualification.",
+              "recommendation": "If you have adjacent experience with Product Management, explicitly mention it in your project notes or cover proposal.",
+              "actionType": "evidence"
+            }
+          ]
+        }
+      ]
+    ]
+  ],
+  "check": [
+    [
+      "gibberish",
+      {
+        "status": "too_short",
+        "characterCount": 9,
+        "wordCount": 2,
+        "found": [],
+        "notFound": [],
+        "skillsChecked": 2
+      }
+    ],
+    [
+      "empty",
+      {
+        "status": "empty",
+        "characterCount": 0,
+        "wordCount": 0,
+        "found": [],
+        "notFound": [],
+        "skillsChecked": 1
+      }
+    ],
+    [
+      "null text",
+      {
+        "status": "empty",
+        "characterCount": 0,
+        "wordCount": 0,
+        "found": [],
+        "notFound": [],
+        "skillsChecked": 1
+      }
+    ],
+    [
+      "not array",
+      {
+        "status": "ok",
+        "characterCount": 420,
+        "wordCount": 61,
+        "found": [],
+        "notFound": [],
+        "skillsChecked": 0
+      }
+    ],
+    [
+      "real",
+      {
+        "status": "ok",
+        "characterCount": 420,
+        "wordCount": 61,
+        "found": [
+          "Go",
+          "Python",
+          "Kubernetes"
+        ],
+        "notFound": [
+          "C++",
+          "Rust"
+        ],
+        "skillsChecked": 5
+      }
+    ],
+    [
+      "hostile skills",
+      {
+        "status": "ok",
+        "characterCount": 420,
+        "wordCount": 61,
+        "found": [],
+        "notFound": [
+          "C++",
+          "(((",
+          "[a-",
+          "\\",
+          ".*",
+          "C#",
+          ".NET"
+        ],
+        "skillsChecked": 7
+      }
+    ],
+    [
+      "dupes",
+      {
+        "status": "ok",
+        "characterCount": 420,
+        "wordCount": 61,
+        "found": [
+          "Go"
+        ],
+        "notFound": [],
+        "skillsChecked": 1
+      }
+    ],
+    [
+      "many",
+      {
+        "status": "ok",
+        "characterCount": 420,
+        "wordCount": 61,
+        "found": [],
+        "notFound": [
+          "Skill0",
+          "Skill1",
+          "Skill2",
+          "Skill3",
+          "Skill4",
+          "Skill5",
+          "Skill6",
+          "Skill7",
+          "Skill8",
+          "Skill9",
+          "Skill10",
+          "Skill11",
+          "Skill12",
+          "Skill13",
+          "Skill14",
+          "Skill15",
+          "Skill16",
+          "Skill17",
+          "Skill18",
+          "Skill19",
+          "Skill20",
+          "Skill21",
+          "Skill22",
+          "Skill23",
+          "Skill24",
+          "Skill25",
+          "Skill26",
+          "Skill27",
+          "Skill28",
+          "Skill29",
+          "Skill30",
+          "Skill31",
+          "Skill32",
+          "Skill33",
+          "Skill34",
+          "Skill35",
+          "Skill36",
+          "Skill37",
+          "Skill38",
+          "Skill39",
+          "Skill40",
+          "Skill41",
+          "Skill42",
+          "Skill43",
+          "Skill44",
+          "Skill45",
+          "Skill46",
+          "Skill47",
+          "Skill48",
+          "Skill49",
+          "Skill50",
+          "Skill51",
+          "Skill52",
+          "Skill53",
+          "Skill54",
+          "Skill55",
+          "Skill56",
+          "Skill57",
+          "Skill58",
+          "Skill59",
+          "Skill60",
+          "Skill61",
+          "Skill62",
+          "Skill63",
+          "Skill64",
+          "Skill65",
+          "Skill66",
+          "Skill67",
+          "Skill68",
+          "Skill69",
+          "Skill70",
+          "Skill71",
+          "Skill72",
+          "Skill73",
+          "Skill74",
+          "Skill75",
+          "Skill76",
+          "Skill77",
+          "Skill78",
+          "Skill79",
+          "Skill80",
+          "Skill81",
+          "Skill82",
+          "Skill83",
+          "Skill84",
+          "Skill85",
+          "Skill86",
+          "Skill87",
+          "Skill88",
+          "Skill89",
+          "Skill90",
+          "Skill91",
+          "Skill92",
+          "Skill93",
+          "Skill94",
+          "Skill95",
+          "Skill96",
+          "Skill97",
+          "Skill98",
+          "Skill99"
+        ],
+        "skillsChecked": 100
+      }
+    ]
+  ],
+  "matcher": [
+    [
+      "C++",
+      [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "C#",
+      [
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      ".NET",
+      [
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Go",
+      [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "R",
+      [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "C",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Java",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "JavaScript",
+      [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "SQL",
+      [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Node.js",
+      [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "React",
+      [
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Python",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "F#",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Objective-C",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    ],
+    [
+      "CI/CD",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ]
+    ],
+    [
+      "Rust",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Kubernetes",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false
+      ]
+    ],
+    [
+      "Tailwind CSS",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    ],
+    [
+      "Golang",
+      [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    ],
+    [
+      "Postgres",
+      [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    ]
+  ]
+}

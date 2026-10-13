@@ -165,9 +165,14 @@ const allowed = new Set([
   'src/lib/resume/skill-evidence.ts', 'src/lib/resume/resume-check.ts', 'src/components/onboarding/resume-check-summary.tsx',
   'src/components/onboarding/resume-intelligence-dashboard.tsx', 'src/app/onboarding/page.tsx', 'src/app/page.tsx',
   'src/components/match/match-analysis-view.tsx', 'test/resume-honesty-suite.ts',
+  // The stacked resume P1 clean-up PR (behaviour-preserving; proven by test/resume-p1-equivalence-suite.ts):
+  'src/lib/ai/resume.ts', 'src/lib/ai/resume-intelligence.ts', 'src/lib/resume/extract-pdf-text.ts',
+  'test/resume-p1-equivalence-suite.ts', 'test/fixtures/resume-p1-golden.json', 'test/openai-reasoning-effort-suite.ts',
 ]);
 assert(changed.every((f) => allowed.has(f)), 'only the resume step, its helpers, landing copy and the match-view label changed', changed.filter((f) => !allowed.has(f)).join(', '));
-const frozen = ['src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/db/', 'src/lib/ai/', 'src/lib/onboarding/', 'src/middleware.ts'];
+// AI libs: the call-site files (materials, openai/gemini config, ledgers, anti-fabrication) stay untouched; only the two
+// resume files listed in `allowed` above may change (P1 clean-up).
+const frozen = ['src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/db/', 'src/lib/ai/materials.ts', 'src/lib/ai/openai-config.ts', 'src/lib/ai/gemini-config.ts', 'src/lib/ai/spend-ledger.ts', 'src/lib/ai/quota-ledger.ts', 'src/lib/ai/anti-fabrication.ts', 'src/lib/onboarding/', 'src/middleware.ts'];
 assert(changed.every((f) => !frozen.some((x) => f.startsWith(x))), 'matcher, API routes (incl. swipe/snapshots), migrations, stores, AI libs, onboarding contract and middleware untouched');
 const payloadBlock = onboarding.slice(onboarding.indexOf('const payload: OnboardingPayload = {'), onboarding.indexOf('const clientErrors'));
 assert(['fullName', 'headline', 'employmentTypes', 'targetRoles', 'yearsOfExperience', 'skills:', 'workPreference', 'currentCountry', 'currentTimezone', 'allowedCountries', 'willingTimezones', 'rawResumeText: resumeText'].every((k) => payloadBlock.includes(k)), 'the onboarding payload sent to the server is unchanged (same fields)');
