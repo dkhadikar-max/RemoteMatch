@@ -99,8 +99,14 @@ assert(deck.includes('Queue Cleared'), 'the deck\'s own end-of-queue message is 
 
 console.log('\n7. Scope — UI only; no ingestion, API, scoring or data change');
 const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return lines('git diff --name-only 4c3fc95 HEAD'); } })();
-const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
+// Pinned to THIS change's own commit range (PR #11: base 4c3fc95..f59bbd5). The guard used to diff against the moving
+// origin/main, so it failed on every later branch that legitimately touched other files. If those commits are not in
+// this clone (a shallow or fresh clone, or the branch was deleted after merge) the guard is skipped, not failed.
+const PINNED_BASE = '4c3fc95';
+const PINNED_TIP = 'f59bbd5';
+const pinnedAvailable = (() => { try { execSync('git cat-file -e ' + PINNED_BASE, { cwd: root, stdio: 'ignore' }); execSync('git cat-file -e ' + PINNED_TIP, { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } })();
+const changed = pinnedAvailable ? lines(`git diff --name-only ${PINNED_BASE} ${PINNED_TIP}`) : [];
+if (!pinnedAvailable) console.log('  (scope guard skipped: pinned commits ' + PINNED_BASE + '..' + PINNED_TIP + ' are not in this clone)');
 const allowed = new Set(['src/lib/feed/empty-state.ts', 'src/components/feed/feed-empty-state.tsx', 'src/app/feed/page.tsx', 'test/feed-empty-state-suite.ts']);
 assert(changed.every((f) => allowed.has(f)), 'only the helper, the component, the feed page and this suite changed', changed.filter((f) => !allowed.has(f)).join(', '));
 assert(changed.every((f) => !['src/lib/ingestion/', 'src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/providers/', 'scripts/'].some((x) => f.startsWith(x))), 'no ingestion, matcher, API, migration, provider or script file changed');
