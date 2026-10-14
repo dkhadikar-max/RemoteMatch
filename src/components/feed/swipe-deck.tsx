@@ -10,6 +10,7 @@ import { CheckCircle2, Check, X, RotateCcw, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import { recordFunnelEventClient } from '@/lib/funnel/client';
 import { deckKeyAction } from '@/lib/feed/deck-keys';
+import { matchHref } from '@/lib/match/match-href';
 
 interface SwipeDeckProps {
   opportunities: CanonicalOpportunity[];
@@ -171,7 +172,7 @@ export function SwipeDeck({
               </span>
             </div>
             <Link
-              href={`/match/${lastInterestedOpp.id}`}
+              href={matchHref(lastInterestedOpp.id)}
               className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white font-semibold px-3 py-1.5 text-xs transition-colors shrink-0 flex items-center gap-1 min-h-[36px]"
             >
               <span>View Match</span>

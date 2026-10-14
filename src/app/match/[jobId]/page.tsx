@@ -14,6 +14,7 @@ import { generateJobSpecificResumeAnalysis } from '@/lib/ai/resume-intelligence'
 import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { MatchAnalysisView } from '@/components/match/match-analysis-view';
 import { UpgradeModal } from '@/components/premium/upgrade-modal';
+import { resolveJobId } from '@/lib/match/match-href';
 
 export default function MatchDetailPage() {
   const params = useParams();
@@ -51,7 +52,9 @@ export default function MatchDetailPage() {
         const res = await fetch('/api/opportunities/feed');
         const data = await res.json();
         if (res.ok && data.success) {
-          opp = (data.opportunities as CanonicalOpportunity[]).find((o) => o.id === jobId) ?? null;
+          // The route param arrives URL-encoded (ids of Himalayas/WWR jobs contain a full URL); resolveJobId decodes it once
+          // and also accepts an old raw link — see src/lib/match/match-href.ts.
+          opp = resolveJobId(jobId, data.opportunities as CanonicalOpportunity[]);
         }
       } catch {
         // network failure -> opp stays null; falls through to the same
