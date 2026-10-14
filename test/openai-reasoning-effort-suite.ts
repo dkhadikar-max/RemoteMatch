@@ -35,9 +35,10 @@ function assert(condition: boolean, message: string) {
   }
 }
 
+// src/lib/ai/resume.ts (the unused resume parser) was deleted in the resume P1 clean-up: it had zero importers, so its one
+// chat.completions.create() call site is gone. Every REMAINING call site is still checked below.
 const FILES = [
   'src/lib/ai/materials.ts',
-  'src/lib/ai/resume.ts',
   'src/lib/ai/resume-intelligence.ts',
 ];
 
@@ -50,7 +51,7 @@ function countOccurrences(haystack: string, needle: string): number {
  *  the count — a real, if minor, fragility bug this suite hit against its
  *  own materials.ts header comment during Phase 1B verification. Naive
  *  (doesn't understand string literals containing "//"), but sufficient
- *  for these 3 known, simple source files. */
+ *  for these 2 known, simple source files. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 }
@@ -86,7 +87,7 @@ async function main() {
     totalCallSites += callSiteCount;
   }
 
-  assert(totalCallSites === 3, `exactly 3 total chat.completions.create() call sites across all three files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
+  assert(totalCallSites === 2, `exactly 2 total chat.completions.create() call sites across both files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
 
   console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
   process.exit(failed > 0 ? 1 : 0);

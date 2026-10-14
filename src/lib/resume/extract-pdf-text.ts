@@ -20,6 +20,20 @@
 
 export class PdfTextExtractionError extends Error {}
 
+/**
+ * The text items of ONE page -> one string. Behaviour-identical extraction of the expression that used to be inline in
+ * extractPdfText: items without `str` (e.g. marked-content markers) contribute "", and items are joined with a single
+ * space, so the PDF's own line-end information is NOT used — a known limitation, deliberately unchanged here.
+ */
+export function joinPageItems(items: ReadonlyArray<unknown>): string {
+  return items.map((item) => ('str' in (item as object) ? (item as { str: string }).str : '')).join(' ');
+}
+
+/** All pages -> the final text: pages separated by a blank line, runs of spaces/tabs collapsed, trimmed. Identical to the former inline expression. */
+export function assemblePdfText(pageTexts: ReadonlyArray<string>): string {
+  return pageTexts.join('\n\n').replace(/[ \t]+/g, ' ').trim();
+}
+
 let workerConfigured = false;
 
 async function loadPdfjs() {
@@ -52,13 +66,10 @@ export async function extractPdfText(file: File): Promise<string> {
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
     const page = await doc.getPage(pageNum);
     const content = await page.getTextContent();
-    const text = content.items
-      .map((item) => ('str' in item ? item.str : ''))
-      .join(' ');
-    pageTexts.push(text);
+    pageTexts.push(joinPageItems(content.items));
   }
 
-  const fullText = pageTexts.join('\n\n').replace(/[ \t]+/g, ' ').trim();
+  const fullText = assemblePdfText(pageTexts);
   if (!fullText) {
     throw new PdfTextExtractionError(
       'No text found in this PDF — it may be a scanned image rather than real text. You can edit the box below manually instead.',
