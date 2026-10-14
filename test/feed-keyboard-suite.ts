@@ -101,11 +101,15 @@ for (const m of modalFlags) {
 }
 
 console.log('\n5. Scope');
-// This branch's OWN changes: committed since the merge-base with origin/main (three-dot, so sibling PRs merged into
-// main later don't count), plus uncommitted and untracked files. Falls back to the original base commit offline.
 const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return lines('git diff --name-only 4c3fc95 HEAD'); } })();
-const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
+// Pinned to THIS change's own commit range (PR #7: base 4c3fc95..2c0d961). The guard used to diff against the moving
+// origin/main, so it failed on every later branch that legitimately touched other files. If those commits are not in
+// this clone (a shallow or fresh clone, or the branch was deleted after merge) the guard is skipped, not failed.
+const PINNED_BASE = '4c3fc95';
+const PINNED_TIP = '2c0d961';
+const pinnedAvailable = (() => { try { execSync('git cat-file -e ' + PINNED_BASE, { cwd: root, stdio: 'ignore' }); execSync('git cat-file -e ' + PINNED_TIP, { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } })();
+const changed = pinnedAvailable ? lines(`git diff --name-only ${PINNED_BASE} ${PINNED_TIP}`) : [];
+if (!pinnedAvailable) console.log('  (scope guard skipped: pinned commits ' + PINNED_BASE + '..' + PINNED_TIP + ' are not in this clone)');
 const allowed = new Set(['src/lib/feed/deck-keys.ts', 'src/components/feed/swipe-deck.tsx', 'src/app/feed/page.tsx', 'test/feed-keyboard-suite.ts', 'test/funnel-emission-wiring-suite.ts']);
 assert(changed.every((f) => allowed.has(f)), 'branch touches only the deck, the feed page, the pure helper, this suite and the funnel wiring guard literal', changed.filter((f) => !allowed.has(f)).join(', '));
 

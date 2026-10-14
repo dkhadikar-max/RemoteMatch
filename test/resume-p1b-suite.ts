@@ -146,12 +146,16 @@ async function main() {
 
   console.log('\n7. Scope');
   const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-  const stack = ['origin/chore/resume-p1-cleanup', 'origin/fix/resume-step-honesty'];
-  const stackBase = (() => { for (const b of stack) { try { execSync(`git rev-parse --verify ${b}`, { cwd: root, stdio: 'ignore' }); try { execSync(`git merge-base --is-ancestor ${b} origin/main`, { cwd: root, stdio: 'ignore' }); } catch { return b; } } catch { /* try next */ } } return 'origin/main'; })();
-  const committed = (() => { try { return lines(`git diff --name-only ${stackBase}...HEAD`); } catch { return []; } })();
-  const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
+  // Pinned to THIS change's own commit range (PR #12: c9e9eaf..e3e62bd), not a moving branch diff, so the guard keeps
+  // holding after the PR merges and when later branches add other files. Skipped, with a note, if those commits are not
+  // in this clone (shallow clone, or the branch was deleted after merge).
+  const PINNED_BASE = 'c9e9eaf';
+  const PINNED_TIP = 'e3e62bd';
+  const pinnedAvailable = (() => { try { execSync('git cat-file -e ' + PINNED_BASE, { cwd: root, stdio: 'ignore' }); execSync('git cat-file -e ' + PINNED_TIP, { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } })();
+  const changed = pinnedAvailable ? lines(`git diff --name-only ${PINNED_BASE} ${PINNED_TIP}`) : [];
+  if (!pinnedAvailable) console.log('  (scope guard skipped: pinned commits ' + PINNED_BASE + '..' + PINNED_TIP + ' are not in this clone)');
   const allowed = new Set(['src/lib/ai/resume-intelligence.ts', 'src/components/match/match-analysis-view.tsx', 'test/resume-p1b-suite.ts', 'test/fixtures/resume-p1b-matching-golden.json', 'test/resume-p1-equivalence-suite.ts', 'test/resume-honesty-suite.ts', 'test/verification-suite.ts', 'test/ai-eval-set.ts']);
-  assert(changed.every((f) => allowed.has(f)), `only the suggestion generator, the match view's empty state and the tests that pinned the old text changed (vs ${stackBase})`, changed.filter((f) => !allowed.has(f)).join(', '));
+  assert(changed.every((f) => allowed.has(f)), `only the suggestion generator, the match view's empty state and the tests that pinned the old text changed (PR #12 range)`, changed.filter((f) => !allowed.has(f)).join(', '));
   assert(changed.every((f) => !['src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/db/', 'src/lib/onboarding/', 'src/middleware.ts', 'src/lib/ingestion/'].some((x) => f.startsWith(x))), 'matcher, API routes (incl. swipe/snapshots), migrations, stores, onboarding contract, ingestion and middleware untouched');
 
   console.log('\n' + '='.repeat(78));
