@@ -149,8 +149,14 @@ async function main() {
 
   console.log('\n7. Scope — ids, ingestion, snapshots, matching, data untouched');
   const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-  const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return []; } })();
-  const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
+  // Pinned to THIS change's own commit range (PR #13: c3499c7..30a75c9), not a moving branch diff, so the guard keeps
+  // holding after the PR merges and when later branches add other files. Skipped, with a note, if those commits are not
+  // in this clone (shallow clone, or the branch was deleted after merge).
+  const PINNED_BASE = 'c3499c7';
+  const PINNED_TIP = '30a75c9';
+  const pinnedAvailable = (() => { try { execSync('git cat-file -e ' + PINNED_BASE, { cwd: root, stdio: 'ignore' }); execSync('git cat-file -e ' + PINNED_TIP, { cwd: root, stdio: 'ignore' }); return true; } catch { return false; } })();
+  const changed = pinnedAvailable ? lines(`git diff --name-only ${PINNED_BASE} ${PINNED_TIP}`) : [];
+  if (!pinnedAvailable) console.log('  (scope guard skipped: pinned commits ' + PINNED_BASE + '..' + PINNED_TIP + ' are not in this clone)');
   const allowed = new Set(['src/lib/match/match-href.ts', 'src/components/feed/job-card.tsx', 'src/components/feed/swipe-deck.tsx', 'src/app/tracker/page.tsx', 'src/app/page.tsx', 'src/app/match/[jobId]/page.tsx', 'test/match-link-suite.ts', 'test/match-route-framework-suite.ts']);
   assert(changed.every((f) => allowed.has(f)), 'only the helper, the five link sites, the match page and the tests changed', changed.filter((f) => !allowed.has(f)).join(', '));
   assert(changed.every((f) => !['src/lib/ingestion/', 'src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/providers/', 'src/lib/db/', 'scripts/'].some((x) => f.startsWith(x))), 'ingestion (where ids are made), matcher, API routes (swipe/snapshots), migrations, providers and stores are untouched');
