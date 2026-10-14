@@ -7,6 +7,8 @@ import { fetchServerEntitlement, notifyEntitlementChanged } from '@/lib/entitlem
 import { hydrateLocalProfileFromServer } from '@/lib/profile/hydrate';
 import { isUsableProfile } from '@/lib/profile/usable';
 import { IncompleteProfileNotice } from '@/components/feed/incomplete-profile-notice';
+import { FeedEmptyState } from '@/components/feed/feed-empty-state';
+import { feedEmptyKind, interpretFeedResponse } from '@/lib/feed/empty-state';
 import { deriveSkillMatchSummary } from '@/lib/match/actionable-skill-gaps';
 import { SwipeDeck } from '@/components/feed/swipe-deck';
 import { FilterModal } from '@/components/feed/filter-modal';
@@ -23,6 +25,10 @@ export default function FeedPage() {
   // True only when the server actually scored this feed against a usable profile. Anything else is a plain,
   // unscored job list and the page must not claim otherwise.
   const [personalized, setPersonalized] = useState(false);
+  // Why the deck might be empty (see src/lib/feed/empty-state.ts): did the load fail, and how many jobs did the
+  // server return before the user's own swipes were removed?
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [serverCount, setServerCount] = useState(0);
 
   // Gating & Filter state
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
@@ -75,6 +81,8 @@ export default function FeedPage() {
 
     let scored: Array<CanonicalOpportunity & { fitScore?: number; fitBadge?: string }> = [];
     let isPersonalized = false;
+    let failed = false;
+    let returned = 0;
     try {
       const res = await fetch('/api/opportunities/feed', {
         method: 'POST',
@@ -82,13 +90,17 @@ export default function FeedPage() {
         body: JSON.stringify({ profile: currentProfile }),
       });
       const data = await res.json();
-      if (res.ok && data.success) {
+      const outcome = interpretFeedResponse(res.ok, data);
+      failed = outcome.failed; // 503 / error body / malformed — must not read as "you've finished"
+      returned = outcome.returned;
+      if (!outcome.failed) {
         scored = (data.opportunities as typeof scored).filter((opp) => !swipedIds.has(opp.id));
         isPersonalized = data.personalized === true;
       }
     } catch {
-      // Network failure: show an empty deck rather than falling back to any
-      // local fixture as if it were live supply.
+      // Network failure: no deck rather than falling back to any local fixture as if it were live supply —
+      // and an explicit "couldn't load" state, not a "queue cleared" one.
+      failed = true;
     }
 
     // L-adjacent-1 — attach the job card's real skill-match summary here,
@@ -109,6 +121,8 @@ export default function FeedPage() {
       : scored;
 
     setOpportunities(withSkillMatch);
+    setLoadFailed(failed);
+    setServerCount(returned);
     setPersonalized(isPersonalized);
     setSwipedCount(swipes.length);
     setIsLoading(false);
@@ -237,6 +251,17 @@ export default function FeedPage() {
   const rightSwipesCount = profile.dailyRightSwipesCount || 0;
   const savesRemaining = Math.max(15 - rightSwipesCount, 0);
   const hasActiveFilters = Object.values(activeFilters).some((v) => v !== undefined);
+  const emptyKind = feedEmptyKind({
+    loadFailed,
+    serverCount,
+    unswipedCount: opportunities.length,
+    filteredCount: filteredOpportunities.length,
+    hasActiveFilters,
+  });
+  const handleRetryLoad = () => {
+    setIsLoading(true);
+    refreshOpportunities();
+  };
   // The preference rail / heading show only roles the user really saved — never an invented default.
   const savedRole = profile.intent?.targetRoles?.find((r) => typeof r === 'string' && r.trim()) ?? null;
 
@@ -310,6 +335,9 @@ export default function FeedPage() {
 
       {/* Primary Swipe Deck Container (Uncompromised Core Experience) */}
       <div className="w-full flex flex-col items-center">
+        {emptyKind ? (
+          <FeedEmptyState kind={emptyKind} onRetry={handleRetryLoad} onClearFilters={() => setActiveFilters({})} />
+        ) : (
         <SwipeDeck
           opportunities={filteredOpportunities}
           onSwipe={handleSwipe}
@@ -321,6 +349,7 @@ export default function FeedPage() {
           // Keyboard shortcuts must not swipe/save a job behind an open modal.
           paused={isFilterModalOpen || isUpgradeModalOpen}
         />
+        )}
       </div>
 
       {/* Bottom Trust Indicators: Remote · Eligible */}
