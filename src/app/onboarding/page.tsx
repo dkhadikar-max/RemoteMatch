@@ -16,11 +16,10 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { localStore } from '@/lib/db/mock-seed';
-import { parseResumeWithAI } from '@/lib/ai/resume';
-import { analyzeResumeWithAI } from '@/lib/ai/resume-intelligence';
 import { extractPdfText, PdfTextExtractionError } from '@/lib/resume/extract-pdf-text';
-import { ResumeIntelligenceDashboard } from '@/components/onboarding/resume-intelligence-dashboard';
-import { EmploymentType, ProfileStrengthAnalysis, AIUncertaintyItem } from '@/types/byn';
+import { checkResumeAgainstSkills, type ResumeCheck } from '@/lib/resume/resume-check';
+import { ResumeCheckSummary } from '@/components/onboarding/resume-check-summary';
+import { EmploymentType } from '@/types/byn';
 import {
   OnboardingPayload,
   validateOnboardingPayload,
@@ -65,7 +64,6 @@ export default function OnboardingPage() {
 
   // Step 6: Resume
   const [resumeText, setResumeText] = useState('');
-  const [isParsing, setIsParsing] = useState(false);
   const [fullName, setFullName] = useState('');
   const [headline, setHeadline] = useState('');
   const [hasParsed, setHasParsed] = useState(false);
@@ -73,8 +71,8 @@ export default function OnboardingPage() {
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [pdfExtractionError, setPdfExtractionError] = useState<string | null>(null);
 
-  // Resume Intelligence Analysis State
-  const [intelligenceAnalysis, setIntelligenceAnalysis] = useState<ProfileStrengthAnalysis | null>(null);
+  // Result of the plain-text resume check shown on the review step (facts only — see resume-check.ts).
+  const [resumeCheck, setResumeCheck] = useState<ResumeCheck | null>(null);
 
   // AFC: onboarding is persisted to the DB (complete_onboarding RPC) before the
   // feed is reachable. These track that final submit.
@@ -143,38 +141,11 @@ export default function OnboardingPage() {
     }
   };
 
-  // Run 5-Dimension Intelligence Analysis
-  const handleAnalyzeIntelligence = async () => {
-    setIsParsing(true);
-    const mockProfile = {
-      ...localStore.getProfile(),
-      fullName,
-      headline,
-      skills: skills.map((s, idx) => ({
-        id: `s-${idx}`,
-        profileId: 'demo-user-1',
-        skillName: s,
-        isPrimary: idx < 4,
-      })),
-      intent: {
-        id: 'intent-temp',
-        profileId: 'demo-user-1',
-        employmentTypes,
-        targetRoles,
-        // Stage 6 is only reachable once stage 4 is answered (canContinue),
-        // so this is always a real value here; the assertion just narrows the
-        // '' that the initial state allows.
-        yearsOfExperience: yearsOfExperience as YearsOfExperience,
-        preferredCurrency: 'USD',
-        availabilityStatus: 'immediately',
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
-    const analysis = await analyzeResumeWithAI(mockProfile, resumeText);
-    setIntelligenceAnalysis(analysis);
-    setIsParsing(false);
-    setStep(7); // Move to Intelligence Dashboard view
+  // Move to the review step. The resume check is a pure text search over the user's own skill list (never throws —
+  // see resume-check.ts), so there is no analysis service to wait on and nothing that can leave this button stuck.
+  const handleReviewProfile = () => {
+    setResumeCheck(checkResumeAgainstSkills(skills, resumeText));
+    setStep(7);
   };
 
   const handleResumeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,39 +168,21 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleResolveUncertainty = (
-    item: AIUncertaintyItem,
-    resolution: 'added' | 'not_relevant' | 'no',
-    whereUsed?: string
-  ) => {
-    if (resolution === 'added') {
-      setSkills((prev) =>
-        prev.includes(item.skill) ? prev : [...prev, item.skill]
-      );
-      localStore.updateProfile({
-        skills: localStore.getProfile().skills.map((s) =>
-          s.skillName.toLowerCase() === item.skill.toLowerCase()
-            ? { ...s, evidenceLevel: 'strong', whereUsed }
-            : s
-        ),
-      });
-    } else if (resolution === 'no') {
-      setSkills((prev) => prev.filter((s) => s.toLowerCase() !== item.skill.toLowerCase()));
-      localStore.updateProfile({
-        skills: localStore.getProfile().skills.filter(
-          (s) => s.skillName.toLowerCase() !== item.skill.toLowerCase()
-        ),
-      });
-    }
+  // The review step lets the user drop a declared skill that isn't in their resume text. Identical effect to the
+  // previous "No — Remove" action; "Keep" needs no handler (it changes nothing). The old "Yes — add details" action —
+  // which marked the skill 'strong' evidence locally on the strength of any typed text — is gone.
+  const handleRemoveSkill = (skill: string) => {
+    setSkills((prev) => prev.filter((s) => s.toLowerCase() !== skill.toLowerCase()));
+    localStore.updateProfile({
+      skills: localStore.getProfile().skills.filter((s) => s.skillName.toLowerCase() !== skill.toLowerCase()),
+    });
   };
 
   // Persist onboarding to the DB (server-authoritative), then redirect to Feed
   // with a full-document navigation (see the window.location.replace below).
   // The localStore write is a client echo so the feed (decision 7a — still
   // localStore-backed) reflects the new profile immediately.
-  const handleFinalFinish = async (improvedScore?: number) => {
-    const finalScore = improvedScore || intelligenceAnalysis?.overallScore || 78;
-
+  const handleFinalFinish = async () => {
     const payload: OnboardingPayload = {
       fullName,
       headline,
@@ -279,7 +232,7 @@ export default function OnboardingPage() {
       fullName,
       headline,
       rawResumeText: resumeText,
-      profileStrength: finalScore,
+      // No `profileStrength`: it used to be set from a fabricated analysis score (default 78) and is shown nowhere.
       intent: {
         id: 'intent-user',
         profileId: localStore.getProfile().id,
@@ -394,11 +347,14 @@ export default function OnboardingPage() {
           ))}
         </div>
 
-        {step === 7 && intelligenceAnalysis ? (
+        {step === 7 && resumeCheck ? (
           <div className="mt-8">
-            <ResumeIntelligenceDashboard
-              analysis={intelligenceAnalysis}
-              onResolveUncertainty={handleResolveUncertainty}
+            <ResumeCheckSummary
+              check={resumeCheck}
+              targetRoles={targetRoles}
+              skills={skills}
+              onRemoveSkill={handleRemoveSkill}
+              onBack={() => setStep(6)}
               onContinue={handleFinalFinish}
               isSubmitting={isSubmitting}
               submitError={submitError}
@@ -774,7 +730,8 @@ export default function OnboardingPage() {
                     Resume & Career History
                   </h1>
                   <p className="mt-1 text-sm text-[var(--muted)]">
-                    We&apos;ll review your experience and highlight your strengths.
+                    Add your resume so it&apos;s saved with your profile. Your matches are based on the skills, roles and
+                    preferences you entered — your resume isn&apos;t analysed or used to score jobs yet.
                   </p>
                 </div>
 
@@ -886,12 +843,12 @@ export default function OnboardingPage() {
               ) : (
                 <button
                   type="button"
-                  onClick={handleAnalyzeIntelligence}
-                  disabled={isParsing || !resumeText.trim() || yearsOfExperience === ''}
+                  onClick={handleReviewProfile}
+                  disabled={isExtractingPdf || !resumeText.trim() || yearsOfExperience === ''}
                   className="soft-button primary flex items-center gap-2 disabled:opacity-50"
                 >
                   <ShieldCheck className="size-4" />
-                  <span>{isParsing ? 'Analyzing profile...' : 'Analyze my profile'}</span>
+                  <span>Review my profile</span>
                 </button>
               )}
             </div>
@@ -900,8 +857,8 @@ export default function OnboardingPage() {
 
         {/* Reassurance Footer */}
         <p className="mt-8 flex items-center justify-center gap-2 text-xs text-[var(--muted)]">
-          <Check size={14} className="text-[#059669]" />
-          <span>No achievements or claims are invented when details are missing.</span>
+          <Check size={14} className="text-[#04714f]" />
+          <span>We don&apos;t invent skills, achievements or experience for your profile.</span>
         </p>
       </div>
     </main>
