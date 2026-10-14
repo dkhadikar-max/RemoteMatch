@@ -155,25 +155,29 @@ assert(view.includes("replace('(Verified)'") && view.includes("replace('(Strong 
 assert(onboarding.includes('const handleRemoveSkill = (skill: string) => {') && /setSkills\(\(prev\) => prev\.filter\(\(s\) => s\.toLowerCase\(\) !== skill\.toLowerCase\(\)\)\)/.test(onboarding), 'removing a skill keeps its previous behaviour (state + local store filter)');
 
 // ── 5. Scope ────────────────────────────────────────────────────────────────
-console.log('\n7. Scope — no matching, persistence, or snapshot changes');
-// This branch's OWN changes: committed since the merge-base with origin/main (three-dot, so sibling PRs merged into
-// main later don't count), plus uncommitted and untracked files. Falls back to the original base commit offline.
-const lines = (c: string) => execSync(c, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
-const committed = (() => { try { return lines('git diff --name-only origin/main...HEAD'); } catch { return lines('git diff --name-only 4c3fc95 HEAD'); } })();
-const changed = Array.from(new Set([...committed, ...lines('git diff --name-only HEAD'), ...lines('git ls-files --others --exclude-standard')]));
-const allowed = new Set([
-  'src/lib/resume/skill-evidence.ts', 'src/lib/resume/resume-check.ts', 'src/components/onboarding/resume-check-summary.tsx',
-  'src/components/onboarding/resume-intelligence-dashboard.tsx', 'src/app/onboarding/page.tsx', 'src/app/page.tsx',
-  'src/components/match/match-analysis-view.tsx', 'test/resume-honesty-suite.ts',
-  // The stacked resume P1 clean-up PR (behaviour-preserving; proven by test/resume-p1-equivalence-suite.ts):
-  'src/lib/ai/resume.ts', 'src/lib/ai/resume-intelligence.ts', 'src/lib/resume/extract-pdf-text.ts',
-  'test/resume-p1-equivalence-suite.ts', 'test/fixtures/resume-p1-golden.json', 'test/openai-reasoning-effort-suite.ts',
-]);
-assert(changed.every((f) => allowed.has(f)), 'only the resume step, its helpers, landing copy and the match-view label changed', changed.filter((f) => !allowed.has(f)).join(', '));
-// AI libs: the call-site files (materials, openai/gemini config, ledgers, anti-fabrication) stay untouched; only the two
-// resume files listed in `allowed` above may change (P1 clean-up).
-const frozen = ['src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/db/', 'src/lib/ai/materials.ts', 'src/lib/ai/openai-config.ts', 'src/lib/ai/gemini-config.ts', 'src/lib/ai/spend-ledger.ts', 'src/lib/ai/quota-ledger.ts', 'src/lib/ai/anti-fabrication.ts', 'src/lib/onboarding/', 'src/middleware.ts'];
-assert(changed.every((f) => !frozen.some((x) => f.startsWith(x))), 'matcher, API routes (incl. swipe/snapshots), migrations, stores, AI libs, onboarding contract and middleware untouched');
+console.log('\n7. Scope — no matching, persistence, or snapshot changes (pinned to its own commits)');
+// PR #9's own change set = the immutable commit range 4c3fc95..68eaee2 (base → tip of #9). Reading that range (not the
+// branch diff) keeps these guards true when later PRs are stacked on top of #9 or merged after it. If the commits are
+// not in this clone (e.g. a squash-merge) the file-scope checks are skipped, with a note.
+const PR9_BASE = '4c3fc95', PR9_TIP = '68eaee2';
+let pr9Files: string[] | null = null;
+try {
+  execSync(`git cat-file -e ${PR9_BASE} && git cat-file -e ${PR9_TIP}`, { cwd: root, stdio: 'ignore' });
+  pr9Files = execSync(`git diff --name-only ${PR9_BASE} ${PR9_TIP}`, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+} catch { /* not present */ }
+if (pr9Files === null) {
+  console.log('  note: the #9 commits are not in this clone (squash-merge?) — its file-scope guards are skipped.');
+} else {
+  const changed = pr9Files;
+  const allowed = new Set([
+    'src/lib/resume/skill-evidence.ts', 'src/lib/resume/resume-check.ts', 'src/components/onboarding/resume-check-summary.tsx',
+    'src/components/onboarding/resume-intelligence-dashboard.tsx', 'src/app/onboarding/page.tsx', 'src/app/page.tsx',
+    'src/components/match/match-analysis-view.tsx', 'test/resume-honesty-suite.ts',
+  ]);
+  assert(changed.every((f) => allowed.has(f)), 'PR #9 changed only the resume step, its helpers, landing copy and the match-view label', changed.filter((f) => !allowed.has(f)).join(', '));
+  const frozen = ['src/lib/matching/', 'src/app/api/', 'supabase/', 'src/lib/db/', 'src/lib/ai/', 'src/lib/onboarding/', 'src/middleware.ts'];
+  assert(changed.every((f) => !frozen.some((x) => f.startsWith(x))), 'PR #9 left the matcher, API routes (incl. swipe/snapshots), migrations, stores, AI libs, onboarding contract and middleware untouched');
+}
 const payloadBlock = onboarding.slice(onboarding.indexOf('const payload: OnboardingPayload = {'), onboarding.indexOf('const clientErrors'));
 assert(['fullName', 'headline', 'employmentTypes', 'targetRoles', 'yearsOfExperience', 'skills:', 'workPreference', 'currentCountry', 'currentTimezone', 'allowedCountries', 'willingTimezones', 'rawResumeText: resumeText'].every((k) => payloadBlock.includes(k)), 'the onboarding payload sent to the server is unchanged (same fields)');
 

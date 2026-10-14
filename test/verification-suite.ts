@@ -303,9 +303,12 @@ Worked on web development and fixed bugs for client applications.`;
 
   // Job-specific resume analysis verification
   const jobSpecific = generateJobSpecificResumeAnalysis(DEFAULT_DEMO_PROFILE, matchingJob);
+  // P1b: suggestions are derived from the job's required skills, the declared skills and the resume text only —
+  // 0–3 of them, never template text (see test/resume-p1b-suite.ts for the full contract).
   assert(
-    jobSpecific.length === 3,
-    `Generates exactly 3 concrete job-specific resume improvements (got ${jobSpecific.length})`
+    jobSpecific.length <= 3 &&
+      jobSpecific.every((s) => s.title && s.recommendation && !/typical current bullet|\[insert/i.test(JSON.stringify(s))),
+    `Job-specific resume suggestions are 0–3 data-derived items with no template/placeholder text (got ${jobSpecific.length})`
   );
 
   // --------------------------------------------------------------------------

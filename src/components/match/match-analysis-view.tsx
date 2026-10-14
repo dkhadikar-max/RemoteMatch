@@ -208,13 +208,11 @@ ${match.gaps.map((g) => `! ${g}`).join('\n')}
 
 =====================================================
 BEFORE YOU APPLY:
-${(match.jobSpecificResumeImprovements || [
-  'Add concrete metrics demonstrating scale',
-  'Clarify architectural ownership on your most recent project',
-  'Make your remote async collaboration explicit',
-])
-  .map((item, i) => `0${i + 1}  ${typeof item === 'string' ? item : item.recommendation}`)
-  .join('\n')}
+${(match.jobSpecificResumeImprovements ?? []).length > 0
+  ? (match.jobSpecificResumeImprovements ?? [])
+      .map((item, i) => `0${i + 1}  ${typeof item === 'string' ? item : item.recommendation}`)
+      .join('\n')
+  : 'No resume-specific suggestions for this job.'}
 
 =====================================================
 APPLICATION PROPOSAL (${activeTone.toUpperCase()}):
@@ -245,13 +243,12 @@ ${initialResumeTweaks.bulletRewrites
     }, 1500);
   };
 
-  const beforeYouApplySteps = match.jobSpecificResumeImprovements?.map((imp) =>
-    typeof imp === 'string' ? imp : imp.recommendation || imp.title
-  ) || [
-    'Add production-scale impact metrics to your recent role',
-    'Clarify architectural ownership and distributed systems scope',
-    'Make remote async workflow and cross-functional decisions explicit',
-  ];
+  // Derived from the job's required skills, the user's declared skills and resume text only
+  // (generateJobSpecificResumeAnalysis). When there is nothing to say, say so — no static advice.
+  const beforeYouApplySteps: string[] =
+    match.jobSpecificResumeImprovements?.map((imp) =>
+      typeof imp === 'string' ? imp : imp.recommendation || imp.title
+    ) ?? [];
 
   const badgeColor = COMPANY_COLORS[opportunity.company] || 'bg-[var(--ink)] text-white';
 
@@ -616,6 +613,9 @@ ${initialResumeTweaks.bulletRewrites
                     </p>
 
                     <div className="space-y-3 mt-3">
+                      {beforeYouApplySteps.length === 0 && (
+                        <p className="text-xs text-[var(--muted)] leading-snug">No resume-specific suggestions for this job.</p>
+                      )}
                       {beforeYouApplySteps.slice(0, 3).map((step, idx) => (
                         <div key={idx} className="flex items-start gap-3 text-xs">
                           <span className="grid size-5 place-items-center rounded-full bg-[var(--red-soft)] border border-[var(--red-soft-border)] text-[11px] font-bold text-[var(--red)] shrink-0 mt-0.5">

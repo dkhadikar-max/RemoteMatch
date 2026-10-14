@@ -1,0 +1,2024 @@
+{
+  "analysis": [
+    [
+      [
+        "0/0",
+        {
+          "opportunityId": "opp-curated-curated-001",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 4 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with node.js.",
+          "strengths": [
+            "Core capability in React (Verified)",
+            "Core capability in TypeScript (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Node.js",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Distributed Systems"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "React",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "Node.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Distributed Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "0/1",
+        {
+          "opportunityId": "opp-curated-curated-002",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with figma.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Figma",
+            "No demonstrated experience with Product Design",
+            "No demonstrated experience with Design Systems",
+            "No demonstrated experience with User Research"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Figma",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Product Design",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Design Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "User Research",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "SaaS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "0/2",
+        {
+          "opportunityId": "opp-curated-curated-003",
+          "fitScore": 83,
+          "fitBadge": "Strong Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 5 key attributes including core capabilities (Next.js, React, TypeScript) and remote eligibility. Your primary gap to address is no demonstrated experience with tailwind css.",
+          "strengths": [
+            "Core capability in Next.js (Verified)",
+            "Core capability in React (Verified)",
+            "Core capability in TypeScript (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Tailwind CSS",
+            "No demonstrated experience with Web Performance"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Next.js",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "React",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "Tailwind CSS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Web Performance",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "0/3",
+        {
+          "opportunityId": "opp-curated-curated-004",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with product management.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Product Management",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Developer Tools",
+            "No demonstrated experience with Open Source"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Product Management",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Developer Tools",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Open Source",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Roadmapping",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "0/4",
+        {
+          "opportunityId": "opp-curated-curated-005",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with go.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Go",
+            "No demonstrated experience with Kafka",
+            "No demonstrated experience with Kubernetes",
+            "No demonstrated experience with Microservices"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Go",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kafka",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kubernetes",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Microservices",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "0/5",
+        {
+          "opportunityId": "opp-curated-curated-006",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with python.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Python",
+            "No demonstrated experience with PyTorch",
+            "No demonstrated experience with LLMs",
+            "No demonstrated experience with RAG"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Python",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PyTorch",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LLMs",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "RAG",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Vector Databases",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LangChain",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ]
+    ],
+    [
+      [
+        "1/0",
+        {
+          "opportunityId": "opp-curated-curated-001",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 3 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with react.",
+          "strengths": [
+            "Core capability in PostgreSQL (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Node.js",
+            "No demonstrated experience with Distributed Systems"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Node.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "Distributed Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "1/1",
+        {
+          "opportunityId": "opp-curated-curated-002",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with figma.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Figma",
+            "No demonstrated experience with Product Design",
+            "No demonstrated experience with Design Systems",
+            "No demonstrated experience with User Research"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Figma",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Product Design",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Design Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "User Research",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "SaaS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "1/2",
+        {
+          "opportunityId": "opp-curated-curated-003",
+          "fitScore": 50,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with next.js.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Next.js",
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Tailwind CSS"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Next.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Tailwind CSS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Web Performance",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "1/3",
+        {
+          "opportunityId": "opp-curated-curated-004",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 3 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with product management.",
+          "strengths": [
+            "Core capability in PostgreSQL (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Product Management",
+            "No demonstrated experience with Developer Tools",
+            "No demonstrated experience with Open Source",
+            "No demonstrated experience with Roadmapping"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Product Management",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "Developer Tools",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Open Source",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Roadmapping",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "1/4",
+        {
+          "opportunityId": "opp-curated-curated-005",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 4 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with kafka.",
+          "strengths": [
+            "Core capability in Go (Verified)",
+            "Core capability in PostgreSQL (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Kafka",
+            "No demonstrated experience with Kubernetes",
+            "No demonstrated experience with Microservices"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Go",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "Kafka",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kubernetes",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Microservices",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "1/5",
+        {
+          "opportunityId": "opp-curated-curated-006",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 3 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with pytorch.",
+          "strengths": [
+            "Core capability in Python (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with PyTorch",
+            "No demonstrated experience with LLMs",
+            "No demonstrated experience with RAG",
+            "No demonstrated experience with Vector Databases"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Python",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "PyTorch",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LLMs",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "RAG",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Vector Databases",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LangChain",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ]
+    ],
+    [
+      [
+        "2/0",
+        {
+          "opportunityId": "opp-curated-curated-001",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with react.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Node.js",
+            "No demonstrated experience with PostgreSQL"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Node.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Distributed Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "2/1",
+        {
+          "opportunityId": "opp-curated-curated-002",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with figma.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Figma",
+            "No demonstrated experience with Product Design",
+            "No demonstrated experience with Design Systems",
+            "No demonstrated experience with User Research"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Figma",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Product Design",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Design Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "User Research",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "SaaS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "2/2",
+        {
+          "opportunityId": "opp-curated-curated-003",
+          "fitScore": 50,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with next.js.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Next.js",
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Tailwind CSS"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Next.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Tailwind CSS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Web Performance",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "2/3",
+        {
+          "opportunityId": "opp-curated-curated-004",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with product management.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Product Management",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Developer Tools",
+            "No demonstrated experience with Open Source"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Product Management",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Developer Tools",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Open Source",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Roadmapping",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "2/4",
+        {
+          "opportunityId": "opp-curated-curated-005",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with go.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Go",
+            "No demonstrated experience with Kafka",
+            "No demonstrated experience with Kubernetes",
+            "No demonstrated experience with Microservices"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Go",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kafka",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kubernetes",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Microservices",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "2/5",
+        {
+          "opportunityId": "opp-curated-curated-006",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with python.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Python",
+            "No demonstrated experience with PyTorch",
+            "No demonstrated experience with LLMs",
+            "No demonstrated experience with RAG"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Python",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PyTorch",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LLMs",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "RAG",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Vector Databases",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LangChain",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ]
+    ],
+    [
+      [
+        "3/0",
+        {
+          "opportunityId": "opp-curated-curated-001",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with react.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Node.js",
+            "No demonstrated experience with PostgreSQL"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Node.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Distributed Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "3/1",
+        {
+          "opportunityId": "opp-curated-curated-002",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with figma.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Figma",
+            "No demonstrated experience with Product Design",
+            "No demonstrated experience with Design Systems",
+            "No demonstrated experience with User Research"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Figma",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Product Design",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Design Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "User Research",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "SaaS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "3/2",
+        {
+          "opportunityId": "opp-curated-curated-003",
+          "fitScore": 50,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with next.js.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Next.js",
+            "No demonstrated experience with React",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Tailwind CSS"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Next.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "React",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Tailwind CSS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Web Performance",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "3/3",
+        {
+          "opportunityId": "opp-curated-curated-004",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with product management.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Product Management",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Developer Tools",
+            "No demonstrated experience with Open Source"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Product Management",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Developer Tools",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Open Source",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Roadmapping",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "3/4",
+        {
+          "opportunityId": "opp-curated-curated-005",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with go.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Go",
+            "No demonstrated experience with Kafka",
+            "No demonstrated experience with Kubernetes",
+            "No demonstrated experience with Microservices"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Go",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kafka",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kubernetes",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Microservices",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "3/5",
+        {
+          "opportunityId": "opp-curated-curated-006",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": false,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with python.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Python",
+            "No demonstrated experience with PyTorch",
+            "No demonstrated experience with LLMs",
+            "No demonstrated experience with RAG"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Python",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PyTorch",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LLMs",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "RAG",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Vector Databases",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LangChain",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ]
+    ],
+    [
+      [
+        "4/0",
+        {
+          "opportunityId": "opp-curated-curated-001",
+          "fitScore": 61,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 3 key attributes including core capabilities (React) and remote eligibility. Your primary gap to address is no demonstrated experience with typescript.",
+          "strengths": [
+            "Core capability in React (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Node.js",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Distributed Systems"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "React",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Node.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Distributed Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "4/1",
+        {
+          "opportunityId": "opp-curated-curated-002",
+          "fitScore": 45,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with figma.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Figma",
+            "No demonstrated experience with Product Design",
+            "No demonstrated experience with Design Systems",
+            "No demonstrated experience with User Research"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Figma",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Product Design",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Design Systems",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "User Research",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "SaaS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "4/2",
+        {
+          "opportunityId": "opp-curated-curated-003",
+          "fitScore": 61,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 3 key attributes including core capabilities (React) and remote eligibility. Your primary gap to address is no demonstrated experience with next.js.",
+          "strengths": [
+            "Core capability in React (Verified)",
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Next.js",
+            "No demonstrated experience with TypeScript",
+            "No demonstrated experience with Tailwind CSS",
+            "No demonstrated experience with Web Performance"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Next.js",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "React",
+              "status": "partial",
+              "note": "Claimed skill in profile; ensure resume highlights recent use."
+            },
+            {
+              "requirement": "TypeScript",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Tailwind CSS",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Web Performance",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "4/3",
+        {
+          "opportunityId": "opp-curated-curated-004",
+          "fitScore": 45,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with product management.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Product Management",
+            "No demonstrated experience with PostgreSQL",
+            "No demonstrated experience with Developer Tools",
+            "No demonstrated experience with Open Source"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Product Management",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Developer Tools",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Open Source",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Roadmapping",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "7-10 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ],
+      [
+        "4/4",
+        {
+          "opportunityId": "opp-curated-curated-005",
+          "fitScore": 50,
+          "fitBadge": "Moderate Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with go.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Go",
+            "No demonstrated experience with Kafka",
+            "No demonstrated experience with Kubernetes",
+            "No demonstrated experience with Microservices"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Go",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kafka",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Kubernetes",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Microservices",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PostgreSQL",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "apply_with_caveat"
+        }
+      ],
+      [
+        "4/5",
+        {
+          "opportunityId": "opp-curated-curated-006",
+          "fitScore": 28,
+          "fitBadge": "Low Fit",
+          "isCountryEligible": true,
+          "isRemoteEligible": true,
+          "isRoleMatch": true,
+          "whyThisJob": "You match 2 key attributes including core capabilities (domain alignment) and remote eligibility. Your primary gap to address is no demonstrated experience with python.",
+          "strengths": [
+            "4-6 years relevant experience aligns with team expectations.",
+            "Location flexibility (Worldwide) verified for your region."
+          ],
+          "gaps": [
+            "No demonstrated experience with Python",
+            "No demonstrated experience with PyTorch",
+            "No demonstrated experience with LLMs",
+            "No demonstrated experience with RAG"
+          ],
+          "requirementChecklist": [
+            {
+              "requirement": "Python",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "PyTorch",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LLMs",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "RAG",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "Vector Databases",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "LangChain",
+              "status": "missing",
+              "note": "Not explicitly listed in your profile; highlight adjacent experience."
+            },
+            {
+              "requirement": "4-6 years experience",
+              "status": "matched",
+              "note": "Your background matches the 4-6 years seniority tier."
+            },
+            {
+              "requirement": "Worldwide Remote Work Eligibility",
+              "status": "matched",
+              "note": "Location and work scope fully satisfied."
+            }
+          ],
+          "recommendation": "low_priority"
+        }
+      ]
+    ]
+  ],
+  "feed": [
+    [
+      0,
+      [
+        [
+          "opp-curated-curated-003",
+          83,
+          "Strong Fit"
+        ],
+        [
+          "opp-curated-curated-001",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-002",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-004",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-005",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-006",
+          28,
+          "Low Fit"
+        ]
+      ]
+    ],
+    [
+      1,
+      [
+        [
+          "opp-curated-curated-003",
+          50,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-001",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-002",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-004",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-005",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-006",
+          28,
+          "Low Fit"
+        ]
+      ]
+    ],
+    [
+      2,
+      [
+        [
+          "opp-curated-curated-003",
+          50,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-001",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-002",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-004",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-005",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-006",
+          28,
+          "Low Fit"
+        ]
+      ]
+    ],
+    [
+      3,
+      [
+        [
+          "opp-curated-curated-003",
+          50,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-001",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-002",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-004",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-005",
+          28,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-006",
+          28,
+          "Low Fit"
+        ]
+      ]
+    ],
+    [
+      4,
+      [
+        [
+          "opp-curated-curated-001",
+          61,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-003",
+          61,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-005",
+          50,
+          "Moderate Fit"
+        ],
+        [
+          "opp-curated-curated-002",
+          45,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-004",
+          45,
+          "Low Fit"
+        ],
+        [
+          "opp-curated-curated-006",
+          28,
+          "Low Fit"
+        ]
+      ]
+    ]
+  ]
+}

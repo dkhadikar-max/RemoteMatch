@@ -659,15 +659,14 @@ Technologies: React, Node.js, TypeScript. No mention of AWS or Kubernetes.`;
   const pWithResume = { ...pStrong, rawResumeText: mockRawResume };
   const resumeTweaks = generateJobSpecificResumeAnalysis(pWithResume, OPPORTUNITIES.usSeniorReact);
 
-  // Assert that generated suggestions advise the candidate to quantify rather than making up metrics
+  // P1b: the real intent of this check is "no hallucination" — the suggestions must not invent metrics, employers or
+  // technologies. (The previous assertion looked for the old coaching template words; that template was itself invented text.)
   const suggestionsText = JSON.stringify(resumeTweaks);
+  const named = ['AWS', 'Kubernetes', 'GraphQL', 'Rust', 'Go', 'Python', 'Java'].filter((k) => new RegExp(`\\b${k}\\b`).test(suggestionsText));
   assert(
-    suggestionsText.includes('Rewrite') ||
-      suggestionsText.includes('outcome') ||
-      suggestionsText.includes('scope') ||
-      suggestionsText.includes('Elevate') ||
-      suggestionsText.includes('Surface'),
-    'P23: Suggestions coach candidate to add verified context without fabricating unverified metrics'
+    !/\d+\s*%|\$\s*\d|\[insert|typical current bullet/i.test(suggestionsText) &&
+      named.every((k) => OPPORTUNITIES.usSeniorReact.requiredSkills.includes(k)),
+    'P23: Suggestions contain no invented metrics/placeholders and name only technologies the job requires'
   );
 
   // Test 24: Non-existent technology is not falsely credited in strengths
