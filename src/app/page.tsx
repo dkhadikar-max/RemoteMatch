@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { recordFunnelEventClient } from '@/lib/funnel/client';
 import { getOrCreateAnonymousId } from '@/lib/funnel/anonymous-id';
+import { matchHref } from '@/lib/match/match-href';
 
 const PREVIEW_JOBS = [
   {
@@ -201,7 +202,7 @@ export default function LandingPage() {
           {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
           <div className="mt-4 flex items-center gap-3 pt-2">
             <Link
-              href={`/match/${current.id}`}
+              href={matchHref(current.id)}
               className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
             >
               See why it matches

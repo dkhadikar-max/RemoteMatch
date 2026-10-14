@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ApplicationRecord, ApplicationStatus } from '@/types/byn';
 import { InterviewModal } from '@/components/tracker/interview-modal';
+import { matchHref } from '@/lib/match/match-href';
 import {
   ArrowRight,
   MessageSquareText,
@@ -470,7 +471,7 @@ export default function TrackerPage() {
                         </button>
                       ) : (
                         <Link
-                          href={`/match/${opp.id}`}
+                          href={matchHref(opp.id)}
                           className="soft-button primary text-xs font-semibold !py-2 !px-3.5 min-h-[36px] w-full sm:w-auto flex items-center justify-center gap-1"
                         >
                           <span>View match & apply →</span>
@@ -492,7 +493,7 @@ export default function TrackerPage() {
                     </button>
 
                     <Link
-                      href={`/match/${opp.id}`}
+                      href={matchHref(opp.id)}
                       className="inline-flex items-center gap-1 font-semibold text-[var(--red)] hover:text-[var(--red-dark)] transition-colors min-h-[32px]"
                     >
                       <span>View match details</span>

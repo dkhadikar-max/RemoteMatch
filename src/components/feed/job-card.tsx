@@ -5,6 +5,7 @@ import { CanonicalOpportunity } from '@/types/byn';
 import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
+import { matchHref } from '@/lib/match/match-href';
 
 interface JobCardProps {
   opportunity: CanonicalOpportunity;
@@ -150,7 +151,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
       {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
       <div className="pt-3.5 border-t border-[var(--line)] flex items-center justify-between gap-3">
         <Link
-          href={`/match/${opportunity.id}`}
+          href={matchHref(opportunity.id)}
           className="rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] flex-1 text-xs font-semibold text-center justify-center py-2.5 transition-colors shadow-sm min-h-[44px] flex items-center"
         >
           {fitScore !== null ? 'See why it matches' : 'View details'}
