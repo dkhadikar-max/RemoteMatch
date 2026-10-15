@@ -18,7 +18,7 @@ const isSupabaseConfigured = Boolean(
 //                          (this is where an un-onboarded user is sent).
 //   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
 const ONBOARDING_PREFIXES = ['/onboarding'];
-const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings'];
+const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings', '/linkedin-jobs'];
 
 // Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
 // Static assets are covered separately by the matcher below, not listed here.

@@ -79,7 +79,10 @@ async function run() {
   // 1. Unauthenticated -> private route redirects to /login
   // ------------------------------------------------------------------
   console.log('\n1. UNAUTHENTICATED -> PRIVATE ROUTE REDIRECTS');
-  for (const path of ['/feed', '/onboarding', '/tracker', '/settings', '/match/opp-curated-curated-001']) {
+  // '/linkedin-jobs' (+ a subpath) added after a production smoke test found
+  // the page served 200 to anonymous visitors: it was missing from
+  // middleware.ts's PRODUCT_PREFIXES allowlist, unlike every other product page.
+  for (const path of ['/feed', '/onboarding', '/tracker', '/settings', '/match/opp-curated-curated-001', '/linkedin-jobs', '/linkedin-jobs/anything']) {
     const res = await fetch(`${BASE_URL}${path}`, { redirect: 'manual' });
     const location = res.headers.get('location') || '';
     assert(
