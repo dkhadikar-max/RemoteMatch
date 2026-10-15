@@ -15,9 +15,12 @@
  *
  * Run: npx tsx test/linkedin-jobs-quota-refund-suite.ts
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { shouldRefundSearch, refundSearchReservation, settleSearchReservation } from '../src/lib/linkedin-jobs/quota';
-import type { LinkedInSearchStatus } from '../src/lib/linkedin-jobs/search';
+import { buildSearchResponseBody } from '../src/lib/linkedin-jobs/search-response';
+import type { LinkedInSearchStatus, LinkedInSearchOutcome } from '../src/lib/linkedin-jobs/search';
 
 let passed = 0, failed = 0;
 const assert = (c: boolean, n: string) => {
@@ -166,6 +169,74 @@ async function run() {
     assert(r1.refunded === false && !!r1.error, 'thrown RPC -> { refunded: false, error }');
     assert(r2.refunded === false && !!r2.error, 'errored RPC -> { refunded: false, error }');
     assert(r3.refunded === true && r3.error === undefined, 'healthy RPC -> { refunded: true }');
+  }
+
+  console.log('\n9. buildSearchResponseBody(): `success` means the search was DELIVERED, and a failed refund never reads as success');
+  {
+    const reservation = { planTier: 'free', limit: 3 };
+    const oneResult = [{ id: 'li-1' }] as unknown as LinkedInSearchOutcome['results'];
+    const outcomeOf = (status: LinkedInSearchStatus, results: LinkedInSearchOutcome['results'] = []): LinkedInSearchOutcome => ({
+      status,
+      vendorConfigured: status !== 'vendor_not_configured',
+      results,
+    });
+    // Real settlement result from the real helper, against a ledger that has
+    // already reserved one unit (remaining 2 of 3), exactly as the route does.
+    const settle = async (status: LinkedInSearchStatus, behavior: 'ok' | 'error' | 'throw' = 'ok', remaining: number | null = 2) => {
+      const l = fakeLedger(behavior);
+      await l.client.rpc('reserve_linkedin_search');
+      return settleSearchReservation(l.client, status, remaining);
+    };
+
+    const okBody = buildSearchResponseBody(outcomeOf('ok', oneResult), await settle('ok'), reservation);
+    assert(okBody.success === true && okBody.status === 'ok', "'ok' with results: success true");
+    assert(okBody.quotaRefunded === false && !('quotaRefundError' in okBody), "'ok': no refund and no error field");
+    assert(okBody.results.length === 1 && okBody.remaining === 2, "'ok': results passed through, remaining untouched");
+
+    const emptyBody = buildSearchResponseBody(outcomeOf('ok'), await settle('ok'), reservation);
+    assert(emptyBody.success === true && emptyBody.results.length === 0, "'ok' with ZERO results is still a delivered search: success true");
+
+    const nc = buildSearchResponseBody(outcomeOf('vendor_not_configured'), await settle('vendor_not_configured'), reservation);
+    assert(nc.success === false && nc.status === 'vendor_not_configured', "'vendor_not_configured': success FALSE");
+    assert(nc.vendorConfigured === false && nc.quotaRefunded === true && nc.remaining === 3, "'vendor_not_configured': vendorConfigured false, unit refunded, remaining 2 -> 3");
+
+    const vf = buildSearchResponseBody(outcomeOf('vendor_failed'), await settle('vendor_failed'), reservation);
+    assert(vf.success === false && vf.status === 'vendor_failed', "'vendor_failed': success FALSE");
+    assert(vf.vendorConfigured === true && vf.quotaRefunded === true, "'vendor_failed': vendor was configured, unit refunded");
+
+    for (const behavior of ['error', 'throw'] as const) {
+      const body = buildSearchResponseBody(outcomeOf('vendor_failed'), await settle('vendor_failed', behavior), reservation);
+      assert(body.success === false, `refund ${behavior}: success is FALSE`);
+      assert(body.quotaRefunded === false, `refund ${behavior}: reported as NOT refunded`);
+      assert('quotaRefundError' in body && typeof body.quotaRefundError === 'string' && body.quotaRefundError.length > 0, `refund ${behavior}: quotaRefundError is present and non-empty`);
+      assert(body.remaining === 2, `refund ${behavior}: remaining is NOT inflated`);
+    }
+
+    // Invariant over every status x refund behaviour: a success flag can
+    // never sit next to a refund attempt or a refund error.
+    let invariantHolds = true;
+    let coveredCases = 0;
+    for (const status of ['ok', 'vendor_not_configured', 'vendor_failed'] as const) {
+      for (const behavior of ['ok', 'error', 'throw'] as const) {
+        const body = buildSearchResponseBody(outcomeOf(status), await settle(status, behavior), reservation);
+        coveredCases++;
+        if (body.success && (body.quotaRefunded || 'quotaRefundError' in body)) invariantHolds = false;
+        if (!body.success && status === 'ok') invariantHolds = false; // success iff status === 'ok'
+        if (body.success && status !== 'ok') invariantHolds = false;
+      }
+    }
+    assert(invariantHolds, `across all ${coveredCases} status x refund-behaviour combinations: success <=> status 'ok', and success never co-occurs with a refund or a refund error`);
+
+    const pro = buildSearchResponseBody(outcomeOf('vendor_failed'), await settle('vendor_failed', 'ok', null), { planTier: 'pro', limit: 3 });
+    assert(pro.remaining === null && pro.planTier === 'pro', 'a Pro user (unlimited) keeps remaining = null after a refund');
+
+    // The route itself cannot be run without a server, so guard its source:
+    // it must build the 200-path body through the helper and must not
+    // hard-code `success: true` again.
+    const routeSrc = readFileSync(join(__dirname, '..', 'src/app/api/linkedin-jobs/search/route.ts'), 'utf8');
+    const code = routeSrc.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').map((line) => line.replace(/\/\/[^\r\n]*/, '')).join('\n');
+    assert(/buildSearchResponseBody\(/.test(code), 'route.ts builds its response through buildSearchResponseBody()');
+    assert(!/success:\s*true/.test(code), 'route.ts no longer hard-codes `success: true` anywhere');
   }
 
   console.log(`\n${passed} passed, ${failed} failed.`);

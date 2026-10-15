@@ -4,6 +4,7 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { loadServerProfile } from '@/lib/profile/server-profile';
 import { runLinkedInJobSearch } from '@/lib/linkedin-jobs/search';
 import { settleSearchReservation, refundSearchReservation } from '@/lib/linkedin-jobs/quota';
+import { buildSearchResponseBody } from '@/lib/linkedin-jobs/search-response';
 import type { LinkedInJobSearchFilters } from '@/types/linkedin-jobs';
 
 /**
@@ -92,18 +93,9 @@ export async function POST(req: NextRequest) {
     // status 'ok' and keeps its charge.
     const settlement = await settleSearchReservation(supabase, outcome.status, reservationResult.remaining);
 
-    return NextResponse.json({
-      success: true,
-      status: outcome.status,
-      vendorConfigured: outcome.vendorConfigured,
-      results: outcome.results,
-      planTier: reservationResult.planTier,
-      limit: reservationResult.limit,
-      remaining: settlement.remaining,
-      quotaRefunded: settlement.quotaRefunded,
-      // Present only when a refund was needed and FAILED — never silent.
-      ...(settlement.quotaRefundError ? { quotaRefundError: settlement.quotaRefundError } : {}),
-    });
+    // `success` is true only when the search was delivered (status 'ok');
+    // see search-response.ts. HTTP status stays 200 so the page is unaffected.
+    return NextResponse.json(buildSearchResponseBody(outcome, settlement, reservationResult));
   } catch (err) {
     // Same rollback discipline as match-analysis/route.ts: a failure after
     // the reservation succeeded gives the unit back rather than silently
