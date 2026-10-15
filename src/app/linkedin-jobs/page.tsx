@@ -5,7 +5,9 @@ import { Search, Link2, ExternalLink, Loader2 } from 'lucide-react';
 import { fetchServerEntitlement, ServerEntitlement } from '@/lib/entitlement/client';
 import { UpgradeModal, UpgradeReason } from '@/components/premium/upgrade-modal';
 import { LinkedInMatchView } from '@/components/linkedin-jobs/linkedin-match-view';
+import { SearchStateNotice } from '@/components/linkedin-jobs/search-state-notice';
 import { buildLinkedInJobSearchUrl } from '@/lib/linkedin-jobs/deep-links';
+import { interpretSearchResponse, networkFailureState, type SearchViewState } from '@/lib/linkedin-jobs/search-view-state';
 import type { LinkedInJobSearchFilters } from '@/types/linkedin-jobs';
 import type { LinkedInSearchResultItem } from '@/lib/linkedin-jobs/search';
 import type { PastedJobAnalysis } from '@/lib/linkedin-jobs/analyze';
@@ -42,8 +44,9 @@ export default function LinkedInJobsPage() {
   const [filters, setFilters] = useState<LinkedInJobSearchFilters>(EMPTY_FILTERS);
   const [searchResults, setSearchResults] = useState<LinkedInSearchResultItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [vendorConfigured, setVendorConfigured] = useState<boolean | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
+  // What the last search resulted in (null until one has run). Decided by
+  // interpretSearchResponse(); see search-view-state.ts for the rules.
+  const [searchView, setSearchView] = useState<SearchViewState | null>(null);
 
   // Mode B state
   const [pasteText, setPasteText] = useState('');
@@ -59,26 +62,25 @@ export default function LinkedInJobsPage() {
 
   const runSearch = async () => {
     setIsSearching(true);
-    setSearchError(null);
     try {
       const res = await fetch('/api/linkedin-jobs/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(filters),
       });
-      const data = await res.json();
-      if (res.status === 403 && data.upgradeRequired) {
+      const data = await res.json().catch(() => null);
+      const view = interpretSearchResponse(res.ok, res.status, data);
+      if (view.kind === 'limit_reached') {
         setUpgradeReason('linkedinSearch');
         return;
       }
-      if (!res.ok) {
-        setSearchError(data.error || 'Search failed');
-        return;
-      }
-      setVendorConfigured(data.vendorConfigured);
-      setSearchResults(data.results || []);
+      setSearchView(view);
+      // Results belong to the latest search: a failed or empty one clears
+      // the list rather than leaving a previous search's jobs on screen.
+      setSearchResults(view.kind === 'results' ? data.results : []);
     } catch {
-      setSearchError('Search failed');
+      setSearchView(networkFailureState());
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -206,12 +208,7 @@ export default function LinkedInJobsPage() {
             Search LinkedIn Jobs
           </button>
 
-          {searchError && <p className="text-sm text-red-600">{searchError}</p>}
-          {vendorConfigured === false && (
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-              Automated search isn&apos;t connected yet — use &quot;Paste a job&quot; in the meantime.
-            </p>
-          )}
+          {searchView && <SearchStateNotice state={searchView} onRetry={runSearch} isRetrying={isSearching} />}
 
           <div className="space-y-3">
             {searchResults.map((r) => (
