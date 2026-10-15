@@ -28,7 +28,20 @@ export interface LinkedInSearchResultItem {
   isEligible: boolean;
 }
 
+/**
+ * What actually happened, as opposed to what was returned:
+ *   ok                    — the vendor was reached and answered (zero
+ *                           results is still 'ok': a legitimate empty search)
+ *   vendor_not_configured — no SERPAPI_KEY; no request left the process
+ *   vendor_failed         — the request was attempted and errored/timed out
+ * Only 'ok' consumes a Free-tier search; see quota.ts.
+ */
+export type LinkedInSearchStatus = 'ok' | 'vendor_not_configured' | 'vendor_failed';
+
 export interface LinkedInSearchOutcome {
+  status: LinkedInSearchStatus;
+  /** Kept for the existing page, which reads it. False only for
+   *  status === 'vendor_not_configured'. */
   vendorConfigured: boolean;
   results: LinkedInSearchResultItem[];
 }
@@ -46,10 +59,10 @@ export async function runLinkedInJobSearch(
       // Fails safe (plan §22's operational-dependency requirement): no
       // vendor key provisioned yet is a known, expected state in this
       // implementation pass, not a server error.
-      return { vendorConfigured: false, results: [] };
+      return { status: 'vendor_not_configured', vendorConfigured: false, results: [] };
     }
     console.warn('[linkedin-jobs] vendor search failed:', err);
-    return { vendorConfigured: true, results: [] };
+    return { status: 'vendor_failed', vendorConfigured: true, results: [] };
   }
 
   const linkedInOnly = filterToLinkedInResults(raw);
@@ -76,7 +89,7 @@ export async function runLinkedInJobSearch(
   // Best fit first — same ordering convention as scoreOpportunitiesForFeed.
   results.sort((a, b) => b.match.fitScore - a.match.fitScore);
 
-  return { vendorConfigured: true, results };
+  return { status: 'ok', vendorConfigured: true, results };
 }
 
 // Re-exported so callers (the route, tests) that need computeScreeningFit's
