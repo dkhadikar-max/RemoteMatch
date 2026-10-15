@@ -82,6 +82,7 @@ console.log('\n2. runLinkedInJobSearch() — fails safe when the vendor is not c
   const outcome = await runLinkedInJobSearch(baseProfile(['Python']), {}, notConfiguredVendor);
   assert(outcome.vendorConfigured === false, 'vendorConfigured correctly reported false, not a thrown error');
   assert(outcome.results.length === 0, 'zero results returned, not a crash');
+  assert(outcome.status === 'vendor_not_configured', `status is 'vendor_not_configured' so the route can refund the reserved unit (got '${outcome.status}')`);
 }
 
 console.log('\n3. runLinkedInJobSearch() — end-to-end with a real fake vendor: filter -> normalize -> match');
@@ -121,6 +122,32 @@ console.log('\n4. runLinkedInJobSearch() — a generic vendor error (not VendorN
   const outcome = await runLinkedInJobSearch(baseProfile([]), {}, brokenVendor);
   assert(outcome.vendorConfigured === true, 'a generic failure is distinguished from "not configured" (vendor WAS reachable/attempted)');
   assert(outcome.results.length === 0, 'zero results on a generic vendor failure, not a thrown exception');
+  assert(outcome.status === 'vendor_failed', `status is 'vendor_failed' so the route can refund the reserved unit (got '${outcome.status}')`);
+}
+
+console.log('\n5. Successful searches keep their charge: status is \'ok\' even when there are zero results to show');
+{
+  // The vendor answered, but with nothing at all.
+  const emptyVendor: JobSearchVendor = { name: 'fake_empty', search: async () => [] };
+  const empty = await runLinkedInJobSearch(baseProfile(['Python']), { keywords: 'nothing matches this' }, emptyVendor);
+  assert(empty.status === 'ok', `a vendor that answered with no jobs is 'ok', not a failure (got '${empty.status}')`);
+  assert(empty.results.length === 0, 'and there are genuinely no results');
+
+  // The vendor answered with jobs, but none carry a linkedin.com apply
+  // option, so the strict filter leaves nothing. Still a real, delivered search.
+  const noLinkedInVendor: JobSearchVendor = {
+    name: 'fake_no_linkedin',
+    search: async () => [{ title: 'Indeed only', company: 'X', applyOptions: [{ link: 'https://www.indeed.com/job/9' }] }],
+  };
+  const filteredOut = await runLinkedInJobSearch(baseProfile(['Python']), {}, noLinkedInVendor);
+  assert(filteredOut.status === 'ok', `results filtered down to zero by the LinkedIn-only rule is still 'ok' (got '${filteredOut.status}')`);
+  assert(filteredOut.results.length === 0, 'and the non-LinkedIn job was correctly dropped');
+
+  const fine = await runLinkedInJobSearch(baseProfile(['Python']), {}, {
+    name: 'fake_ok',
+    search: async () => [{ title: 'Py', company: 'Y', description: 'Python role', applyOptions: [{ link: 'https://www.linkedin.com/jobs/view/5' }] }],
+  });
+  assert(fine.status === 'ok' && fine.results.length === 1, "a normal successful search is 'ok'");
 }
 
 console.log(`\n${passed} passed, ${failed} failed.`);

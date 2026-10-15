@@ -3,22 +3,20 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { loadServerProfile } from '@/lib/profile/server-profile';
 import { runLinkedInJobSearch } from '@/lib/linkedin-jobs/search';
+import { settleSearchReservation, refundSearchReservation } from '@/lib/linkedin-jobs/quota';
 import type { LinkedInJobSearchFilters } from '@/types/linkedin-jobs';
 
 /**
  * LinkedIn Job Finder — automated search (plan §22 step [1], §26 Mode A,
  * §27 Pro-with-small-Free-allowance). Pro-gated via the SAME atomic-
  * reservation pattern as reserve_proposal() (src/app/api/ai/match-analysis/
- * route.ts) — reserve_linkedin_search() (migration 027, NOT YET APPLIED —
- * see that file's header) enforces a small Free daily allowance and
- * unlimited Pro, exactly mirroring the swipe/proposal quota philosophy
- * rather than inventing a new one.
+ * route.ts) — reserve_linkedin_search() (migration 027) enforces a small
+ * Free daily allowance and unlimited Pro, exactly mirroring the
+ * swipe/proposal quota philosophy rather than inventing a new one.
  *
- * Until migration 027 is applied, this RPC does not exist in the database
- * and every call here returns 500 — this is expected and documented, not a
- * bug: this route is NOT deployed as part of this implementation pass
- * (commit/push/deploy remain separate, un-triggered gates), so the RPC's
- * absence in production is never actually reached by a real request.
+ * The reserved unit is refunded whenever the user did not receive a search:
+ * an unconfigured/failing vendor (status !== 'ok') or a thrown error. See
+ * src/lib/linkedin-jobs/quota.ts for the rule and its documented limits.
  */
 
 function isValidFilters(body: unknown): body is LinkedInJobSearchFilters {
@@ -87,20 +85,39 @@ export async function POST(req: NextRequest) {
     const profile = await loadServerProfile(supabase, auth.user);
     const outcome = await runLinkedInJobSearch(profile, filters);
 
+    // The reservation pays for a search the user actually receives.
+    // runLinkedInJobSearch() does not throw for an unconfigured or failing
+    // vendor — it reports it via `status` — so the refund must key off that,
+    // not off an exception. A successful search with zero results is
+    // status 'ok' and keeps its charge.
+    const settlement = await settleSearchReservation(supabase, outcome.status, reservationResult.remaining);
+
     return NextResponse.json({
       success: true,
+      status: outcome.status,
       vendorConfigured: outcome.vendorConfigured,
       results: outcome.results,
       planTier: reservationResult.planTier,
       limit: reservationResult.limit,
-      remaining: reservationResult.remaining,
+      remaining: settlement.remaining,
+      quotaRefunded: settlement.quotaRefunded,
+      // Present only when a refund was needed and FAILED — never silent.
+      ...(settlement.quotaRefundError ? { quotaRefundError: settlement.quotaRefundError } : {}),
     });
   } catch (err) {
     // Same rollback discipline as match-analysis/route.ts: a failure after
     // the reservation succeeded gives the unit back rather than silently
-    // charging the user's quota for a search they never received.
-    await supabase.rpc('rollback_linkedin_search_reservation');
+    // charging the user's quota for a search they never received. The
+    // refund's own failure is now surfaced instead of discarded.
+    const refund = await refundSearchReservation(supabase);
     console.error('[linkedin-jobs/search] failed:', err);
-    return NextResponse.json({ error: 'Search failed' }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: 'Search failed',
+        quotaRefunded: refund.refunded,
+        ...(refund.error ? { quotaRefundError: refund.error } : {}),
+      },
+      { status: 500 }
+    );
   }
 }
