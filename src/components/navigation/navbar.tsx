@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Compass, BriefcaseBusiness, UserRound } from 'lucide-react';
+import { Compass, BriefcaseBusiness, UserRound, Linkedin } from 'lucide-react';
 import {
   fetchServerEntitlement,
   ENTITLEMENT_CHANGED_EVENT,
@@ -224,10 +224,10 @@ export function Navbar() {
                 >
                   Profile
                 </Link>
-                {/* LinkedIn Job Finder (Pro) — desktop nav only, omitted from
-                    the mobile bottom bar to keep it at its existing 3
-                    destinations (see the mobile nav block's own comment
-                    below). Plan: vivid-hatching-kitten.md §26. */}
+                {/* LinkedIn Job Finder — desktop nav entry. The mobile bottom
+                    bar has its own matching "LinkedIn" tab (below); it was
+                    originally omitted there, which left phone users no way
+                    to reach the page except typing the URL. */}
                 <Link
                   href="/linkedin-jobs"
                   className={`rounded-xl px-4 py-2 text-sm font-medium transition-colors ${
@@ -323,6 +323,17 @@ export function Navbar() {
         >
           <BriefcaseBusiness size={19} />
           <span className="mt-0.5">Applications</span>
+        </Link>
+        <Link
+          href="/linkedin-jobs"
+          className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
+            pathname === '/linkedin-jobs' || pathname.startsWith('/linkedin-jobs/')
+              ? 'text-[var(--red)] font-semibold bg-[var(--red-soft)]'
+              : 'text-[var(--muted)] hover:text-[var(--ink)]'
+          }`}
+        >
+          <Linkedin size={19} />
+          <span className="mt-0.5">LinkedIn</span>
         </Link>
         <Link
           href="/settings"
