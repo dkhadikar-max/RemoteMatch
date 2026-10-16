@@ -34,7 +34,10 @@ import {
   commitSubscriptionSlot,
   isActiveClaim,
   releaseSubscriptionSlot,
+  writeProfileIfUnchanged,
 } from '../src/lib/razorpay-claim';
+import { applySubscriptionToProfiles, MAX_ATTEMPTS, processWebhookEvent } from '../src/lib/razorpay-webhook-apply';
+import { RazorpayApiError, type RazorpaySubscription } from '../src/lib/razorpay';
 
 // 127.0.0.1, not localhost: .env.devserver.local maps localhost:3100 to the
 // admin host, where middleware 404s every consumer route.
@@ -92,11 +95,18 @@ function subscriptionEvent(type: string, subscriptionId: string) {
   return { entity: 'event', event: type, payload: { subscription: { entity: { id: subscriptionId, status: 'active' } } } };
 }
 
+/** Test-key read from Razorpay. Backs off and retries on 429 (test mode rate-limits bursts of reads). */
 async function rzpGet(path: string) {
-  const res = await fetch(`https://api.razorpay.com/v1${path}`, {
-    headers: { Authorization: `Basic ${Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString('base64')}` },
-  });
-  return { status: res.status, body: await json(res) };
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`https://api.razorpay.com/v1${path}`, {
+      headers: { Authorization: `Basic ${Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString('base64')}` },
+    });
+    if (res.status === 429 && attempt < 4) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * (attempt + 1)));
+      continue;
+    }
+    return { status: res.status, body: await json(res) };
+  }
 }
 
 /** Creates a subscription straight through Razorpay's API — bypassing our
@@ -128,6 +138,11 @@ async function profileOf(userId: string) {
 }
 
 const createdUsers: string[] = [];
+/** Every Razorpay subscription this run creates (all TEST mode). Reported, read back with the test key, at the end. */
+const createdTestSubscriptions: string[] = [];
+const trackSub = (id: unknown) => {
+  if (typeof id === 'string' && id.startsWith('sub_') && !createdTestSubscriptions.includes(id)) createdTestSubscriptions.push(id);
+};
 const createdEventIds: string[] = [];
 
 async function newUser(): Promise<TestSession> {
@@ -206,6 +221,42 @@ async function run() {
   }
 
   // --------------------------------------------------------------------------
+  // SAFETY GUARD — the SERVER's Razorpay credentials, not just this runner's,
+  // must be TEST mode before any test that makes the server talk to Razorpay.
+  // Proof without creating anything through the server: the runner creates a
+  // subscription with its rzp_test_ key (it exists only in this account's test
+  // mode), binds it to a guard profile with a sentinel status, and sends a
+  // signed webhook. The server can only sync the real status if ITS key can
+  // read that test-mode subscription — i.e. the server uses this account's
+  // test-mode credentials (and the same webhook secret). Otherwise: abort.
+  console.log('\nSAFETY GUARD: server uses Razorpay TEST-mode credentials');
+  {
+    const guardUser = await newUser();
+    const guardSub = await rzpCreateSubscription(guardUser.userId);
+    trackSub(guardSub.body?.id);
+    let serverIsTestMode = false;
+    let detail: unknown = { createStatus: guardSub.status };
+    if (guardSub.status === 200) {
+      await adminClient()
+        .from('profiles')
+        .update({ razorpay_subscription_id: guardSub.body.id, razorpay_subscription_status: 'guard-sentinel' })
+        .eq('id', guardUser.userId);
+      const eventId = `evt_test_${Date.now()}_guard`;
+      createdEventIds.push(eventId);
+      const res = await postWebhook(subscriptionEvent('subscription.updated', guardSub.body.id), { eventId });
+      const p = await profileOf(guardUser.userId);
+      serverIsTestMode = res.status === 200 && p?.razorpay_subscription_status === guardSub.body.status;
+      detail = { webhookStatus: res.status, synced: p?.razorpay_subscription_status, expected: guardSub.body.status };
+    }
+    assert(serverIsTestMode, "Server read a TEST-mode-only subscription with its own key (server credentials are this account's test mode)", detail);
+    if (!serverIsTestMode) {
+      console.log('\nRefusing to continue: cannot prove the server is using Razorpay TEST-mode credentials.');
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  // --------------------------------------------------------------------------
   console.log('\nAUTH');
   for (const path of ['/api/razorpay/subscription', '/api/razorpay/verify', '/api/razorpay/cancel']) {
     const res = await api(null, path, {});
@@ -223,6 +274,7 @@ async function run() {
   const dataA = await json(resA);
   assert(resA.status === 200 && dataA.success === true, 'Verified user can start checkout (200)', { status: resA.status, dataA });
   const subA: string = dataA.subscriptionId;
+  trackSub(subA);
   assert(typeof subA === 'string' && subA.startsWith('sub_'), 'Response carries a real sub_ id', subA);
   assert(dataA.keyId === KEY_ID, 'Response carries the public key id (test key)');
   assert(!JSON.stringify(dataA).includes(KEY_SECRET), 'Response never contains the key secret');
@@ -254,6 +306,7 @@ async function run() {
   const resB = await api(userB.token, '/api/razorpay/subscription');
   const dataB = await json(resB);
   const subB: string = dataB.subscriptionId;
+  trackSub(subB);
   assert(resB.status === 200 && subB !== subA, 'Second user gets a distinct subscription', { status: resB.status, subB });
 
   // --------------------------------------------------------------------------
@@ -340,6 +393,7 @@ async function run() {
     // but UNPAID. The notes.userId fallback must not bind or grant anything —
     // it only fires when Razorpay's live status grants Pro.
     const orphan = await rzpCreateSubscription(userB.userId);
+    trackSub(orphan.body.id);
     assert(orphan.status === 200 && orphan.body.status === 'created', 'Staged an unpaid orphan subscription for B via the Razorpay API', orphan.status);
     const before = await profileOf(userB.userId);
     const eventId = `evt_test_${Date.now()}_orphan`;
@@ -401,6 +455,7 @@ async function run() {
       Array.from({ length: 5 }, () => api(userD.token, '/api/razorpay/subscription').then(async (r) => ({ status: r.status, body: await json(r) })))
     );
     const ids = Array.from(new Set(results.map((r) => r.body.subscriptionId)));
+    ids.forEach(trackSub);
     assert(
       results.every((r) => r.status === 200) && ids.length === 1 && ids[0]?.startsWith('sub_'),
       '5 parallel checkout starts all return 200 with the SAME subscription id',
@@ -419,6 +474,7 @@ async function run() {
     await adminClient().from('profiles').update({ razorpay_subscription_status: claimMarker(Date.now() - CLAIM_TTL_MS - 60_000) }).eq('id', userE.userId);
     const res = await api(userE.token, '/api/razorpay/subscription');
     const body = await json(res);
+    trackSub(body.subscriptionId);
     const pE = await profileOf(userE.userId);
     assert(
       res.status === 200 && pE?.razorpay_subscription_id === body.subscriptionId && pE?.razorpay_subscription_status === 'created',
@@ -481,6 +537,230 @@ async function run() {
   }
 
   // --------------------------------------------------------------------------
+  // WEBHOOK vs CHECKOUT CLAIM RACE (real database). The race window is between
+  // the webhook's read of a profile and its write. It is reproduced exactly by
+  // acquiring a claim in that window: directly against the shared
+  // compare-and-swap helper, and through the real apply loop via its
+  // beforeWrite seam (which runs after the read/decision, before the write).
+  console.log('\nWEBHOOK vs CLAIM RACE (real infra)');
+  {
+    const admin = adminClient();
+    const readBilling = async (id: string) =>
+      (await admin.from('profiles').select('plan_tier, razorpay_subscription_id, razorpay_subscription_status').eq('id', id).single()).data as {
+        plan_tier: string; razorpay_subscription_id: string | null; razorpay_subscription_status: string | null;
+      };
+    const setBilling = (id: string, v: Record<string, unknown>) => admin.from('profiles').update(v).eq('id', id);
+    const fakeSub = (over: Partial<RazorpaySubscription>): RazorpaySubscription => ({
+      id: 'sub_Fake', plan_id: PLAN_ID, status: 'active', paid_count: 1, customer_id: null, current_end: null, notes: [], ...over,
+    });
+
+    // 1. Helper, holder shape: stale observed status vs a claim acquired after the read.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceHolder0001', razorpay_subscription_status: 'cancelled' });
+      const seen = await readBilling(u.userId);
+      const marker = await claimSubscriptionSlot(admin, u.userId, 'sub_RaceHolder0001');
+      const res = await writeProfileIfUnchanged(admin, u.userId,
+        { subscriptionId: seen.razorpay_subscription_id, status: seen.razorpay_subscription_status },
+        { plan_tier: 'free', razorpay_subscription_status: 'cancelled' });
+      const after = await readBilling(u.userId);
+      assert(Boolean(marker) && res === 'conflict' && after.razorpay_subscription_status === marker && after.razorpay_subscription_id === 'sub_RaceHolder0001',
+        'Holder write with stale status misses a claim acquired after the read — marker and binding intact', { res, after });
+    }
+    // 2. Helper, orphan shape (null/null observed) vs a claim acquired after the read.
+    {
+      const u = await newUser();
+      const seen = await readBilling(u.userId);
+      const marker = await claimSubscriptionSlot(admin, u.userId, null);
+      const res = await writeProfileIfUnchanged(admin, u.userId,
+        { subscriptionId: seen.razorpay_subscription_id, status: seen.razorpay_subscription_status },
+        { plan_tier: 'pro', razorpay_subscription_status: 'active', razorpay_subscription_id: 'sub_RaceOrphan0001' });
+      const after = await readBilling(u.userId);
+      assert(seen.razorpay_subscription_status === null && Boolean(marker) && res === 'conflict' &&
+        after.razorpay_subscription_status === marker && after.razorpay_subscription_id === null && after.plan_tier === 'free',
+        'Orphan attach with stale null status misses a claim acquired after the read — nothing bound, no Pro', { res, after });
+    }
+    // 3. Helper refuses outright to write over an observed active claim.
+    {
+      const u = await newUser();
+      const marker = claimMarker(Date.now());
+      await setBilling(u.userId, { razorpay_subscription_status: marker });
+      const res = await writeProfileIfUnchanged(admin, u.userId, { subscriptionId: null, status: marker }, { razorpay_subscription_status: 'active' });
+      assert(res === 'claimed' && (await readBilling(u.userId)).razorpay_subscription_status === marker, 'Helper never writes over an observed active claim');
+    }
+    // 4. Apply loop, holder path: claim lands between read and write.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceHolder0002', razorpay_subscription_status: 'halted' });
+      let marker: string | null = null;
+      let writes = 0;
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceHolder0002', status: 'cancelled', paid_count: 2, notes: { userId: u.userId } }), {
+        beforeWrite: async (path, attempt) => { writes++; if (path === 'holder' && attempt === 0) marker = await claimSubscriptionSlot(admin, u.userId, 'sub_RaceHolder0002'); },
+      });
+      const after = await readBilling(u.userId);
+      assert(outcome.kind === 'skipped_claim' && Boolean(marker) && writes === 1 &&
+        after.razorpay_subscription_status === marker && after.razorpay_subscription_id === 'sub_RaceHolder0002',
+        'Holder path: CAS misses, retry re-reads, sees the claim and leaves it untouched', { outcome, writes, after });
+    }
+    // 5. Apply loop, orphan path: claim lands between read and write.
+    {
+      const u = await newUser();
+      let marker: string | null = null;
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceOrphan0002', notes: { userId: u.userId } }), {
+        beforeWrite: async (path, attempt) => { if (path === 'orphan' && attempt === 0) marker = await claimSubscriptionSlot(admin, u.userId, null); },
+      });
+      const after = await readBilling(u.userId);
+      const { count: rec } = await admin.from('razorpay_webhook_events').select('event_id', { count: 'exact', head: true }).like('event_id', 'reconcile:sub_RaceOrphan0002%');
+      assert(outcome.kind === 'retry_later' && outcome.status === 503 && Boolean(marker) &&
+        after.razorpay_subscription_status === marker && after.razorpay_subscription_id === null && after.plan_tier === 'free' && rec === 0,
+        'Orphan path: CAS misses, retry sees the claim → 503 retry-later; nothing bound, no Pro, no reconcile row', { outcome, after, rec });
+    }
+    // 6. Retry re-evaluates fresh state (not the stale write): one conflict, then success.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceHolder0003', razorpay_subscription_status: 'halted' });
+      const seenAtWrite: Array<string | null> = [];
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceHolder0003', status: 'cancelled', paid_count: 2, notes: { userId: u.userId } }), {
+        beforeWrite: async (_p, attempt) => {
+          seenAtWrite.push((await readBilling(u.userId)).razorpay_subscription_status);
+          if (attempt === 0) await setBilling(u.userId, { razorpay_subscription_status: 'paused' });
+        },
+      });
+      const after = await readBilling(u.userId);
+      assert(outcome.kind === 'applied' && seenAtWrite.length === 2 && after.razorpay_subscription_status === 'cancelled' && after.plan_tier === 'free',
+        'After one lost CAS the retry re-reads the new state and applies (a resent stale write would never succeed)', { outcome, seenAtWrite, after });
+    }
+    // 7. Unresolvable conflict: bounded retries, then 503 — nothing written over the moving state.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceHolder0004', razorpay_subscription_status: 'halted' });
+      let writes = 0;
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceHolder0004', status: 'cancelled', paid_count: 2, notes: { userId: u.userId } }), {
+        beforeWrite: async (_p, attempt) => { writes++; await setBilling(u.userId, { razorpay_subscription_status: `churn-${attempt}` }); },
+      });
+      const after = await readBilling(u.userId);
+      assert(outcome.kind === 'retry_later' && outcome.status === 503 && writes === MAX_ATTEMPTS &&
+        after.razorpay_subscription_status === `churn-${MAX_ATTEMPTS - 1}` && after.razorpay_subscription_id === 'sub_RaceHolder0004',
+        `Persistent conflict: exactly ${MAX_ATTEMPTS} attempts, then 503 retry-later; the webhook's state never overwrote it`, { outcome, writes, after });
+    }
+    // 8. Orphan bind still works through the shared helper (stored id unknown to
+    //    Razorpay). Deterministic: the provider fetch is a stub returning 404 —
+    //    no network call; any other fetch fails the test.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_DoesNotExist000', razorpay_subscription_status: 'cancelled' });
+      const fetched: string[] = [];
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceOrphan0003', notes: { userId: u.userId } }), {
+        fetchSubscription: async (id) => {
+          fetched.push(id);
+          if (id === 'sub_DoesNotExist000') throw new RazorpayApiError(404, 'stub: subscription not found');
+          throw new Error(`unexpected provider fetch in test 8: ${id}`);
+        },
+      });
+      const after = await readBilling(u.userId);
+      assert(outcome.kind === 'bound' && after.razorpay_subscription_id === 'sub_RaceOrphan0003' && after.plan_tier === 'pro' &&
+        fetched.length === 1 && fetched[0] === 'sub_DoesNotExist000',
+        'Paid orphan binds via the CAS helper when the stored subscription is unknown (stubbed 404, no network)', { outcome, fetched, after });
+    }
+    // 9. Reconcile behaviour preserved: live stored mandate is never replaced.
+    {
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceLive0001', razorpay_subscription_status: 'active' });
+      const recId = 'reconcile:sub_RaceOrphan0004:sub_RaceLive0001';
+      createdEventIds.push(recId);
+      const outcome = await applySubscriptionToProfiles(admin, fakeSub({ id: 'sub_RaceOrphan0004', notes: { userId: u.userId } }), {
+        fetchSubscription: async (id) => fakeSub({ id, status: 'active', paid_count: 3, notes: { userId: u.userId } }),
+      });
+      const after = await readBilling(u.userId);
+      const { data: row } = await admin.from('razorpay_webhook_events').select('event_type').eq('event_id', recId).maybeSingle();
+      assert(outcome.kind === 'reconcile' && after.razorpay_subscription_id === 'sub_RaceLive0001' && after.razorpay_subscription_status === 'active' &&
+        row?.event_type === 'reconcile.duplicate_live_mandate',
+        'Reconcile preserved: existing live binding untouched, reconcile row recorded', { outcome, after, row });
+    }
+    // 10. Route level: a held claim survives real webhook processing.
+    {
+      const u = await newUser();
+      // Option A: a real TEST-mode subscription, created through the server
+      // (whose credentials the SAFETY GUARD proved are test mode).
+      const started = await json(await api(u.token, '/api/razorpay/subscription'));
+      const subId: string = started.subscriptionId;
+      trackSub(subId);
+      const readBack = await rzpGet(`/subscriptions/${subId}`);
+      assert(started.keyId === KEY_ID && KEY_ID.startsWith('rzp_test_') && readBack.status === 200 && readBack.body.id === subId,
+        "Test 10's subscription exists in Razorpay TEST mode (server returned the test key id; read back with the test key)",
+        { keyIsTest: String(started.keyId ?? '').startsWith('rzp_test_'), readBack: readBack.status });
+      const marker = claimMarker(Date.now());
+      await setBilling(u.userId, { razorpay_subscription_status: marker });
+      const eventId = `evt_test_${Date.now()}_claimheld`;
+      createdEventIds.push(eventId);
+      const res = await postWebhook(subscriptionEvent('subscription.cancelled', subId), { eventId });
+      const after = await readBilling(u.userId);
+      assert(typeof subId === 'string' && res.status === 200 && after.razorpay_subscription_status === marker && after.razorpay_subscription_id === subId,
+        'Route: signed webhook for the held profile leaves the claim marker and binding intact', { status: res.status, after });
+    }
+
+    // 11-13. Ledger writes are checked, via processWebhookEvent — the exact code
+    // the route runs after its signature/duplicate checks.
+    const ledgerCount = async (eventId: string) =>
+      (await admin.from('razorpay_webhook_events').select('event_id', { count: 'exact', head: true }).eq('event_id', eventId)).count ?? 0;
+    const realWriter = async (row: { event_id: string; event_type: string }) => {
+      const { error } = await admin.from('razorpay_webhook_events').upsert(row, { onConflict: 'event_id', ignoreDuplicates: true });
+      return { error };
+    };
+    const liveStoredStub = (userId: string) => async (id: string) => fakeSub({ id, status: 'active', paid_count: 3, notes: { userId } });
+    {
+      // 11. Reconcile row cannot be written → retryable 5xx, original event NOT recorded, binding untouched.
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceLive0002', razorpay_subscription_status: 'active' });
+      const eventId = `evt_test_${Date.now()}_recfail`;
+      const recId = 'reconcile:sub_RaceOrphan0005:sub_RaceLive0002';
+      createdEventIds.push(eventId, recId);
+      const result = await processWebhookEvent(
+        admin,
+        { eventId, eventType: 'subscription.charged', subscription: fakeSub({ id: 'sub_RaceOrphan0005', notes: { userId: u.userId } }) },
+        {
+          fetchSubscription: liveStoredStub(u.userId),
+          recordLedgerRow: async (row) => (row.event_id.startsWith('reconcile:') ? { error: new Error('forced ledger failure') } : realWriter(row)),
+        }
+      );
+      const after = await readBilling(u.userId);
+      assert(result.status >= 500 && result.status < 600, 'Reconcile row write fails → retryable 5xx outcome', result);
+      assert((await ledgerCount(eventId)) === 0 && (await ledgerCount(recId)) === 0, 'Original event is NOT recorded as handled (Razorpay will redeliver); no reconcile row');
+      assert(after.razorpay_subscription_id === 'sub_RaceLive0002' && after.razorpay_subscription_status === 'active' && after.plan_tier === 'free',
+        "Profile's existing live binding is unchanged", after);
+
+      // 12. Idempotent on redelivery: real writer → reconcile recorded once, event recorded; a further
+      //     delivery with the reconcile row already present still succeeds without duplicating it.
+      const again = await processWebhookEvent(admin,
+        { eventId, eventType: 'subscription.charged', subscription: fakeSub({ id: 'sub_RaceOrphan0005', notes: { userId: u.userId } }) },
+        { fetchSubscription: liveStoredStub(u.userId) });
+      const eventId2 = `evt_test_${Date.now()}_recagain`;
+      createdEventIds.push(eventId2);
+      const third = await processWebhookEvent(admin,
+        { eventId: eventId2, eventType: 'subscription.charged', subscription: fakeSub({ id: 'sub_RaceOrphan0005', notes: { userId: u.userId } }) },
+        { fetchSubscription: liveStoredStub(u.userId) });
+      assert(again.status === 200 && again.body.reconcile === true && (await ledgerCount(eventId)) === 1 && (await ledgerCount(recId)) === 1,
+        'Redelivery after the failure: reconcile row and event recorded exactly once', again);
+      assert(third.status === 200 && (await ledgerCount(recId)) === 1 && (await ledgerCount(eventId2)) === 1,
+        'Existing reconcile row is not an error and is not duplicated (idempotent)', third);
+      assert((await readBilling(u.userId)).razorpay_subscription_id === 'sub_RaceLive0002', 'Binding still unchanged after redeliveries');
+    }
+    {
+      // 13. Original-event record fails after a successful apply → 503, not acknowledged.
+      const u = await newUser();
+      await setBilling(u.userId, { razorpay_subscription_id: 'sub_RaceHolder0005', razorpay_subscription_status: 'halted' });
+      const eventId = `evt_test_${Date.now()}_evtfail`;
+      createdEventIds.push(eventId);
+      const result = await processWebhookEvent(
+        admin,
+        { eventId, eventType: 'subscription.cancelled', subscription: fakeSub({ id: 'sub_RaceHolder0005', status: 'cancelled', paid_count: 2, notes: { userId: u.userId } }) },
+        { recordLedgerRow: async () => ({ error: new Error('forced ledger failure') }) }
+      );
+      assert(result.status === 503 && (await ledgerCount(eventId)) === 0, 'Event-record failure → 503 and the event stays unrecorded', result);
+    }
+  }
+
+  // --------------------------------------------------------------------------
   console.log('\nCANCEL');
   {
     const userC = await newUser();
@@ -497,6 +777,7 @@ async function run() {
     await adminClient().from('profiles').update({ razorpay_subscription_id: 'sub_DoesNotExist000' }).eq('id', userC.userId);
     const fresh = await api(userC.token, '/api/razorpay/subscription');
     const freshBody = await json(fresh);
+    trackSub(freshBody.subscriptionId);
     assert(
       fresh.status === 200 && typeof freshBody.subscriptionId === 'string' && freshBody.subscriptionId !== 'sub_DoesNotExist000',
       'F1: unusable stored subscription id is replaced with a fresh one',
@@ -556,6 +837,20 @@ async function run() {
   }
 }
 
+/** Reads back every subscription this run created using the TEST key, and reports them as intentional test data. */
+async function reportTestSubscriptions() {
+  console.log('\nTEST-MODE SUBSCRIPTIONS LEFT BEHIND (intentional test data)');
+  if (createdTestSubscriptions.length === 0) {
+    console.log('  none created');
+    return;
+  }
+  for (const id of createdTestSubscriptions) {
+    const r = await rzpGet(`/subscriptions/${id}`);
+    const ok = r.status === 200 && r.body.id === id;
+    assert(ok, `${id}: readable with the rzp_test_ key (test mode), status '${r.body.status}', paid_count ${r.body.paid_count}`, { status: r.status });
+  }
+}
+
 async function cleanup() {
   console.log('\nCLEANUP');
   const admin = adminClient();
@@ -579,6 +874,10 @@ run()
     failed++;
   })
   .finally(async () => {
+    await reportTestSubscriptions().catch((err) => {
+      console.error('Could not verify test subscriptions:', err);
+      failed++;
+    });
     await cleanup().catch((err) => console.error('Cleanup failed:', err));
     console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped.`);
     process.exitCode = failed > 0 ? 1 : 0;

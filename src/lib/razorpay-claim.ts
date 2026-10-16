@@ -74,6 +74,38 @@ export async function releaseSubscriptionSlot(
     .eq('razorpay_subscription_status', marker);
 }
 
+/**
+ * Compare-and-swap write to a profile's billing state: the UPDATE applies only
+ * if BOTH the stored subscription id and razorpay_subscription_status still
+ * equal what the caller observed (null matched with IS NULL). A checkout claim
+ * taken after the caller's read changes the status, so the write misses and
+ * the claim survives. Refuses outright to write over an observed active claim.
+ * - 'written': exactly one row changed
+ * - 'conflict': the row changed since it was read (re-read and re-decide)
+ * - 'claimed': the observed state is an active claim — never written
+ * - 'error': the database call failed
+ */
+export async function writeProfileIfUnchanged(
+  admin: SupabaseClient,
+  profileId: string,
+  observed: { subscriptionId: string | null; status: string | null },
+  fields: Record<string, unknown>
+): Promise<'written' | 'conflict' | 'claimed' | 'error'> {
+  if (isActiveClaim(observed.status)) return 'claimed';
+  let query = admin.from('profiles').update(fields).eq('id', profileId);
+  query =
+    observed.subscriptionId === null
+      ? query.is('razorpay_subscription_id', null)
+      : query.eq('razorpay_subscription_id', observed.subscriptionId);
+  query =
+    observed.status === null
+      ? query.is('razorpay_subscription_status', null)
+      : query.eq('razorpay_subscription_status', observed.status);
+  const { data, error } = await query.select('id');
+  if (error) return 'error';
+  return data?.length === 1 ? 'written' : 'conflict';
+}
+
 /** Store the newly created subscription and end the claim — only if we still hold it. */
 export async function commitSubscriptionSlot(
   admin: SupabaseClient,
