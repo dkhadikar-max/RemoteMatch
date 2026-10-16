@@ -10,6 +10,7 @@ import { computeProfileCompleteness } from '@/lib/profile/completeness';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
+import { startProUpgrade, cancelProSubscription } from '@/lib/razorpay-checkout';
 import { GrowYourMatches } from '@/components/settings/grow-your-matches';
 import { SearchProfile } from '@/components/settings/search-profile';
 import {
@@ -93,6 +94,9 @@ function SettingsContent() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelMessage, setCancelMessage] = useState<string | null>(null);
 
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
@@ -171,30 +175,6 @@ function SettingsContent() {
       setSavingDirection(null);
     }
   };
-
-  useEffect(() => {
-    // A `session_id` in the URL means Stripe redirected back — it is not proof
-    // of payment; the server verifies it against Stripe before planTier changes.
-    const sessionId = searchParams?.get('session_id');
-    if (!sessionId) return;
-
-    (async () => {
-      try {
-        const res = await fetch('/api/stripe/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && data.success) {
-          setUpgradeSuccess(true);
-          setActiveTab('billing');
-        }
-      } finally {
-        await refreshServer();
-      }
-    })();
-  }, [searchParams]);
 
   /**
    * The one write on this page. full_name / headline persist to `profiles` via
@@ -284,17 +264,41 @@ function SettingsContent() {
     setIsUpgrading(true);
     setUpgradeError(null);
     try {
-      const res = await fetch('/api/stripe/checkout', { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        window.location.href = data.url;
-        return;
+      // Razorpay Checkout opens as a modal — no redirect. The server verifies
+      // the payment with Razorpay before planTier changes.
+      const result = await startProUpgrade();
+      if (result.status === 'upgraded') {
+        setUpgradeSuccess(true);
+        setActiveTab('billing');
+        await refreshServer();
+      } else if (result.status === 'error') {
+        setUpgradeError(result.message);
       }
-      setUpgradeError('Could not start checkout. Please try again.');
-    } catch (err) {
-      setUpgradeError('Could not start checkout. Please try again.');
     } finally {
       setIsUpgrading(false);
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    setIsCancelling(true);
+    setUpgradeError(null);
+    try {
+      const result = await cancelProSubscription();
+      if (result.status === 'scheduled') {
+        const until = result.endsAt
+          ? new Date(result.endsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
+          : null;
+        setCancelMessage(
+          until
+            ? `Your subscription is cancelled. You keep Pro until ${until}.`
+            : 'Your subscription is cancelled. You keep Pro until the end of the current billing period.'
+        );
+      } else {
+        setUpgradeError(result.message);
+      }
+    } finally {
+      setIsCancelling(false);
+      setConfirmingCancel(false);
     }
   };
 
@@ -693,7 +697,7 @@ function SettingsContent() {
                     disabled={isUpgrading}
                     className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 transition-colors shadow-sm flex items-center gap-1.5"
                   >
-                    <span>{isUpgrading ? 'Connecting…' : 'Upgrade to Pro ($12/mo)'}</span>
+                    <span>{isUpgrading ? 'Connecting…' : 'Upgrade to Pro (₹499/mo)'}</span>
                     <ArrowUpRight size={13} />
                   </button>
                 )}
@@ -703,7 +707,7 @@ function SettingsContent() {
                 <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
                   <div className="space-y-1 border-b border-[var(--line)] pb-4">
                     <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">RemoteMatch Free</span>
-                    <div className="text-3xl font-bold text-[var(--ink)] mono">$0</div>
+                    <div className="text-3xl font-bold text-[var(--ink)] mono">₹0</div>
                     <p className="text-xs text-[var(--muted)]">Get started for free.</p>
                   </div>
                   <ul className="space-y-2.5 text-xs text-[var(--muted)] pt-1">
@@ -729,7 +733,7 @@ function SettingsContent() {
                   <div className="space-y-1 border-b border-[var(--line)] pb-4">
                     <span className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider">RemoteMatch Pro</span>
                     <div className="text-3xl font-bold text-[var(--ink)] mono">
-                      $12 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                      ₹499 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
                     </div>
                     <p className="text-xs text-[var(--muted)]">More ways to find the right job.</p>
                   </div>
@@ -741,15 +745,53 @@ function SettingsContent() {
                       </li>
                     ))}
                   </ul>
-                  <button
-                    type="button"
-                    onClick={handleUpgradeToPro}
-                    disabled={isUpgrading}
-                    className="w-full mt-4 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-2.5 transition-colors shadow-sm flex items-center justify-center gap-1.5 min-h-[44px]"
-                  >
-                    <span>{planTier === 'pro' ? 'Manage billing' : 'Upgrade to Pro →'}</span>
-                    <ArrowUpRight size={13} />
-                  </button>
+                  {planTier === 'pro' ? (
+                    cancelMessage ? (
+                      <p className="mt-4 text-xs font-medium text-[var(--muted)]">{cancelMessage}</p>
+                    ) : confirmingCancel ? (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs text-[var(--muted)]">
+                          Cancel RemoteMatch Pro? You keep Pro until the end of the current billing period, and you won’t be charged again.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCancelSubscription}
+                            disabled={isCancelling}
+                            className="flex-1 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-2.5 transition-colors shadow-sm min-h-[44px]"
+                          >
+                            {isCancelling ? 'Cancelling…' : 'Yes, cancel'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmingCancel(false)}
+                            disabled={isCancelling}
+                            className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px]"
+                          >
+                            Keep Pro
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingCancel(true)}
+                        className="w-full mt-4 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-xs font-semibold text-[var(--ink)] py-2.5 transition-colors shadow-sm min-h-[44px]"
+                      >
+                        Cancel subscription
+                      </button>
+                    )
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleUpgradeToPro}
+                      disabled={isUpgrading}
+                      className="w-full mt-4 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-2.5 transition-colors shadow-sm flex items-center justify-center gap-1.5 min-h-[44px]"
+                    >
+                      <span>Upgrade to Pro →</span>
+                      <ArrowUpRight size={13} />
+                    </button>
+                  )}
                   {upgradeError && <p className="mt-2 text-xs font-medium text-[var(--red)]">{upgradeError}</p>}
                 </div>
               </div>
