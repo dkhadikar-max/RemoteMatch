@@ -39,6 +39,43 @@ export const isRazorpayWebhookConfigured = isRazorpayConfigured && Boolean(webho
 export const razorpayKeyId = isRazorpayConfigured ? keyId! : null;
 
 /**
+ * Who may START a new Pro purchase (RAZORPAY_ALLOWLIST_USER_IDS). Gates only
+ * /api/razorpay/subscription — never the webhook, /verify or /cancel, so
+ * existing subscribers keep syncing while new purchases are restricted.
+ * Three deliberately distinct states:
+ * - variable NOT SET          → 'open': everyone (behaviour before this setting existed)
+ * - SET but empty / no valid  → 'closed': nobody — an intentional kill switch;
+ *   UUIDs (e.g. "", " ", ",,")  never silently falls back to open
+ * - SET with user UUIDs       → 'list': only those ids (case-insensitive);
+ *                               malformed entries are ignored, never widened
+ */
+export type PurchaseAllowlist =
+  | { mode: 'open' }
+  | { mode: 'closed' }
+  | { mode: 'list'; userIds: ReadonlySet<string> };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export function parsePurchaseAllowlist(raw: string | undefined): PurchaseAllowlist {
+  if (raw === undefined) return { mode: 'open' };
+  const userIds = new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => UUID_RE.test(s))
+  );
+  return userIds.size === 0 ? { mode: 'closed' } : { mode: 'list', userIds };
+}
+
+export function isPurchaseAllowed(allowlist: PurchaseAllowlist, userId: string): boolean {
+  if (allowlist.mode === 'open') return true;
+  if (allowlist.mode === 'closed') return false;
+  return allowlist.userIds.has(userId.toLowerCase());
+}
+
+export const purchaseAllowlist = parsePurchaseAllowlist(process.env.RAZORPAY_ALLOWLIST_USER_IDS);
+
+/**
  * 5 years of monthly cycles. Razorpay requires a finite total_count, and
  * mandate (card / UPI AutoPay) validity limits make a very long horizon
  * risky to be rejected at authorization time.

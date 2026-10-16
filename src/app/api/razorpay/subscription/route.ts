@@ -4,7 +4,9 @@ import {
   fetchSubscription,
   hasLiveMandate,
   isProPlanSubscription,
+  isPurchaseAllowed,
   isRazorpayConfigured,
+  purchaseAllowlist,
   razorpayKeyId,
   RazorpayApiError,
   subscriptionUserId,
@@ -45,6 +47,18 @@ export async function POST(req: NextRequest) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { user } = auth;
+
+  // Rollout gate (RAZORPAY_ALLOWLIST_USER_IDS): when set, only listed users may
+  // START a purchase; set-but-empty closes purchases for everyone. Checked
+  // first — before the unconfigured/mock branch, any database read or any
+  // Razorpay call — so a blocked user can neither create anything nor receive
+  // a mock "purchase started". Deliberately the same message as "unconfigured".
+  if (!isPurchaseAllowed(purchaseAllowlist, user.id)) {
+    return NextResponse.json(
+      { error: "Pro upgrades aren't available right now. Please check back soon." },
+      { status: 503 }
+    );
+  }
 
   if (!isRazorpayConfigured) {
     // Same rule as the Stripe hardening: in production, "unconfigured" means
