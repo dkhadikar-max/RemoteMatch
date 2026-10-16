@@ -24,6 +24,12 @@ const REDACTED = '[REDACTED]';
 const MAX_MESSAGE_CHARS = 600;
 const MAX_STACK_LINES = 6;
 const MAX_STACK_LINE_CHARS = 200;
+/** Short identifier-like fields. They are normally tiny (an error class, a Postgres code, our own run id / stage), so
+ *  a tight cap is safe, and it bounds what a hostile or buggy thrown value can push into a log line. */
+const MAX_NAME_CHARS = 80;
+const MAX_CODE_CHARS = 40;
+const MAX_RUN_ID_CHARS = 16;
+const MAX_STAGE_CHARS = 40;
 /** Env values shorter than this are not treated as secrets (so "true", "1", "shadow" are never redacted). */
 const MIN_SECRET_ENV_VALUE_LENGTH = 8;
 
@@ -83,6 +89,18 @@ function safeString(value: unknown): string {
   }
 }
 
+/**
+ * Every short field that reaches a log line or a response goes through here: redacted, stripped of control
+ * characters (so it cannot break the one-line format), and clipped. Non-string/number input falls back.
+ * Review finding on PR #20: `name` and `code` were copied through raw, so a secret placed in either (e.g. a custom
+ * Error whose `name` or `code` embeds a token) reached the log unredacted and unbounded.
+ */
+function sanitizeField(value: unknown, max: number, fallback: string): string {
+  const raw = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+  const cleaned = clip(redactSecrets(raw).replace(/[\u0000-\u001f\u007f]+/g, ' ').trim(), max);
+  return cleaned || fallback;
+}
+
 export interface SyncFailureReport {
   runId: string;
   /** Which step of the route was running: request | revalidate | catalog_sync | translation | reconciliation | finish */
@@ -106,7 +124,10 @@ export interface SyncFailure {
   body: { success: false; error: string; runId: string; stage: string };
 }
 
-export function describeSyncFailure(err: unknown, runId: string, stage: string): SyncFailure {
+export function describeSyncFailure(err: unknown, rawRunId: string, rawStage: string): SyncFailure {
+  // Callers pass our own run id / stage constants, but nothing in this function trusts any field it did not build.
+  const runId = sanitizeField(rawRunId, MAX_RUN_ID_CHARS, 'unknown');
+  const stage = sanitizeField(rawStage, MAX_STAGE_CHARS, 'unknown');
   let report: SyncFailureReport;
   try {
     const e = (err && typeof err === 'object' ? err : null) as
@@ -116,10 +137,13 @@ export function describeSyncFailure(err: unknown, runId: string, stage: string):
     report = {
       runId,
       stage,
-      name: e && typeof e.name === 'string' && e.name ? e.name : typeof err === 'string' ? 'ThrownString' : 'UnknownError',
+      name: sanitizeField(e?.name, MAX_NAME_CHARS, typeof err === 'string' ? 'ThrownString' : 'UnknownError'),
       message: clip(redactSecrets(rawMessage), MAX_MESSAGE_CHARS) || 'Unknown error',
     };
-    if (e && (typeof e.code === 'string' || typeof e.code === 'number')) report.code = String(e.code);
+    if (e && (typeof e.code === 'string' || typeof e.code === 'number')) {
+      const code = sanitizeField(e.code, MAX_CODE_CHARS, '');
+      if (code) report.code = code;
+    }
     if (e && e.cause !== undefined && e.cause !== null) {
       const c = e.cause as { message?: unknown };
       report.cause = clip(redactSecrets(typeof c.message === 'string' ? c.message : safeString(e.cause)), MAX_MESSAGE_CHARS);

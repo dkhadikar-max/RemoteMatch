@@ -140,6 +140,52 @@ async function run() {
     assert(Array.from(ids).every((i) => /^[0-9a-f]{8}$/.test(i)) && ids.size === 200, 'run ids are 8 hex chars and unique across 200 draws');
   }
 
+  // Review finding on PR #20: `name` and `code` were copied into the report raw, so a secret in either reached the
+  // log line unredacted and unbounded. Every short field must now be redacted and capped.
+  console.log('\nA3. `name`, `code`, run id and stage are redacted and bounded too (review finding)');
+  {
+    const TOKEN = 'sk-abcdefghijklmnopqrstuvwxyz0123';
+    const withFields = (name: unknown, code: unknown) => {
+      const e: Record<string, unknown> = new Error('ordinary message') as unknown as Record<string, unknown>;
+      if (name !== undefined) Object.defineProperty(e, 'name', { value: name, configurable: true, writable: true });
+      if (code !== undefined) e.code = code;
+      return describeSyncFailure(e, 'abc12345', 'catalog_sync');
+    };
+    const asText = (f: ReturnType<typeof describeSyncFailure>) => JSON.stringify(f.report) + f.logLine + JSON.stringify(f.body);
+
+    const n = withFields(`AuthError Bearer abcdef1234567890 ${TOKEN}`, undefined);
+    assert(!asText(n).includes(TOKEN) && !asText(n).includes('abcdef1234567890'), 'a secret in the error NAME reaches neither the report, the log line nor the body');
+    const c = withFields(undefined, `KEY=${TOKEN}`);
+    assert(!asText(c).includes(TOKEN), 'a secret in the error CODE reaches neither the report, the log line nor the body');
+    assert((n.report.name + c.report.code!).includes('[REDACTED]'), 'the redaction marker is visible in both fields');
+    const env = withFields(`Err ${SECRET}`, `C-${SERVICE_KEY}`);
+    assert(!asText(env).includes(SECRET) && !asText(env).includes(SERVICE_KEY), 'secret env VALUES placed in name/code are redacted too (not only pattern-shaped tokens)');
+
+    const longName = withFields('N'.repeat(5000), undefined).report.name;
+    const longCode = withFields(undefined, 'C'.repeat(5000)).report.code ?? '';
+    assert(longName.length <= 80 + 14 && longName.includes('[truncated]'), `an over-long name is clipped (length ${longName.length})`);
+    assert(longCode.length <= 40 + 14 && longCode.includes('[truncated]'), `an over-long code is clipped (length ${longCode.length})`);
+    const total = withFields('N'.repeat(5000), 'C'.repeat(5000)).logLine.length;
+    assert(total < 1800, `the whole log line stays bounded even with a huge name and code (${total} chars)`);
+
+    assert(!withFields('Bad\nname\r\nwith\tcontrols', 'co\nde').logLine.includes('\n'), 'control characters in name/code cannot break the single-line format');
+    assert(withFields(undefined, 42703).report.code === '42703', 'a numeric code (some libraries use numbers) is still reported, as a string');
+    assert(withFields(undefined, { toString: () => TOKEN }).report.code === undefined, 'a non-string, non-number code is ignored rather than stringified (no hidden toString leak)');
+    assert(withFields({ evil: TOKEN }, undefined).report.name === 'UnknownError' && !withFields({ evil: TOKEN }, undefined).logLine.includes(TOKEN), 'a non-string name falls back to UnknownError instead of being stringified');
+    assert(withFields('', undefined).report.name === 'UnknownError', 'an empty name falls back to UnknownError');
+    assert(describeSyncFailure('s', 'r', 'st').report.name === 'ThrownString', 'a thrown string still reports ThrownString');
+
+    // Ordinary values must survive unchanged: a redactor that blanks everything would also "pass" the leak checks.
+    assert(withFields('TypeError', 'ECONNRESET').report.name === 'TypeError' && withFields('TypeError', 'ECONNRESET').report.code === 'ECONNRESET', 'ordinary values (TypeError / ECONNRESET) pass through unchanged');
+    assert(withFields('PostgrestError', '42P01').report.code === '42P01' && withFields('Error', 'PGRST116').report.code === 'PGRST116', 'Postgres / PostgREST codes (42P01, PGRST116) pass through unchanged');
+    assert(withFields('SyntaxError', undefined).report.name === 'SyntaxError', 'common error class names are untouched');
+
+    const hostileIds = describeSyncFailure(new Error('x'), `id ${TOKEN} ${'z'.repeat(500)}`, `stage ${TOKEN}`);
+    assert(!asText(hostileIds).includes(TOKEN) && hostileIds.report.runId.length <= 16 + 14 && hostileIds.report.stage.length <= 40 + 14, 'even the run id and stage arguments are sanitized and bounded (defense in depth)');
+    const normal = describeSyncFailure(new Error('x'), 'abc12345', 'catalog_sync');
+    assert(normal.report.runId === 'abc12345' && normal.report.stage === 'catalog_sync' && normal.body.runId === 'abc12345' && normal.body.stage === 'catalog_sync', 'normal run id / stage values are unchanged');
+  }
+
   console.log('\nB1. The real route: authentication is unchanged');
   {
     const none = await call({ auth: null });
@@ -212,6 +258,15 @@ async function run() {
     const everything = JSON.stringify(r.body) + r.errors.join('\n') + r.logs.join('\n');
     assert(!everything.includes(SECRET) && !everything.includes(SERVICE_KEY), 'a failure message containing the ingestion secret AND the service-role key leaks neither into the body nor any log line');
     assert((r.errors[0] ?? '').includes('[REDACTED]'), 'the redaction marker is visible, so a reader knows something was removed');
+
+    // Through the real route: a thrown Error whose NAME and CODE carry secrets (the reviewed gap).
+    const nasty = Object.assign(new Error('db unavailable'), { code: `KEY=${SECRET}` });
+    Object.defineProperty(nasty, 'name', { value: `PoolError ${SERVICE_KEY}`, configurable: true });
+    mocks.sync = async () => { throw nasty; };
+    const rn = await call();
+    const outN = JSON.stringify(rn.body) + rn.errors.join('\n') + rn.logs.join('\n');
+    assert(rn.status === 500 && !outN.includes(SECRET) && !outN.includes(SERVICE_KEY), 'a failure whose error NAME and CODE embed both secrets leaks neither into the body nor any log line (real route)');
+    assert(rn.errors.length === 1 && rn.errors[0].includes('db unavailable'), 'and the useful part of that failure is still logged');
     mocks.sync = async () => okSummary;
   }
 
