@@ -310,7 +310,7 @@ export default function LandingPage() {
               <div>
                 <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Free</h3>
                 <p className="mt-1 text-xs text-[var(--muted)]">Get started for free.</p>
-                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">$0</div>
+                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">₹0</div>
               </div>
 
               <ul className="space-y-3 text-xs text-[var(--muted)]">
@@ -350,7 +350,7 @@ export default function LandingPage() {
                 <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Pro</h3>
                 <p className="mt-1 text-xs text-[var(--muted)]">More ways to find the right job.</p>
                 <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">
-                  $12 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                  ₹499 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
                 </div>
               </div>
 
