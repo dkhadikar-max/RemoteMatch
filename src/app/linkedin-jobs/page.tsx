@@ -126,24 +126,30 @@ export default function LinkedInJobsPage() {
         </p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-[var(--line)]">
+      {/* Tabs. A phone has ~340px for three tabs, and the full labels used to
+          shrink and wrap onto 2-3 lines. So: a short label below the `sm`
+          breakpoint, the full label from `sm` up (desktop is unchanged), and
+          no wrapping or shrinking at any width. If an extremely narrow screen
+          still can't fit them, the row scrolls sideways rather than wrapping. */}
+      <div className="flex gap-1 sm:gap-2 border-b border-[var(--line)] overflow-x-auto">
         {([
-          ['search', 'Find LinkedIn Jobs', Search],
-          ['paste', 'Paste a job', Link2],
-          ['linkedin', 'Search on LinkedIn', ExternalLink],
-        ] as const).map(([id, label, Icon]) => (
+          ['search', 'Find LinkedIn Jobs', 'Search', Search],
+          ['paste', 'Paste a job', 'Paste a job', Link2],
+          ['linkedin', 'Search on LinkedIn', 'On LinkedIn', ExternalLink],
+        ] as const).map(([id, label, shortLabel, Icon]) => (
           <button
             key={id}
             type="button"
             onClick={() => setTab(id)}
-            className={`inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 sm:px-3 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
               tab === id
                 ? 'border-[var(--red)] text-[var(--red)]'
                 : 'border-transparent text-[var(--muted)] hover:text-[var(--ink)]'
             }`}
           >
-            <Icon size={14} /> {label}
+            <Icon size={14} />
+            <span className="sm:hidden">{shortLabel}</span>
+            <span className="hidden sm:inline">{label}</span>
           </button>
         ))}
       </div>
