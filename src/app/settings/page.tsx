@@ -94,6 +94,7 @@ function SettingsContent() {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelMessage, setCancelMessage] = useState<string | null>(null);
@@ -263,6 +264,7 @@ function SettingsContent() {
   const handleUpgradeToPro = async () => {
     setIsUpgrading(true);
     setUpgradeError(null);
+    setUpgradeNotice(null);
     try {
       // Razorpay Checkout opens as a modal — no redirect. The server verifies
       // the payment with Razorpay before planTier changes.
@@ -271,6 +273,10 @@ function SettingsContent() {
         setUpgradeSuccess(true);
         setActiveTab('billing');
         await refreshServer();
+      } else if (result.status === 'confirming') {
+        // Mandate authorised, first charge pending: not a failure, not Pro yet.
+        setUpgradeNotice(result.message);
+        setActiveTab('billing');
       } else if (result.status === 'error') {
         setUpgradeError(result.message);
       }
@@ -668,6 +674,16 @@ function SettingsContent() {
                     <p className="text-[var(--muted)] mt-0.5">
                       Your account has been upgraded to unlimited daily match checks and full access to all features.
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {upgradeNotice && !upgradeSuccess && (
+                <div role="status" className="flex items-center gap-3 p-4 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] text-xs">
+                  <CreditCard size={18} className="text-[var(--ink)] shrink-0" />
+                  <div>
+                    <span className="font-semibold text-[var(--ink)]">Confirming your first payment</span>
+                    <p className="text-[var(--muted)] mt-0.5">{upgradeNotice}</p>
                   </div>
                 </div>
               )}

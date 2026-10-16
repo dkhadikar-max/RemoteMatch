@@ -3,10 +3,13 @@ import {
   fetchSubscription,
   isProPlanSubscription,
   isRazorpayWebhookConfigured,
-  planTierForStatus,
+  orphanDecision,
+  planTierForSubscription,
+  RazorpayApiError,
   subscriptionUserId,
   verifyWebhookSignature,
 } from '@/lib/razorpay';
+import { isActiveClaim } from '@/lib/razorpay-claim';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 
 /**
@@ -22,12 +25,19 @@ import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabas
  * flip a user back to the wrong state. The user is resolved by the stored
  * subscription id (unique, migration 032), never by anything in the body.
  *
- * Orphan fallback: if no profile holds the subscription id AND Razorpay's live
- * status grants Pro on our plan, the subscription is (re)bound to the profile
- * named by its notes.userId — set by our own server at creation, read back
- * from Razorpay's API, never from the event body. Otherwise a user who paid a
- * subscription that was no longer the stored one would be charged without
- * Pro. An unpaid or non-Pro-plan orphan is never bound.
+ * Orphans (no profile holds the subscription id): only a subscription that
+ * grants Pro under the shared rule, on our plan, is considered, against the
+ * profile named by its notes.userId (set by our server at creation, read back
+ * from Razorpay's API, never from the event body). What that profile ALREADY
+ * holds decides — never its plan_tier alone (a Free profile can still hold a
+ * live mandate):
+ *   - nothing, or a subscription that can no longer charge → bind (a
+ *     compare-and-swap on the observed stored id, so a concurrent change wins);
+ *   - a different subscription with a LIVE mandate → do not touch the binding;
+ *     record an explicit `reconcile.duplicate_live_mandate` ledger row for a
+ *     human (two mandates on one customer = possible double charge).
+ * A profile mid-checkout-claim (src/lib/razorpay-claim.ts) is never written
+ * here; an orphan arriving during one gets a 503 so Razorpay retries later.
  *
  * Idempotency: X-Razorpay-Event-Id is recorded in razorpay_webhook_events AFTER
  * a successful apply, so a failed apply is retried by Razorpay rather than
@@ -70,6 +80,9 @@ export async function POST(req: NextRequest) {
     if (seen) return NextResponse.json({ received: true, duplicate: true });
   }
 
+  const retryLater = (error: string, status = 503) => NextResponse.json({ error }, { status });
+  let reconcile = false;
+
   const subscriptionId = event.payload?.subscription?.entity?.id;
   if (eventType.startsWith('subscription.') && typeof subscriptionId === 'string') {
     let subscription;
@@ -77,36 +90,90 @@ export async function POST(req: NextRequest) {
       subscription = await fetchSubscription(subscriptionId);
     } catch {
       // Let Razorpay retry rather than recording an event we couldn't apply.
-      return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
+      return retryLater('Could not read subscription', 502);
     }
 
-    const tier = planTierForStatus(subscription.status);
     const fields = {
-      plan_tier: tier,
+      plan_tier: planTierForSubscription(subscription),
       razorpay_customer_id: subscription.customer_id ?? null,
       razorpay_subscription_status: subscription.status,
       updated_at: new Date().toISOString(),
     };
 
-    const { data: matched, error } = await admin
+    const { data: holder, error: holderError } = await admin
       .from('profiles')
-      .update(fields)
+      .select('id, razorpay_subscription_status')
       .eq('razorpay_subscription_id', subscriptionId)
-      .select('id');
-    if (error) {
-      return NextResponse.json({ error: 'Could not apply event' }, { status: 500 });
-    }
+      .maybeSingle();
+    if (holderError) return retryLater('Could not apply event', 500);
 
-    const boundUserId = subscriptionUserId(subscription);
-    if ((matched?.length ?? 0) === 0 && tier === 'pro' && boundUserId && isProPlanSubscription(subscription)) {
-      const { error: rebindError } = await admin
-        .from('profiles')
-        .update({ ...fields, razorpay_subscription_id: subscriptionId })
-        .eq('id', boundUserId);
-      if (rebindError) {
-        return NextResponse.json({ error: 'Could not apply event' }, { status: 500 });
+    if (holder) {
+      // Normal path. A holder mid-claim is replacing this (ended) subscription
+      // and is Free by construction — nothing to apply, and writing would
+      // clobber the claim.
+      if (!isActiveClaim(holder.razorpay_subscription_status)) {
+        const { error } = await admin
+          .from('profiles')
+          .update(fields)
+          .eq('id', holder.id)
+          .eq('razorpay_subscription_id', subscriptionId);
+        if (error) return retryLater('Could not apply event', 500);
       }
-      console.warn('[razorpay] re-bound orphaned paid subscription', subscriptionId, 'to its notes.userId profile');
+    } else {
+      const targetId = subscriptionUserId(subscription);
+      if (targetId && isProPlanSubscription(subscription) && fields.plan_tier === 'pro') {
+        const { data: target, error: targetError } = await admin
+          .from('profiles')
+          .select('id, razorpay_subscription_id, razorpay_subscription_status')
+          .eq('id', targetId)
+          .maybeSingle();
+        if (targetError) return retryLater('Could not apply event', 500);
+        if (target) {
+          if (isActiveClaim(target.razorpay_subscription_status)) {
+            return retryLater('Profile is mid-checkout; retry later');
+          }
+          const storedId: string | null = target.razorpay_subscription_id;
+          let stored = null;
+          if (storedId) {
+            try {
+              stored = await fetchSubscription(storedId);
+            } catch (err) {
+              const status = err instanceof RazorpayApiError ? err.status : 0;
+              if (status !== 400 && status !== 404) return retryLater('Could not read stored subscription', 502);
+              // Unknown to Razorpay: holds nothing that can charge.
+            }
+          }
+
+          const decision = orphanDecision(subscription, stored);
+          if (decision === 'bind') {
+            let bind = admin
+              .from('profiles')
+              .update({ ...fields, razorpay_subscription_id: subscriptionId })
+              .eq('id', target.id);
+            bind = storedId === null ? bind.is('razorpay_subscription_id', null) : bind.eq('razorpay_subscription_id', storedId);
+            const { data: bound, error: bindError } = await bind.select('id');
+            if (bindError) return retryLater('Could not apply event', 500);
+            // Binding changed under us: retry so the decision is re-made on fresh state.
+            if ((bound?.length ?? 0) === 0) return retryLater('Profile changed; retry later');
+            console.warn('[razorpay] bound paid orphan subscription to its notes.userId profile', subscriptionId);
+          } else if (decision === 'reconcile') {
+            reconcile = true;
+            await admin.from('razorpay_webhook_events').upsert(
+              {
+                event_id: `reconcile:${subscriptionId}:${storedId}`,
+                event_type: 'reconcile.duplicate_live_mandate',
+              },
+              { onConflict: 'event_id', ignoreDuplicates: true }
+            );
+            console.error(
+              '[razorpay][RECONCILE] paid subscription',
+              subscriptionId,
+              'not bound: profile already holds live mandate',
+              storedId
+            );
+          }
+        }
+      }
     }
   }
   // Any other event type is acknowledged and ignored.
@@ -119,5 +186,5 @@ export async function POST(req: NextRequest) {
       .upsert({ event_id: eventId, event_type: eventType || 'unknown' }, { onConflict: 'event_id', ignoreDuplicates: true });
   }
 
-  return NextResponse.json({ received: true });
+  return NextResponse.json(reconcile ? { received: true, reconcile: true } : { received: true });
 }

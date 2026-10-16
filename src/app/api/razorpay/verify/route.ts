@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  checkoutOutcome,
   fetchSubscription,
   isRazorpayConfigured,
-  planTierForStatus,
   subscriptionUserId,
   verifyPaymentSignature,
 } from '@/lib/razorpay';
@@ -21,8 +21,13 @@ import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabas
  *   2. the subscription is the one stored on THIS caller's profile AND carries
  *      notes.userId === caller (a valid result for another account can never
  *      be redeemed here);
- *   3. Razorpay's API, re-read now, reports an entitled status.
- * Idempotent: replaying a valid result re-writes the same values.
+ *   3. Razorpay's API, re-read now, says the subscription grants Pro under the
+ *      shared rule (planTierForSubscription: a successful charge, not merely
+ *      an authorised mandate).
+ * An authorised mandate whose first charge has not landed yet is NOT a
+ * failure: it gets 202 { awaitingFirstCharge: true } and Pro arrives via the
+ * webhook once Razorpay charges. Idempotent: replaying a valid result
+ * re-writes the same values.
  */
 export async function POST(req: NextRequest) {
   let auth;
@@ -103,7 +108,29 @@ export async function POST(req: NextRequest) {
   if (subscriptionUserId(subscription) !== user.id) {
     return NextResponse.json({ error: 'This payment does not belong to your account.' }, { status: 403 });
   }
-  if (planTierForStatus(subscription.status) !== 'pro') {
+  const outcome = checkoutOutcome(subscription);
+  if (outcome === 'awaiting_first_charge') {
+    // Record the mandate's state (plan_tier untouched) so the profile reflects
+    // it; the webhook grants Pro when the first charge succeeds.
+    await admin
+      .from('profiles')
+      .update({
+        razorpay_customer_id: subscription.customer_id ?? null,
+        razorpay_subscription_status: subscription.status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', user.id)
+      .eq('razorpay_subscription_id', subscriptionId);
+    return NextResponse.json(
+      {
+        success: false,
+        awaitingFirstCharge: true,
+        message: 'Your payment method is set up. Pro unlocks as soon as the first payment is confirmed.',
+      },
+      { status: 202 }
+    );
+  }
+  if (outcome !== 'granted') {
     return NextResponse.json({ error: 'Payment not completed' }, { status: 400 });
   }
 

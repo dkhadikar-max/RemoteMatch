@@ -12,6 +12,8 @@ const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
 
 export type UpgradeResult =
   | { status: 'upgraded' }
+  /** Mandate authorised, first charge not landed yet — not a failure; the webhook grants Pro. */
+  | { status: 'confirming'; message: string }
   | { status: 'dismissed' }
   | { status: 'error'; message: string };
 
@@ -62,6 +64,13 @@ async function verify(body: Record<string, unknown>): Promise<UpgradeResult> {
     // Plan just changed server-side — listeners refetch /api/profile.
     notifyEntitlementChanged();
     return { status: 'upgraded' };
+  }
+  if (res.status === 202 && data.awaitingFirstCharge) {
+    return {
+      status: 'confirming',
+      message:
+        data.message ?? 'Your payment method is set up. Pro unlocks as soon as the first payment is confirmed.',
+    };
   }
   return {
     status: 'error',

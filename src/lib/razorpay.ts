@@ -45,28 +45,77 @@ export const razorpayKeyId = isRazorpayConfigured ? keyId! : null;
  */
 const TOTAL_BILLING_CYCLES = 60;
 
-/**
- * Razorpay subscription statuses that carry Pro entitlement.
- * - authenticated: mandate set up, first charge in flight.
- * - active: charged and current.
- * - pending: a renewal charge failed and Razorpay is retrying — keep Pro
- *   through the retry window rather than punishing one transient decline
- *   (mirrors the Stripe webhook's payment_failed handling).
- * halted / cancelled / completed / expired / paused → free.
- */
-const PRO_STATUSES = new Set(['authenticated', 'active', 'pending']);
-
-export function planTierForStatus(status: string): 'pro' | 'free' {
-  return PRO_STATUSES.has(status) ? 'pro' : 'free';
-}
-
 export interface RazorpaySubscription {
   id: string;
   plan_id: string;
   status: string;
+  /** Number of successful charges so far. 0 until the first charge lands. */
+  paid_count: number;
   customer_id: string | null;
   current_end: number | null;
   notes: Record<string, string> | [] | null;
+}
+
+/**
+ * THE entitlement rule — the only place a Razorpay subscription is mapped to
+ * a tier; /verify and the webhook both call it. It reads the whole record, not
+ * just the status, because a mandate being authorised is not money collected:
+ * - active                          → pro (charged and current)
+ * - authenticated, paid_count >= 1  → pro
+ * - authenticated, paid_count == 0  → free (mandate set up, first charge not yet in)
+ * - pending, paid_count >= 1        → pro (renewal retry window after a real payment)
+ * - pending, paid_count == 0        → free
+ * - anything else (created, halted, cancelled, completed, expired, paused) → free
+ */
+export function planTierForSubscription(sub: Pick<RazorpaySubscription, 'status' | 'paid_count'>): 'pro' | 'free' {
+  const paid = Number(sub.paid_count) >= 1;
+  switch (sub.status) {
+    case 'active':
+      return 'pro';
+    case 'authenticated':
+    case 'pending':
+      return paid ? 'pro' : 'free';
+    default:
+      return 'free';
+  }
+}
+
+/** Statuses with a live mandate that can still charge — creating another subscription alongside would risk a double charge. */
+export function hasLiveMandate(status: string): boolean {
+  return status === 'authenticated' || status === 'active' || status === 'pending';
+}
+
+/**
+ * What /verify should tell the browser after Checkout's handler fires.
+ * 'awaiting_first_charge' is a mandate that is authorised but not yet charged:
+ * not a failure — Pro arrives via the webhook when the first charge lands.
+ */
+export function checkoutOutcome(
+  sub: Pick<RazorpaySubscription, 'status' | 'paid_count'>
+): 'granted' | 'awaiting_first_charge' | 'not_paid' {
+  if (planTierForSubscription(sub) === 'pro') return 'granted';
+  if (hasLiveMandate(sub.status)) return 'awaiting_first_charge';
+  return 'not_paid';
+}
+
+/**
+ * Webhook orphan handling: a subscription no profile stores, which Razorpay
+ * says is paid on our plan, bound by notes.userId to `target`.
+ * - 'bind': target holds nothing, or only a subscription that can no longer
+ *   charge (created/halted/cancelled/completed/expired/paused, or unknown to
+ *   Razorpay) — safe to attach the paid one.
+ * - 'reconcile': target already holds a different subscription with a live
+ *   mandate. Two live mandates for one customer is a duplicate-charge case for
+ *   a human; never silently replace the existing binding.
+ * - 'ignore': the orphan itself does not grant Pro (never bound).
+ */
+export function orphanDecision(
+  orphan: Pick<RazorpaySubscription, 'status' | 'paid_count'>,
+  storedOnTarget: Pick<RazorpaySubscription, 'status'> | null
+): 'bind' | 'reconcile' | 'ignore' {
+  if (planTierForSubscription(orphan) !== 'pro') return 'ignore';
+  if (storedOnTarget && hasLiveMandate(storedOnTarget.status)) return 'reconcile';
+  return 'bind';
 }
 
 export class RazorpayApiError extends Error {

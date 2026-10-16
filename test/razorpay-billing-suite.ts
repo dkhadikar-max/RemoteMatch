@@ -26,6 +26,15 @@
 
 import { createHmac } from 'node:crypto';
 import { adminClient, hasRequiredEnv, newVerifiedSession, type TestSession } from './helpers/verified-session';
+import { checkoutOutcome, orphanDecision, planTierForSubscription } from '../src/lib/razorpay';
+import {
+  CLAIM_TTL_MS,
+  claimMarker,
+  claimSubscriptionSlot,
+  commitSubscriptionSlot,
+  isActiveClaim,
+  releaseSubscriptionSlot,
+} from '../src/lib/razorpay-claim';
 
 // 127.0.0.1, not localhost: .env.devserver.local maps localhost:3100 to the
 // admin host, where middleware 404s every consumer route.
@@ -141,6 +150,59 @@ async function run() {
     console.log('\nRefusing to run: RAZORPAY_KEY_ID is not a test-mode key.');
     process.exitCode = 1;
     return;
+  }
+
+  // --------------------------------------------------------------------------
+  // UNIT — the shared rules both routes call. These pin the mapping; the live
+  // behaviour of a real authenticated/active subscription is only established
+  // by the paid phase (PHASE 2), never by these.
+  console.log('\nUNIT: entitlement rule (planTierForSubscription)');
+  const tierCases: Array<[string, number, 'pro' | 'free']> = [
+    ['active', 0, 'pro'],
+    ['active', 3, 'pro'],
+    ['authenticated', 0, 'free'],
+    ['authenticated', 1, 'pro'],
+    ['pending', 0, 'free'],
+    ['pending', 2, 'pro'],
+    ['created', 0, 'free'],
+    ['halted', 4, 'free'],
+    ['cancelled', 4, 'free'],
+    ['completed', 60, 'free'],
+    ['expired', 0, 'free'],
+    ['paused', 2, 'free'],
+  ];
+  for (const [status, paid, want] of tierCases) {
+    const got = planTierForSubscription({ status, paid_count: paid });
+    assert(got === want, `${status} with paid_count ${paid} → ${want}`, got);
+  }
+
+  console.log('\nUNIT: /verify outcome (checkoutOutcome)');
+  assert(checkoutOutcome({ status: 'authenticated', paid_count: 0 }) === 'awaiting_first_charge', 'Authorised mandate, no charge yet → awaiting_first_charge (not a failure, not Pro)');
+  assert(checkoutOutcome({ status: 'pending', paid_count: 0 }) === 'awaiting_first_charge', 'pending with no prior charge → awaiting_first_charge');
+  assert(checkoutOutcome({ status: 'active', paid_count: 1 }) === 'granted', 'active → granted');
+  assert(checkoutOutcome({ status: 'authenticated', paid_count: 1 }) === 'granted', 'authenticated after a charge → granted');
+  assert(checkoutOutcome({ status: 'created', paid_count: 0 }) === 'not_paid', 'created → not_paid');
+  assert(checkoutOutcome({ status: 'halted', paid_count: 3 }) === 'not_paid', 'halted → not_paid');
+
+  console.log('\nUNIT: webhook orphan decision (orphanDecision)');
+  const paidOrphan = { status: 'active', paid_count: 1 };
+  assert(orphanDecision({ status: 'authenticated', paid_count: 0 }, null) === 'ignore', 'Unpaid (authenticated, 0 charges) orphan → ignore');
+  assert(orphanDecision({ status: 'created', paid_count: 0 }, null) === 'ignore', 'created orphan → ignore');
+  assert(orphanDecision(paidOrphan, null) === 'bind', 'Paid orphan, profile holds nothing → bind');
+  for (const s of ['created', 'halted', 'cancelled', 'completed', 'expired', 'paused']) {
+    assert(orphanDecision(paidOrphan, { status: s }) === 'bind', `Paid orphan, profile holds a '${s}' subscription (cannot charge) → bind`);
+  }
+  for (const s of ['authenticated', 'active', 'pending']) {
+    assert(orphanDecision(paidOrphan, { status: s }) === 'reconcile', `Paid orphan, profile holds a live '${s}' mandate → reconcile, never replace`);
+  }
+
+  console.log('\nUNIT: claim marker');
+  {
+    const now = Date.now();
+    assert(isActiveClaim(claimMarker(now), now), 'Fresh claim is active');
+    assert(!isActiveClaim(claimMarker(now - CLAIM_TTL_MS - 1000), now), 'Claim older than the TTL is stale');
+    assert(!isActiveClaim('created', now) && !isActiveClaim(null, now) && !isActiveClaim('cancel_scheduled', now), 'Non-claim statuses are never claims');
+    assert(claimMarker(1) < claimMarker(now), 'Fixed-width markers order lexically by time');
   }
 
   // --------------------------------------------------------------------------
@@ -329,6 +391,96 @@ async function run() {
   }
 
   // --------------------------------------------------------------------------
+  console.log('\nCONCURRENCY + CLAIM (real infra)');
+  {
+    // Simultaneous checkout starts for ONE user must create exactly one
+    // Razorpay subscription, and every request must get that same one.
+    const userD = await newUser();
+    const startedAtSec = Math.floor(Date.now() / 1000) - 5;
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => api(userD.token, '/api/razorpay/subscription').then(async (r) => ({ status: r.status, body: await json(r) })))
+    );
+    const ids = Array.from(new Set(results.map((r) => r.body.subscriptionId)));
+    assert(
+      results.every((r) => r.status === 200) && ids.length === 1 && ids[0]?.startsWith('sub_'),
+      '5 parallel checkout starts all return 200 with the SAME subscription id',
+      results.map((r) => ({ status: r.status, id: r.body.subscriptionId, error: r.body.error }))
+    );
+    const pD = await profileOf(userD.userId);
+    assert(pD?.razorpay_subscription_id === ids[0] && pD?.razorpay_subscription_status === 'created', 'Profile stores that one subscription and the claim is closed', pD);
+
+    const listed = await rzpGet(`/subscriptions?from=${startedAtSec}&count=100`);
+    const forD = (listed.body.items ?? []).filter((s: any) => s.notes?.userId === userD.userId);
+    assert(listed.status === 200 && forD.length === 1, 'Razorpay holds exactly ONE subscription for that user', { listStatus: listed.status, count: forD.length });
+  }
+  {
+    // A stale claim (holder crashed) is taken over rather than blocking forever.
+    const userE = await newUser();
+    await adminClient().from('profiles').update({ razorpay_subscription_status: claimMarker(Date.now() - CLAIM_TTL_MS - 60_000) }).eq('id', userE.userId);
+    const res = await api(userE.token, '/api/razorpay/subscription');
+    const body = await json(res);
+    const pE = await profileOf(userE.userId);
+    assert(
+      res.status === 200 && pE?.razorpay_subscription_id === body.subscriptionId && pE?.razorpay_subscription_status === 'created',
+      'Stale claim is taken over: checkout proceeds and the claim is replaced',
+      { status: res.status, pE }
+    );
+  }
+  {
+    // A live claim held by "another request" that never finishes: the second
+    // request waits, then refuses — and creates nothing.
+    const userF = await newUser();
+    const marker = claimMarker(Date.now());
+    await adminClient().from('profiles').update({ razorpay_subscription_status: marker }).eq('id', userF.userId);
+    const startedAtSec = Math.floor(Date.now() / 1000) - 5;
+    const res = await api(userF.token, '/api/razorpay/subscription');
+    const body = await json(res);
+    const pF = await profileOf(userF.userId);
+    const listed = await rzpGet(`/subscriptions?from=${startedAtSec}&count=100`);
+    const forF = (listed.body.items ?? []).filter((s: any) => s.notes?.userId === userF.userId);
+    assert(res.status === 409 && /already starting/i.test(body.error ?? ''), 'Live claim held elsewhere → 409 "already starting" after waiting', { status: res.status, body });
+    assert(pF?.razorpay_subscription_status === marker && pF?.razorpay_subscription_id === null, 'The held claim is left untouched');
+    assert(listed.status === 200 && forF.length === 0, 'No Razorpay subscription was created while the claim was held', forF.length);
+  }
+  {
+    // Claim primitives against the real database, with the provider call
+    // replaced by a deliberate failure (the route cannot be made to fail
+    // Razorpay's create on demand without a test hook in production code).
+    const admin = adminClient();
+    const userG = await newUser();
+    const first = await claimSubscriptionSlot(admin, userG.userId, null);
+    const second = await claimSubscriptionSlot(admin, userG.userId, null);
+    assert(Boolean(first) && second === null, 'Claim is exclusive: a second claim while held fails');
+
+    const failingProvider = async (): Promise<{ id: string; status: string }> => {
+      throw new Error('simulated provider failure');
+    };
+    let providerFailed = false;
+    try {
+      await failingProvider();
+    } catch {
+      providerFailed = true;
+      await releaseSubscriptionSlot(admin, userG.userId, first!, null);
+    }
+    const afterRelease = await profileOf(userG.userId);
+    assert(providerFailed && afterRelease?.razorpay_subscription_status === null && afterRelease?.razorpay_subscription_id === null,
+      'Failed provider call releases the claim and restores the prior state', afterRelease);
+    const retry = await claimSubscriptionSlot(admin, userG.userId, null);
+    assert(Boolean(retry), 'After release, the next attempt can claim again (recoverable)');
+
+    // A claim taken over (stale) before commit must not be able to store.
+    await admin.from('profiles').update({ razorpay_subscription_status: claimMarker(Date.now()) + 'x' }).eq('id', userG.userId);
+    const committed = await commitSubscriptionSlot(admin, userG.userId, retry!, { id: 'sub_NeverStored0001', status: 'created' });
+    const afterCommit = await profileOf(userG.userId);
+    assert(!committed && afterCommit?.razorpay_subscription_id === null, 'Commit by a request that lost its claim stores nothing');
+
+    // Claims are many-parallel-safe at the DB level: 8 concurrent claims, one winner.
+    const userH = await newUser();
+    const racers = await Promise.all(Array.from({ length: 8 }, () => claimSubscriptionSlot(admin, userH.userId, null)));
+    assert(racers.filter(Boolean).length === 1, 'Of 8 simultaneous claims on one profile, exactly one wins', racers.filter(Boolean).length);
+  }
+
+  // --------------------------------------------------------------------------
   console.log('\nCANCEL');
   {
     const userC = await newUser();
@@ -365,7 +517,11 @@ async function run() {
     assert(p?.plan_tier === 'pro', 'Browser-paid user is Pro', p);
     const sub = p?.razorpay_subscription_id ?? '';
     const remote = await rzpGet(`/subscriptions/${sub}`);
-    assert(['authenticated', 'active'].includes(remote.body.status), 'Razorpay reports the subscription authenticated/active', remote.body.status);
+    assert(
+      planTierForSubscription(remote.body) === 'pro',
+      'Razorpay reports a subscription the shared rule treats as paid (active, or charged at least once)',
+      { status: remote.body.status, paid_count: remote.body.paid_count }
+    );
 
     const again = await api(e2eToken, '/api/razorpay/subscription');
     assert(again.status === 409, 'Already-Pro user cannot start a second subscription → 409', again.status);

@@ -74,6 +74,7 @@ export function UpgradeModal({
 }: UpgradeModalProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -85,11 +86,14 @@ export function UpgradeModal({
     // getAuthenticatedUser), so a real session is guaranteed.
     setIsUpgrading(true);
     setUpgradeError(null);
+    setUpgradeNotice(null);
     try {
       const result = await startProUpgrade();
       if (result.status === 'upgraded') {
         onUpgraded?.();
         onClose();
+      } else if (result.status === 'confirming') {
+        setUpgradeNotice(result.message);
       } else if (result.status === 'error') {
         setUpgradeError(result.message);
       }
@@ -158,6 +162,9 @@ export function UpgradeModal({
           </button>
           {upgradeError && (
             <p className="text-[11px] font-medium text-[var(--red)] text-center mt-2">{upgradeError}</p>
+          )}
+          {upgradeNotice && (
+            <p role="status" className="text-[11px] font-medium text-[var(--ink)] text-center mt-2">{upgradeNotice}</p>
           )}
           <p className="text-[11px] text-[var(--muted)] text-center mt-2">
             Cancel anytime. Immediate access upon upgrade.
