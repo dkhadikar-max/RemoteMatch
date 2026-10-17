@@ -28,6 +28,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { adminClient, anonKeyClient, hasRequiredEnv, newVerifiedSession, uniqueEmail } from './helpers/verified-session';
+import { grantPurchaseAccessForTest } from './helpers/purchase-access';
 import { isPurchaseAllowed, parsePurchaseAllowlist } from '../src/lib/razorpay';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://127.0.0.1:3400';
@@ -88,6 +89,15 @@ async function userWithId(id: string) {
   const { data, error: e2 } = await anonKeyClient().auth.signInWithPassword({ email, password });
   if (e2 || !data.session) throw new Error(`sign in ${id}: ${e2?.message}`);
   return { userId: id, token: data.session.access_token };
+}
+/**
+ * Both users get the admin-controlled purchase access (migration 033), so the
+ * only thing that differs between them — and the only thing this suite
+ * measures — is the deployment allowlist. The combination of the two gates
+ * is covered by test/billing-access-suite.ts.
+ */
+async function grantBoth(...userIds: string[]) {
+  for (const id of userIds) await grantPurchaseAccessForTest(id);
 }
 async function randomUser() {
   const s = await newVerifiedSession();
@@ -159,6 +169,7 @@ async function run() {
     if (mode !== 'list') return refuse("mock mode must be run with a 'list' allowlist.");
     const allowed = await userWithId(ALLOWED_ID);
     const blocked = await randomUser();
+    await grantBoth(allowed.userId, blocked.userId);
     const ra = await post(allowed.token, '/api/razorpay/subscription');
     const rb = await post(blocked.token, '/api/razorpay/subscription');
     assert(ra.status === 200 && ra.body.isMock === true, 'mock: listed user still gets the local mock (dev convenience unchanged)', ra);
@@ -174,6 +185,7 @@ async function run() {
   const since = Math.floor(Date.now() / 1000) - 5;
   const allowed = await userWithId(ALLOWED_ID);
   const blocked = await randomUser();
+  await grantBoth(allowed.userId, blocked.userId);
 
   const ra = await post(allowed.token, '/api/razorpay/subscription');
   trackSub(ra.body.subscriptionId);

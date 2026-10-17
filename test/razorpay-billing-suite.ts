@@ -26,6 +26,7 @@
 
 import { createHmac } from 'node:crypto';
 import { adminClient, hasRequiredEnv, newVerifiedSession, type TestSession } from './helpers/verified-session';
+import { grantPurchaseAccessForTest } from './helpers/purchase-access';
 import { checkoutOutcome, orphanDecision, planTierForSubscription } from '../src/lib/razorpay';
 import {
   CLAIM_TTL_MS,
@@ -148,6 +149,9 @@ const createdEventIds: string[] = [];
 async function newUser(): Promise<TestSession> {
   const s = await newVerifiedSession();
   createdUsers.push(s.userId);
+  // Every user here exercises the purchase flow, so give each one the
+  // admin-controlled purchase access it now requires (migration 033).
+  await grantPurchaseAccessForTest(s.userId);
   return s;
 }
 
@@ -804,6 +808,9 @@ async function run() {
       { status: remote.body.status, paid_count: remote.body.paid_count }
     );
 
+    // Granted so the call reaches the already-Pro check rather than the
+    // admin-controlled purchase gate (migration 033).
+    await grantPurchaseAccessForTest(e2eUser);
     const again = await api(e2eToken, '/api/razorpay/subscription');
     assert(again.status === 409, 'Already-Pro user cannot start a second subscription → 409', again.status);
 

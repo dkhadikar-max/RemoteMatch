@@ -24,6 +24,8 @@ const ACTION_TONE: Record<string, 'good' | 'danger' | 'neutral'> = {
   opportunity_force_expire: 'danger',
   admin_grant: 'good',
   admin_revoke: 'danger',
+  purchase_access_grant: 'good',
+  purchase_access_revoke: 'danger',
 };
 
 export default function AuditLogPage() {
@@ -73,6 +75,8 @@ export default function AuditLogPage() {
         <option value="opportunity_force_expire">Opportunity force-expire</option>
         <option value="admin_grant">Admin grant</option>
         <option value="admin_revoke">Admin revoke</option>
+        <option value="purchase_access_grant">Purchase access grant</option>
+        <option value="purchase_access_revoke">Purchase access revoke</option>
       </select>
 
       {error ? (
