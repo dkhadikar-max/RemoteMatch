@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
-import { localStore } from '@/lib/db/mock-seed';
+import { readServerProfile, scorableProfile } from '@/lib/profile/server-profile';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
@@ -96,41 +96,55 @@ export async function POST(req: NextRequest) {
   let matchResultForClient: ReturnType<typeof generateRuleBasedMatchAnalysis> | null = null;
 
   if (opp) {
-    // The demo profile content (skills/experience) still comes from the
-    // local, non-authoritative profile fixture — profile CONTENT is out of
-    // scope for this security pass (see migration file header); only
-    // entitlement fields are Supabase-authoritative.
-    const localProfile = localStore.getProfile();
-    const matchResult = generateRuleBasedMatchAnalysis(localProfile, opp);
-    const appKit = await generateApplicationKit(localProfile, opp, matchResult, 'confident');
+    // Profile CONTENT is the caller's own, read server-side through their
+    // RLS-scoped session (the same reads as /api/ai/match-analysis) — never
+    // the `localStore` demo fixture, which scored every user's swipe and
+    // wrote every user's cover letter for the same seeded person.
+    // The swipe is always saved, but it is scored (and gets a kit) only when
+    // every profile read succeeded AND the profile has a skill or a target
+    // role. A partial read failure would otherwise be scored on whatever was
+    // left, and an empty profile on nothing — a number that measures nothing.
+    const read = await readServerProfile(supabase, auth.user);
+    const profileReadOk = read.readErrors.length === 0;
+    const profile = scorableProfile(read);
+    const profileUsable = profile !== null;
+    const matchResult = profile ? generateRuleBasedMatchAnalysis(profile, opp) : null;
+    const appKit = profile && matchResult ? await generateApplicationKit(profile, opp, matchResult, 'confident') : null;
 
     decisionSnapshot = {
-      fitScore: matchResult.fitScore,
-      fitBadge: matchResult.fitBadge,
-      isEligible: matchResult.isCountryEligible && matchResult.isRemoteEligible,
+      profileSource: 'server',
+      profileReadOk,
+      profileUsable,
+      fitScore: matchResult?.fitScore ?? null,
+      fitBadge: matchResult?.fitBadge ?? null,
+      isEligible: matchResult ? matchResult.isCountryEligible && matchResult.isRemoteEligible : null,
       decisionTimestamp: new Date().toISOString(),
       matchingEngineVersion: 'v1.0.0-beta',
       matchingWeightsVersion: 'weights-2026.09-v1',
       eligibilityRulesVersion: 'rules-2026.09-v1',
-      profileVersion: localProfile.updatedAt || new Date().toISOString(),
+      profileVersion: read.profile.updatedAt || new Date().toISOString(),
       jobVersion: opp.lastVerifiedAt || opp.postedAt,
       jobSource: opp.source,
       jobSourceId: opp.sourceId,
       officialUrl: opp.officialUrl,
       employmentType: opp.employmentType,
       remoteClassification: opp.remoteType,
-      requirementsEvaluated: matchResult.requirementChecklist.map((r) => ({
-        requirement: r.requirement,
-        status: r.status,
-      })),
-      scoreBreakdown: {
-        roleMatch: matchResult.isRoleMatch ? 95 : 60,
-        recommendation: matchResult.recommendation,
-        strengthsCount: matchResult.strengths.length,
-        gapsCount: matchResult.gaps.length,
-      },
-      coverLetter: appKit.coverLetter,
-      resumeTweaks: appKit.resumeTweaks,
+      requirementsEvaluated: matchResult
+        ? matchResult.requirementChecklist.map((r) => ({
+            requirement: r.requirement,
+            status: r.status,
+          }))
+        : [],
+      scoreBreakdown: matchResult
+        ? {
+            roleMatch: matchResult.isRoleMatch ? 95 : 60,
+            recommendation: matchResult.recommendation,
+            strengthsCount: matchResult.strengths.length,
+            gapsCount: matchResult.gaps.length,
+          }
+        : null,
+      coverLetter: appKit?.coverLetter ?? null,
+      resumeTweaks: appKit?.resumeTweaks ?? null,
       // P1 (Job-Quality Intelligence) candidate observable attributes,
       // frozen at decision time per the approved P1 scoping document —
       // these do not feed matching/scoring/eligibility, they are captured

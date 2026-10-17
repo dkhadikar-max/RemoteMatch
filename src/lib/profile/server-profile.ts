@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import type { PersonProfile } from '@/types/byn';
+import { isUsableProfile } from '@/lib/profile/usable';
 
 /**
  * Server-authoritative PersonProfile construction (ticket O9, extracted from
@@ -26,12 +27,22 @@ export async function loadServerProfile(
   supabase: SupabaseClient,
   user: Pick<User, 'id' | 'email'>,
 ): Promise<PersonProfile> {
-  const [
-    { data: skills },
-    { data: intent },
-    { data: location },
-    { data: profileRow },
-  ] = await Promise.all([
+  return (await readServerProfile(supabase, user)).profile;
+}
+
+/**
+ * Same profile as loadServerProfile(), plus which of its four reads failed.
+ * loadServerProfile() substitutes defaults for a failed read, so a profile
+ * built after a partial database failure looks like a real (if thinner)
+ * one. Callers that persist a decision from the profile — the interested
+ * swipe's fit score and Application Kit — must check `readErrors` and treat
+ * any entry as "no profile", never score what is left.
+ */
+export async function readServerProfile(
+  supabase: SupabaseClient,
+  user: Pick<User, 'id' | 'email'>,
+): Promise<{ profile: PersonProfile; readErrors: string[] }> {
+  const [skillsRes, intentRes, locationRes, profileRes] = await Promise.all([
     supabase.from('profile_skills').select('skill_name').eq('profile_id', user.id),
     supabase
       .from('profile_intents')
@@ -45,6 +56,20 @@ export async function loadServerProfile(
       .maybeSingle(),
     supabase.from('profiles').select('full_name, raw_resume_text').eq('id', user.id).maybeSingle(),
   ]);
+  const readErrors = (
+    [
+      ['profile_skills', skillsRes.error],
+      ['profile_intents', intentRes.error],
+      ['profile_locations', locationRes.error],
+      ['profiles', profileRes.error],
+    ] as const
+  )
+    .filter(([, error]) => error)
+    .map(([table]) => table);
+  const skills = skillsRes.data;
+  const intent = intentRes.data;
+  const location = locationRes.data;
+  const profileRow = profileRes.data;
 
   const skillNames = (skills ?? []).map((s) => s.skill_name as string).filter(Boolean);
   const now = new Date().toISOString();
@@ -56,7 +81,7 @@ export async function loadServerProfile(
     ? (yoeRaw as (typeof YOE)[number])
     : '2-3';
 
-  return {
+  const profile: PersonProfile = {
     id: user.id,
     email: user.email ?? '',
     fullName: (profileRow?.full_name as string | null) ?? '',
@@ -97,4 +122,15 @@ export async function loadServerProfile(
       willingTimezones: [],
     },
   };
+  return { profile, readErrors };
+}
+
+/**
+ * The profile a persisted decision may be scored on, or null. Null when any
+ * profile read failed (never score a partially-read profile) or when the
+ * profile has no skill and no target role (nothing to score against).
+ */
+export function scorableProfile(read: { profile: PersonProfile; readErrors: string[] }): PersonProfile | null {
+  if (read.readErrors.length > 0) return null;
+  return isUsableProfile(read.profile) ? read.profile : null;
 }
