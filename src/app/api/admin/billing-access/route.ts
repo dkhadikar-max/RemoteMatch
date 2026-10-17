@@ -4,13 +4,11 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { changePurchaseAccess } from '@/lib/billing/purchase-access';
 import { isPurchaseAllowed, purchaseAllowlist } from '@/lib/razorpay';
+import { likeLiteral } from '@/lib/supabase/query-helpers';
 
 const LIST_LIMIT = 1000;
 const NOTE_MAX = 500;
 const EMAIL_BATCH = 100;
-
-/** Escapes LIKE wildcards so an email containing "_" or "%" matches only itself. */
-const likeLiteral = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * GET — every purchase-access row, active and revoked, with the account's
