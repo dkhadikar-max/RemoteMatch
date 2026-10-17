@@ -23,6 +23,7 @@ import {
   SEO_CATEGORIES,
 } from '@/lib/seo/data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
+import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -199,15 +200,14 @@ export default async function PublicJobDetailPage({ params }: Props) {
 
           {isLive && (
             <div className="flex flex-wrap items-center gap-2 self-start">
-              <a
+              <TrackedApplyLink
                 href={job.officialUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                opportunityId={job.id}
                 className="soft-button primary text-xs flex items-center gap-1.5"
               >
                 <span>Apply on employer&apos;s website</span>
                 <ExternalLink size={13} />
-              </a>
+              </TrackedApplyLink>
             </div>
           )}
         </div>
@@ -325,15 +325,14 @@ export default async function PublicJobDetailPage({ params }: Props) {
             ← Back to all remote jobs
           </Link>
           {isLive && (
-            <a
+            <TrackedApplyLink
               href={job.officialUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              opportunityId={job.id}
               className="soft-button primary text-xs flex items-center gap-1.5 w-full sm:w-auto justify-center"
             >
               <span>Apply on {job.company}&apos;s website</span>
               <ExternalLink size={13} />
-            </a>
+            </TrackedApplyLink>
           )}
         </div>
       </article>

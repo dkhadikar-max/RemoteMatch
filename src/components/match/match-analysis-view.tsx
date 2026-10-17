@@ -38,6 +38,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { DidYouApplyModal } from '../feedback/did-you-apply-modal';
+import { trackApplyClick } from '@/lib/funnel/client';
 
 /** Human phrasing for the years-of-experience bucket, for the "Your direction"
  *  line only. Never invents a number — mirrors the onboarding buckets. */
@@ -237,6 +238,7 @@ ${initialResumeTweaks.bulletRewrites
   };
 
   const handleOfficialApplyClick = () => {
+    trackApplyClick(opportunity.id, 'match_view');
     window.open(opportunity.officialUrl, '_blank', 'noopener,noreferrer');
     setTimeout(() => {
       setShowApplyFeedbackModal(true);

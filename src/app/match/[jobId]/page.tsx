@@ -15,6 +15,7 @@ import { fetchServerEntitlement } from '@/lib/entitlement/client';
 import { MatchAnalysisView } from '@/components/match/match-analysis-view';
 import { UpgradeModal } from '@/components/premium/upgrade-modal';
 import { resolveJobId } from '@/lib/match/match-href';
+import { recordFunnelEventClient } from '@/lib/funnel/client';
 
 export default function MatchDetailPage() {
   const params = useParams();
@@ -97,6 +98,9 @@ export default function MatchDetailPage() {
       // Attach job-specific resume improvements
       matchRes.jobSpecificResumeImprovements = generateJobSpecificResumeAnalysis(userProfile, opp);
       setMatch(matchRes);
+      // The analysis is computed here in the browser, so this page is where
+      // "match analyzed" happens; fire-and-forget, never blocks the page.
+      void recordFunnelEventClient('match_analyzed', { opportunity_id: opp.id });
 
       // Additive Career Transition explanation (change_fields users only).
       const isEligible = checkHardEligibility(userProfile, opp).isEligible;
