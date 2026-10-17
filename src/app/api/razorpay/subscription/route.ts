@@ -20,6 +20,7 @@ import {
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
+import { hasActivePurchaseGrant } from '@/lib/billing/purchase-access';
 
 /** How long a request waits for a concurrent request's claim to finish before giving up. */
 const CLAIM_WAIT_MS = 6_000;
@@ -60,6 +61,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const admin = getSupabaseAdminClient();
+  if (!isSupabaseAdminConfigured || !admin) {
+    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 });
+  }
+
+  // Admin-controlled access (migration 033), required IN ADDITION to the
+  // deployment allowlist above: only a user an admin has granted may start a
+  // purchase. Also checked before the mock branch and before any Razorpay
+  // call. Fails closed — no grant, a missing table or a failed lookup all
+  // block — and gives the same generic message, so it reveals nothing.
+  if (!(await hasActivePurchaseGrant(admin, user.id))) {
+    return NextResponse.json(
+      { error: "Pro upgrades aren't available right now. Please check back soon." },
+      { status: 503 }
+    );
+  }
+
   if (!isRazorpayConfigured) {
     // Same rule as the Stripe hardening: in production, "unconfigured" means
     // "upgrades unavailable" — never a free Pro. The mock exists purely as a
@@ -71,11 +89,6 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json({ success: true, isMock: true });
-  }
-
-  const admin = getSupabaseAdminClient();
-  if (!isSupabaseAdminConfigured || !admin) {
-    return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 });
   }
 
   const checkoutFor = (subscriptionId: string) =>

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Radar, Building2, Server, Briefcase,
-  Languages, Users, Activity, ScrollText, Settings as SettingsIcon, LogOut,
+  Languages, Users, CreditCard, Activity, ScrollText, Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
 
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: '/admin/opportunities', label: 'Opportunities', icon: Briefcase },
   { href: '/admin/translation', label: 'Translation', icon: Languages },
   { href: '/admin/users', label: 'Users', icon: Users },
+  { href: '/admin/billing-access', label: 'Billing Access', icon: CreditCard },
   { href: '/admin/sync-health', label: 'Sync Health', icon: Activity },
   { href: '/admin/audit-log', label: 'Audit Log', icon: ScrollText },
   { href: '/admin/settings', label: 'Settings', icon: SettingsIcon },
