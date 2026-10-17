@@ -1,4 +1,4 @@
-import type { FunnelEventType } from './events';
+import type { ApplySurface, FunnelEventType } from './events';
 
 /**
  * Funnel Instrumentation — emission wiring, client-side write helper.
@@ -26,5 +26,26 @@ export async function recordFunnelEventClient(
     });
   } catch {
     /* fire-and-forget — never let a funnel-event failure surface */
+  }
+}
+
+/**
+ * Records a click on an Apply link to the employer's site. Called from the
+ * click handler, so it must never delay or block the navigation: no await,
+ * `keepalive` so the request survives the tab switching away, and every
+ * failure (including a signed-out 401 on the public job page) swallowed.
+ */
+export function trackApplyClick(opportunityId: string, surface: ApplySurface): void {
+  try {
+    fetch('/api/funnel/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_type: 'apply_clicked', opportunity_id: opportunityId, surface }),
+      keepalive: true,
+    }).catch(() => {
+      /* fire-and-forget */
+    });
+  } catch {
+    /* fire-and-forget */
   }
 }

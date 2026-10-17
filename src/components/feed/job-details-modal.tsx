@@ -11,6 +11,7 @@ import {
   employerDirectApplyLabel,
 } from '@/lib/feed/trust-signals';
 import { X, Globe2, DollarSign, Briefcase, Check, ExternalLink, ShieldCheck } from 'lucide-react';
+import { trackApplyClick } from '@/lib/funnel/client';
 
 interface JobDetailsModalProps {
   opportunity: CanonicalOpportunity | null;
@@ -188,6 +189,7 @@ export function JobDetailsModal({
               href={opportunity.officialUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => trackApplyClick(opportunity.id, 'job_modal')}
               className="soft-button secondary text-xs font-semibold gap-1.5 py-2 px-4"
             >
               <span>Official Listing</span>
