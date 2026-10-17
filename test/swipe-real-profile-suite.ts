@@ -4,8 +4,12 @@
  * POST /api/opportunities/swipe used to score every interested swipe, and
  * write every Application Kit, against the `localStore` demo fixture — the
  * same seeded person for every user. Proves:
- *   - STATIC: the route reads the profile with loadServerProfile(), never
- *     localStore, and stamps profileSource/profileUsable on the snapshot.
+ *   - STATIC: the route reads the profile with readServerProfile(), never
+ *     localStore, scores only scorableProfile(), and stamps
+ *     profileSource/profileReadOk/profileUsable on the snapshot.
+ *   - UNIT: readServerProfile() reports a failed read of ANY of its four
+ *     tables, and scorableProfile() then refuses to score — even when the
+ *     reads that did succeed hold a perfectly usable profile.
  *   - LIVE: two users with different real profiles swipe the SAME job. Each
  *     snapshot's fitScore equals the frozen engine run on THAT user's own
  *     server profile; the two differ; each cover letter names its own user
@@ -26,7 +30,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient, hasRequiredEnv, newVerifiedSession, type TestSession } from './helpers/verified-session';
-import { loadServerProfile } from '../src/lib/profile/server-profile';
+import { loadServerProfile, readServerProfile, scorableProfile } from '../src/lib/profile/server-profile';
 import { generateRuleBasedMatchAnalysis } from '../src/lib/matching/engine';
 import { getActiveOpportunityByCanonicalId } from '../src/lib/ingestion/catalog-read';
 import { localStore } from '../src/lib/db/mock-seed';
@@ -106,9 +110,50 @@ async function run() {
   console.log('\nSTATIC: POST /api/opportunities/swipe');
   const src = readFileSync(join(__dirname, '../src/app/api/opportunities/swipe/route.ts'), 'utf8');
   assert(!/from '@\/lib\/db\/mock-seed'/.test(src) && !/localStore\.getProfile\(\)/.test(src), 'the route no longer imports or reads the localStore demo fixture');
-  assert(/loadServerProfile\(supabase, auth\.user\)/.test(src), 'the route reads the profile with loadServerProfile(supabase, auth.user)');
-  assert(/isUsableProfile\(profile\)/.test(src), 'the route checks the profile is usable before scoring');
-  assert(/profileSource: 'server'/.test(src) && /profileUsable,/.test(src), 'the snapshot records profileSource and profileUsable');
+  assert(/readServerProfile\(supabase, auth\.user\)/.test(src), 'the route reads the profile with readServerProfile(supabase, auth.user)');
+  assert(/const profile = scorableProfile\(read\)/.test(src), 'the route scores only scorableProfile(read) (read errors and unusable profiles excluded)');
+  assert(/generateRuleBasedMatchAnalysis\(profile, opp\)/.test(src) && !/generateRuleBasedMatchAnalysis\(read\.profile/.test(src), 'the engine is only ever run on the scorable profile, never the raw read');
+  assert(/profileSource: 'server'/.test(src) && /profileReadOk,/.test(src) && /profileUsable,/.test(src), 'the snapshot records profileSource, profileReadOk and profileUsable');
+
+  console.log('\nUNIT: a failed profile read is never scored');
+  const TABLES = ['profile_skills', 'profile_intents', 'profile_locations', 'profiles'] as const;
+  const fullData: Record<(typeof TABLES)[number], unknown> = {
+    profile_skills: [{ skill_name: 'Rust' }, { skill_name: 'Kubernetes' }],
+    profile_intents: { employment_types: ['full_time'], target_roles: ['Platform Engineer'], years_of_experience: '4-6' },
+    profile_locations: { current_country: 'Worldwide', current_timezone: 'UTC', work_preference: 'worldwide', allowed_countries: [] },
+    profiles: { full_name: 'Stub User', raw_resume_text: '' },
+  };
+  // Minimal stand-in for the supabase-js query builder: every chain method
+  // returns itself, and awaiting it yields that table's canned result.
+  const stubClient = (failing: string | null) => ({
+    from(table: (typeof TABLES)[number]) {
+      const result = table === failing
+        ? { data: null, error: { message: `simulated ${table} failure`, code: '57014' } }
+        : { data: fullData[table], error: null };
+      const builder: any = {
+        select: () => builder,
+        eq: () => builder,
+        maybeSingle: () => builder,
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject),
+      };
+      return builder;
+    },
+  }) as unknown as SupabaseClient;
+  const stubUser = { id: '00000000-0000-4000-8000-0000000000aa', email: 'stub@example.com' };
+
+  const ok = await readServerProfile(stubClient(null), stubUser);
+  assert(ok.readErrors.length === 0, 'all four reads succeed → no readErrors', ok.readErrors);
+  assert(scorableProfile(ok) === ok.profile, 'all reads ok and usable → scorableProfile returns the profile');
+  const viaLoad = await loadServerProfile(stubClient(null), stubUser);
+  const strip = (p: any) => JSON.stringify({ ...p, lastEvaluationResetAt: 0, createdAt: 0, updatedAt: 0, intent: { ...p.intent, updatedAt: 0 } });
+  assert(strip(viaLoad) === strip(ok.profile), 'loadServerProfile() still returns exactly the same profile (other callers unchanged)');
+  for (const table of TABLES) {
+    const read = await readServerProfile(stubClient(table), stubUser);
+    assert(JSON.stringify(read.readErrors) === JSON.stringify([table]), `${table} read fails → readErrors names exactly it`, read.readErrors);
+    assert(scorableProfile(read) === null, `${table} read fails → scorableProfile is null (not scored, even though the other reads are usable)`);
+  }
+  const loaded = await loadServerProfile(stubClient('profile_locations'), stubUser);
+  assert(loaded.skills.length === 2, 'loadServerProfile() alone still hides a partial failure (why the route must not use it)');
 
   // ---------------------------------------------------------------- SAFETY
   let u: URL;
@@ -180,8 +225,8 @@ async function run() {
   assert(rb.status === 200 && rb.body.success === true, 'user B interested swipe → 200', rb.status);
   const sa = await snapshotFor(db, a.userId);
   const sb = await snapshotFor(db, b.userId);
-  assert(sa?.profileSource === 'server' && sa?.profileUsable === true, 'A snapshot: profileSource=server, profileUsable=true', { profileSource: sa?.profileSource, profileUsable: sa?.profileUsable });
-  assert(sb?.profileSource === 'server' && sb?.profileUsable === true, 'B snapshot: profileSource=server, profileUsable=true', { profileSource: sb?.profileSource, profileUsable: sb?.profileUsable });
+  assert(sa?.profileSource === 'server' && sa?.profileReadOk === true && sa?.profileUsable === true, 'A snapshot: profileSource=server, profileReadOk=true, profileUsable=true', { profileSource: sa?.profileSource, profileReadOk: sa?.profileReadOk, profileUsable: sa?.profileUsable });
+  assert(sb?.profileSource === 'server' && sb?.profileReadOk === true && sb?.profileUsable === true, 'B snapshot: profileSource=server, profileReadOk=true, profileUsable=true', { profileSource: sb?.profileSource, profileReadOk: sb?.profileReadOk, profileUsable: sb?.profileUsable });
   assert(sa?.fitScore === expectedA, 'A fitScore equals the engine run on A\'s own profile', { got: sa?.fitScore, expectedA });
   assert(sb?.fitScore === expectedB, 'B fitScore equals the engine run on B\'s own profile', { got: sb?.fitScore, expectedB });
   assert(sa?.fitScore !== sb?.fitScore, 'A and B got different scores for the same job', { a: sa?.fitScore, b: sb?.fitScore });
@@ -195,7 +240,7 @@ async function run() {
   const rc = await swipe(c.token, canonicalId);
   assert(rc.status === 200 && rc.body.success === true, 'user C (no skill, no role) interested swipe → 200, still saved', rc.status);
   const sc = await snapshotFor(db, c.userId);
-  assert(sc?.profileSource === 'server' && sc?.profileUsable === false, 'C snapshot: profileUsable=false', { profileUsable: sc?.profileUsable });
+  assert(sc?.profileSource === 'server' && sc?.profileReadOk === true && sc?.profileUsable === false, 'C snapshot: read ok but profileUsable=false', { profileReadOk: sc?.profileReadOk, profileUsable: sc?.profileUsable });
   assert(sc?.fitScore === null && sc?.fitBadge === null && sc?.isEligible === null, 'C snapshot: no fitScore, fitBadge or isEligible', { fitScore: sc?.fitScore });
   assert(sc?.coverLetter === null && sc?.resumeTweaks === null, 'C snapshot: no Application Kit');
   const { data: appC } = await db.from('applications').select('status').eq('profile_id', c.userId).eq('opportunity_id', seededCanonicalId!).maybeSingle();

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
-import { loadServerProfile } from '@/lib/profile/server-profile';
-import { isUsableProfile } from '@/lib/profile/usable';
+import { readServerProfile, scorableProfile } from '@/lib/profile/server-profile';
 import { generateRuleBasedMatchAnalysis } from '@/lib/matching/engine';
 import { generateApplicationKit } from '@/lib/ai/materials';
 import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
@@ -98,20 +97,23 @@ export async function POST(req: NextRequest) {
 
   if (opp) {
     // Profile CONTENT is the caller's own, read server-side through their
-    // RLS-scoped session (loadServerProfile, same as /api/ai/match-analysis) —
-    // never the `localStore` demo fixture, which scored every user's swipe
-    // and wrote every user's cover letter for the same seeded person.
-    // A profile with no skill and no target role can't be scored
-    // meaningfully: the swipe is still saved, but with no score and no kit,
-    // rather than a number that measures nothing. A failed profile read
-    // comes back empty, so it takes the same safe path.
-    const profile = await loadServerProfile(supabase, auth.user);
-    const profileUsable = isUsableProfile(profile);
-    const matchResult = profileUsable ? generateRuleBasedMatchAnalysis(profile, opp) : null;
-    const appKit = matchResult ? await generateApplicationKit(profile, opp, matchResult, 'confident') : null;
+    // RLS-scoped session (the same reads as /api/ai/match-analysis) — never
+    // the `localStore` demo fixture, which scored every user's swipe and
+    // wrote every user's cover letter for the same seeded person.
+    // The swipe is always saved, but it is scored (and gets a kit) only when
+    // every profile read succeeded AND the profile has a skill or a target
+    // role. A partial read failure would otherwise be scored on whatever was
+    // left, and an empty profile on nothing — a number that measures nothing.
+    const read = await readServerProfile(supabase, auth.user);
+    const profileReadOk = read.readErrors.length === 0;
+    const profile = scorableProfile(read);
+    const profileUsable = profile !== null;
+    const matchResult = profile ? generateRuleBasedMatchAnalysis(profile, opp) : null;
+    const appKit = profile && matchResult ? await generateApplicationKit(profile, opp, matchResult, 'confident') : null;
 
     decisionSnapshot = {
       profileSource: 'server',
+      profileReadOk,
       profileUsable,
       fitScore: matchResult?.fitScore ?? null,
       fitBadge: matchResult?.fitBadge ?? null,
@@ -120,7 +122,7 @@ export async function POST(req: NextRequest) {
       matchingEngineVersion: 'v1.0.0-beta',
       matchingWeightsVersion: 'weights-2026.09-v1',
       eligibilityRulesVersion: 'rules-2026.09-v1',
-      profileVersion: profile.updatedAt || new Date().toISOString(),
+      profileVersion: read.profile.updatedAt || new Date().toISOString(),
       jobVersion: opp.lastVerifiedAt || opp.postedAt,
       jobSource: opp.source,
       jobSourceId: opp.sourceId,
