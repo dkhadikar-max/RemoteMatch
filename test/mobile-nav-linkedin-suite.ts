@@ -57,8 +57,38 @@ function mobileTabs(html: string): Tab[] | null {
   return tabs;
 }
 
+/** Extracts the center <nav> with `md:flex`; returns null if not rendered (e.g. on auth pages) */
+function desktopCenterNav(html: string): { href: string; label: string; active: boolean; classes: string }[] | null {
+  const headerMatch = html.match(/<header[^>]*>([\s\S]*?)<\/header>/);
+  if (!headerMatch) return null;
+  const navMatch = headerMatch[1].match(/<nav[^>]*md:flex[^>]*>([\s\S]*?)<\/nav>/);
+  if (!navMatch) return null;
+  const links: { href: string; label: string; active: boolean; classes: string }[] = [];
+  const re = /<a\s+([^>]*?)>([\s\S]*?)<\/a>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(navMatch[1]))) {
+    const tagAttrs = m[1];
+    const label = m[2].replace(/<[^>]*>/g, '').trim();
+    const hrefMatch = tagAttrs.match(/href="([^"]*)"/);
+    const classMatch = tagAttrs.match(/class="([^"]*)"/);
+    const href = hrefMatch ? hrefMatch[1] : '';
+    const classes = classMatch ? classMatch[1] : '';
+    const active = classes.includes('text-[var(--red)]') || classes.includes('bg-[var(--surface-soft)]');
+    links.push({ href, label, active, classes });
+  }
+  return links;
+}
+
+/** Extracts the right controls <div class="flex items-center gap-3">; returns null if not rendered */
+function desktopRightControls(html: string): string | null {
+  const headerMatch = html.match(/<header[^>]*>([\s\S]*?)<\/header>/);
+  if (!headerMatch) return null;
+  const match = headerMatch[1].match(/<div class="flex items-center gap-3">([\s\S]*?)<\/div>/);
+  return match ? match[1] : null;
+}
+
 console.log('='.repeat(78));
-console.log('MOBILE NAV — LinkedIn Job Finder entry point');
+console.log('MOBILE & DESKTOP NAV — Route-Aware Navigation Suite');
 console.log('='.repeat(78));
 
 console.log('\n1. The bar has a LinkedIn tab, in the right place, pointing at the right page');
@@ -96,16 +126,118 @@ console.log('\n3. The LinkedIn tab is active exactly on its own page');
   assert(JSON.stringify(only('/linkedin-jobsX')) === '[]', 'a look-alike path (/linkedin-jobsX) does not light it up');
 }
 
-console.log('\n4. The bar is still suppressed where it was already suppressed (no new overlap)');
+console.log('\n4. The mobile bottom bar is suppressed on public content routes, auth pages, and onboarding');
 {
-  for (const p of ['/', '/login', '/remote-jobs', '/remote-jobs/design', '/guide', '/guide/how-remote-matching-works']) {
-    assert(mobileTabs(render(p)) === null, `${p}: no mobile bar, so the new tab never appears there`);
+  const suppressedRoutes = [
+    '/',
+    '/login',
+    '/signup',
+    '/forgot-password',
+    '/reset-password',
+    '/onboarding',
+    '/remote-jobs',
+    '/remote-jobs/design',
+    '/guide',
+    '/guide/how-remote-matching-works',
+  ];
+  for (const p of suppressedRoutes) {
+    assert(mobileTabs(render(p)) === null, `${p}: mobile bottom bar is suppressed`);
   }
 }
 
-console.log('\n5. The desktop entry is intact and the bar is still mobile-only');
+console.log('\n5. Mobile bottom bar renders on authenticated product routes');
+{
+  const productRoutes = ['/feed', '/tracker', '/settings', '/linkedin-jobs', '/match/opp_1'];
+  for (const p of productRoutes) {
+    const tabs = mobileTabs(render(p));
+    assert(tabs !== null, `${p}: mobile bottom bar renders`);
+    assert(tabs?.length === 4, `${p}: renders all 4 tabs`);
+  }
+}
+
+console.log('\n6. Desktop top nav renders marketing navigation on unauthenticated public routes');
+{
+  const publicRoutes = [
+    '/',
+    '/remote-jobs',
+    '/remote-jobs/design',
+    '/guide',
+    '/guide/how-remote-matching-works',
+  ];
+  for (const p of publicRoutes) {
+    const html = render(p);
+    const center = desktopCenterNav(html);
+    assert(center !== null, `${p}: desktop center nav renders`);
+    const labels = (center ?? []).map((x) => x.label);
+    const hrefs = (center ?? []).map((x) => x.href);
+
+    assert(
+      JSON.stringify(labels) === JSON.stringify(['Jobs', 'Directory', 'How It Works', 'Guides', 'Pricing']),
+      `${p}: center links are Jobs, Directory, How It Works, Guides, Pricing — got ${JSON.stringify(labels)}`
+    );
+    assert(
+      JSON.stringify(hrefs) === JSON.stringify(['/feed', '/remote-jobs', '/#how-it-works', '/guide', '/#pricing']),
+      `${p}: hrefs point to /feed, /remote-jobs, /#how-it-works, /guide, /#pricing`
+    );
+
+    // Omissions
+    assert(!labels.includes('Applications'), `${p}: omits Applications`);
+    assert(!labels.includes('Profile'), `${p}: omits Profile`);
+    assert(!labels.includes('LinkedIn'), `${p}: omits LinkedIn`);
+
+    // Right controls
+    const right = desktopRightControls(html) ?? '';
+    assert(right.includes('Browse jobs') && right.includes('href="/feed"'), `${p}: right controls include Browse jobs`);
+    assert(right.includes('Find your matches →') && right.includes('href="/onboarding"'), `${p}: right controls include Find your matches →`);
+    assert(!right.includes('rounded-full bg-[var(--surface-soft)]'), `${p}: right controls omit avatar container`);
+    assert(!right.includes('>?<'), `${p}: right controls omit avatar "?"`);
+  }
+
+  // Active state checks for Directory and Guides
+  const rjCenter = desktopCenterNav(render('/remote-jobs')) ?? [];
+  assert(rjCenter.find((x) => x.label === 'Directory')?.classes.includes('text-[var(--red)]') === true, '/remote-jobs: Directory link is active');
+  assert(rjCenter.find((x) => x.label === 'Guides')?.classes.includes('text-[var(--red)]') === false, '/remote-jobs: Guides link is not active');
+
+  const gCenter = desktopCenterNav(render('/guide')) ?? [];
+  assert(gCenter.find((x) => x.label === 'Guides')?.classes.includes('text-[var(--red)]') === true, '/guide: Guides link is active');
+  assert(gCenter.find((x) => x.label === 'Directory')?.classes.includes('text-[var(--red)]') === false, '/guide: Directory link is not active');
+}
+
+console.log('\n7. Desktop top nav on auth pages omits center links and right controls');
+{
+  const authRoutes = ['/login', '/signup', '/forgot-password', '/reset-password'];
+  for (const p of authRoutes) {
+    const html = render(p);
+    assert(desktopCenterNav(html) === null, `${p}: center navigation links omitted`);
+    assert(desktopRightControls(html) === null, `${p}: right controls omitted`);
+    const headerMatch = html.match(/<header[^>]*>([\s\S]*?)<\/header>/);
+    const headerHtml = headerMatch ? headerMatch[1] : '';
+    assert(headerHtml.includes('RemoteMatch') && headerHtml.includes('href="/"'), `${p}: brand logo/link present`);
+  }
+}
+
+console.log('\n8. Desktop top nav on /feed renders signed-in links and LinkedIn entry');
 {
   const html = render('/feed');
+  const center = desktopCenterNav(html);
+  assert(center !== null, '/feed: desktop center nav renders');
+  const labels = (center ?? []).map((x) => x.label);
+  const hrefs = (center ?? []).map((x) => x.href);
+
+  assert(
+    JSON.stringify(labels) === JSON.stringify(['Jobs', 'Applications', 'Profile', 'LinkedIn']),
+    `/feed: center links are Jobs, Applications, Profile, LinkedIn — got ${JSON.stringify(labels)}`
+  );
+  assert(
+    JSON.stringify(hrefs) === JSON.stringify(['/feed', '/tracker', '/settings', '/linkedin-jobs']),
+    '/feed: hrefs point to /feed, /tracker, /settings, /linkedin-jobs'
+  );
+
+  assert(!labels.includes('Directory'), '/feed: omits Directory');
+  assert(!labels.includes('How It Works'), '/feed: omits How It Works');
+  assert(!labels.includes('Guides'), '/feed: omits Guides');
+  assert(!labels.includes('Pricing'), '/feed: omits Pricing');
+
   const header = html.split('md:hidden')[0];
   assert(/<a [^>]*href="\/linkedin-jobs"[^>]*>LinkedIn<\/a>/.test(header), 'the desktop nav still has its "LinkedIn" link');
   assert(/<nav[^>]*md:hidden/.test(html), 'the bottom bar is still `md:hidden` (mobile only)');
