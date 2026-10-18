@@ -235,7 +235,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
               <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
                 <DollarSign size={12} /> Compensation
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)] font-mono">{formatSalaryRange(job)}</p>
+              <p className="text-xs font-semibold text-[var(--ink)] tabular-nums">{formatSalaryRange(job)}</p>
             </div>
           )}
           <div className="space-y-0.5">
@@ -354,7 +354,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
                 <h3 className="text-xs font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5 line-clamp-1">
                   {related.title}
                 </h3>
-                <p className="text-[11px] text-[var(--muted)] mt-2 font-mono">
+                <p className="text-[11px] text-[var(--muted)] mt-2 tabular-nums">
                   {formatSalaryRange(related) || related.remoteType}
                 </p>
               </Link>

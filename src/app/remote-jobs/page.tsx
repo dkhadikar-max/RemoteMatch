@@ -299,7 +299,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                       {job.remoteType}
                     </span>
                     {formatSalaryRange(job) && (
-                      <span className="inline-flex items-center gap-1 font-mono font-medium text-[var(--ink)]">
+                      <span className="inline-flex items-center gap-1 tabular-nums font-medium text-[var(--ink)]">
                         <DollarSign size={13} className="text-[var(--red)]" />
                         {formatSalaryRange(job)}
                       </span>

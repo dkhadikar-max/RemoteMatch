@@ -330,7 +330,7 @@ export default function OnboardingPage() {
             <p className="text-sm font-semibold text-[var(--red)]">Profile Setup</p>
             <p className="mt-0.5 text-sm text-[var(--muted)]">One decision at a time</p>
           </div>
-          <span className="font-mono text-sm text-[var(--muted)]">
+          <span className="tabular-nums text-sm text-[var(--muted)]">
             {step === 7 ? 'Review' : `Stage ${step} / 6`}
           </span>
         </div>
