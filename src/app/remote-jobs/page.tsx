@@ -213,8 +213,8 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
 
         {/* Category Pills Filter */}
         <div className="space-y-2 pt-2">
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">
-            <Filter size={13} />
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-[var(--muted)]">
+            <Filter size={14} />
             <span>Browse by Category & Region:</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -222,7 +222,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
               <Link
                 key={cat.slug}
                 href={`/remote-jobs/${cat.slug}`}
-                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] hover:bg-[var(--red-soft)] transition-all"
+                className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs sm:text-sm font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] hover:bg-[var(--red-soft)] transition-all"
               >
                 {cat.title}
               </Link>
@@ -238,7 +238,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
             <h2 className="text-xl font-semibold text-[var(--ink)]">
               {searchQuery ? `Search Results for "${searchQuery}"` : 'Active Remote Positions'}
             </h2>
-            <p className="text-xs text-[var(--muted)] mt-0.5">
+            <p className="text-xs sm:text-sm text-[var(--muted)] mt-0.5">
               {totalJobs > jobs.length
                 ? `Showing ${pageOffset + 1}–${pageOffset + jobs.length} of ${totalJobs} verified positions`
                 : `Showing ${totalJobs} verified position${totalJobs === 1 ? '' : 's'}`}
@@ -246,7 +246,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
           </div>
           <Link
             href="/feed"
-            className="text-xs font-medium text-[var(--red)] hover:underline flex items-center gap-1"
+            className="text-xs sm:text-sm font-medium text-[var(--red)] hover:underline flex items-center gap-1"
           >
             <span>Interactive Match Deck</span>
             <ArrowRight size={13} />
@@ -258,11 +258,11 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
             <p className="text-sm font-semibold text-[var(--ink)]">
               No remote jobs found matching &ldquo;{searchQuery}&rdquo;.
             </p>
-            <p className="text-xs text-[var(--muted)]">
+            <p className="text-sm text-[var(--muted)]">
               Try searching by a broader skill like &ldquo;TypeScript&rdquo;, &ldquo;Product&rdquo;, or &ldquo;Design&rdquo;.
             </p>
             <div className="pt-2">
-              <Link href="/remote-jobs" className="soft-button secondary text-xs">
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
                 View all active jobs
               </Link>
             </div>
@@ -277,23 +277,23 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="text-xs font-medium text-[var(--muted)]">{job.company}</span>
-                      <h3 className="text-base font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
+                      <span className="text-sm font-medium text-[var(--muted)]">{job.company}</span>
+                      <h3 className="text-base sm:text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
                         <Link href={`/remote-jobs/view/${job.sourceId}`}>
                           {job.title}
                         </Link>
                       </h3>
                     </div>
-                    <span className="tag !text-[11px] whitespace-nowrap">
+                    <span className="tag whitespace-nowrap">
                       {job.employmentType}
                     </span>
                   </div>
 
-                  <p className="text-xs text-[var(--muted)] line-clamp-2 leading-relaxed">
+                  <p className="text-sm text-[var(--muted)] line-clamp-2 leading-relaxed">
                     {job.description}
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs sm:text-sm text-[var(--muted)]">
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={13} className="text-[var(--muted)]" />
                       {job.remoteType}
@@ -311,7 +311,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                       {job.requiredSkills.slice(0, 4).map((tag, idx) => (
                         <span
                           key={idx}
-                          className="rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-[11px] text-[var(--muted)] border border-[var(--line)]"
+                          className="rounded-md bg-[var(--surface-soft)] px-2.5 py-1 text-xs text-[var(--muted)] border border-[var(--line)]"
                         >
                           {tag}
                         </span>
@@ -323,14 +323,14 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                 <div className="mt-5 pt-4 border-t border-[var(--line)] flex items-center justify-between gap-3">
                   <Link
                     href={`/remote-jobs/view/${job.sourceId}`}
-                    className="text-xs font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
+                    className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
                   >
                     <span>View job details</span>
                     <ArrowRight size={13} />
                   </Link>
                   <Link
                     href="/onboarding"
-                    className="soft-button secondary text-xs !py-1 !px-2.5"
+                    className="soft-button secondary text-sm !py-1.5 !px-3"
                   >
                     <span>Check my match score →</span>
                   </Link>
@@ -354,20 +354,20 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
         <div className="divide-y divide-[var(--line)]">
           {directoryFaqs.map((faq, idx) => (
             <div key={idx} className="py-4 space-y-2 first:pt-0 last:pb-0">
-              <h3 className="text-sm font-semibold text-[var(--ink)]">{faq.q}</h3>
-              <p className="text-xs font-medium text-[var(--ink)] leading-relaxed">
+              <h3 className="text-base font-semibold text-[var(--ink)]">{faq.q}</h3>
+              <p className="text-sm sm:text-base font-medium text-[var(--ink)] leading-relaxed">
                 {faq.directAnswer}
               </p>
-              <p className="text-xs text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 {faq.explanation}
               </p>
               <div>
                 <Link
                   href={faq.linkHref}
-                  className="text-xs font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
+                  className="text-sm font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
                 >
                   <span>{faq.linkText}</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
@@ -381,7 +381,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
         <h2 className="text-2xl font-semibold text-[var(--ink)]">
           Find remote jobs worth applying to.
         </h2>
-        <p className="text-xs text-[var(--muted)] max-w-md mx-auto leading-relaxed">
+        <p className="text-sm text-[var(--muted)] max-w-md mx-auto leading-relaxed">
           See remote jobs that fit your experience, understand why they match, and apply with more confidence.
         </p>
         <div className="pt-2">

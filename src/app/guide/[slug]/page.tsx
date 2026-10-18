@@ -112,19 +112,19 @@ export default async function GuideArticlePage({ params }: Props) {
           <span className="tag !bg-[var(--surface)] !text-[var(--muted)] !border-[var(--line)]">
             {article.topicalCluster}
           </span>
-          <span className="text-xs text-[var(--muted)] flex items-center gap-1">
-            <Clock size={12} />
+          <span className="text-xs sm:text-sm text-[var(--muted)] flex items-center gap-1">
+            <Clock size={13} />
             {article.readingTime}
           </span>
         </div>
         <h1 className="text-2xl sm:text-4xl font-semibold tracking-tight text-[var(--ink)] leading-tight">
           {article.title}
         </h1>
-        <div className="flex items-center gap-4 text-xs text-[var(--muted)] pt-1 border-b border-[var(--line)] pb-4">
+        <div className="flex items-center gap-4 text-xs sm:text-sm text-[var(--muted)] pt-1 border-b border-[var(--line)] pb-4">
           <span>By {article.author}</span>
           <span>•</span>
           <span className="flex items-center gap-1">
-            <Calendar size={12} />
+            <Calendar size={13} />
             {article.publishedDate}
           </span>
         </div>
@@ -135,26 +135,26 @@ export default async function GuideArticlePage({ params }: Props) {
         <p className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider mb-1">
           Direct Summary
         </p>
-        <p className="text-sm font-medium text-[var(--ink)] leading-relaxed">
+        <p className="text-sm sm:text-base font-medium text-[var(--ink)] leading-relaxed">
           {article.directAnswer}
         </p>
       </div>
 
       {/* Article Body */}
-      <article className="space-y-6 text-sm text-[var(--ink)] leading-relaxed">
+      <article className="space-y-6 text-base text-[var(--ink)] leading-relaxed">
         {article.content.map((paragraph, idx) => (
-          <p key={idx} className="text-sm sm:text-base leading-relaxed text-[var(--muted)]">
+          <p key={idx} className="text-base sm:text-lg leading-relaxed text-[var(--muted)]">
             {paragraph}
           </p>
         ))}
 
         {/* Key Takeaways Box */}
         <div className="soft-card p-6 sm:p-7 space-y-3 bg-[var(--surface)] border border-[var(--line)] my-6">
-          <div className="flex items-center gap-2 font-semibold text-sm text-[var(--ink)]">
-            <CheckCircle2 size={16} className="text-[var(--red)]" />
+          <div className="flex items-center gap-2 font-semibold text-base text-[var(--ink)]">
+            <CheckCircle2 size={18} className="text-[var(--red)]" />
             <span>Key Takeaways</span>
           </div>
-          <ul className="space-y-2 text-xs text-[var(--ink)] pl-2">
+          <ul className="space-y-2 text-sm text-[var(--ink)] pl-2">
             {article.takeaways.map((takeaway, idx) => (
               <li key={idx} className="flex items-start gap-2">
                 <span className="text-[var(--red)] font-bold">•</span>
@@ -166,10 +166,10 @@ export default async function GuideArticlePage({ params }: Props) {
 
         {/* Relevant Roles & Hubs Internal Linking */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-5 space-y-3">
-          <p className="text-xs font-semibold text-[var(--ink)] uppercase tracking-wider">
+          <p className="text-xs sm:text-sm font-semibold text-[var(--ink)] uppercase tracking-wider">
             Explore Opportunities Related to this Guide:
           </p>
-          <div className="flex flex-wrap gap-2 text-xs">
+          <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
             <Link
               href="/remote-jobs/software-engineering"
               className="rounded-lg bg-[var(--surface)] border border-[var(--line)] px-3 py-1.5 font-medium text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
@@ -200,17 +200,17 @@ export default async function GuideArticlePage({ params }: Props) {
         {/* RemoteMatch Conversion Callout */}
         <div className="rounded-2xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 my-8">
           <div className="space-y-1">
-            <span className="text-xs font-semibold text-[var(--red)] flex items-center gap-1.5">
-              <CheckCircle2 size={14} />
+            <span className="text-sm font-semibold text-[var(--red)] flex items-center gap-1.5">
+              <CheckCircle2 size={15} />
               <span>Know your chances before you apply</span>
             </span>
-            <p className="text-xs text-[var(--ink)]">
+            <p className="text-sm text-[var(--ink)]">
               Let RemoteMatch compare your profile with verified remote jobs and highlight what matches.
             </p>
           </div>
           <Link
             href="/onboarding"
-            className="soft-button primary text-xs whitespace-nowrap self-stretch sm:self-auto text-center"
+            className="soft-button primary text-sm whitespace-nowrap self-stretch sm:self-auto text-center"
           >
             <span>Find your matches →</span>
           </Link>
@@ -219,26 +219,26 @@ export default async function GuideArticlePage({ params }: Props) {
         {/* 3-Part Answer FAQ Section */}
         {article.faqs.length > 0 && (
           <div className="soft-card p-6 space-y-4 mt-8 border border-[var(--line)] bg-[var(--surface)]">
-            <h3 className="text-sm font-semibold text-[var(--ink)]">
+            <h3 className="text-base font-semibold text-[var(--ink)]">
               Questions Answered in This Guide
             </h3>
             <div className="divide-y divide-[var(--line)]">
               {article.faqs.map((faq, idx) => (
                 <div key={idx} className="py-3 space-y-2 first:pt-0 last:pb-0">
-                  <h4 className="text-xs font-semibold text-[var(--ink)]">{faq.q}</h4>
-                  <p className="text-xs font-medium text-[var(--ink)] leading-relaxed">
+                  <h4 className="text-sm sm:text-base font-semibold text-[var(--ink)]">{faq.q}</h4>
+                  <p className="text-sm font-medium text-[var(--ink)] leading-relaxed">
                     {faq.directAnswer}
                   </p>
-                  <p className="text-xs text-[var(--muted)] leading-relaxed">
+                  <p className="text-sm text-[var(--muted)] leading-relaxed">
                     {faq.explanation}
                   </p>
                   <div>
                     <Link
                       href={faq.linkHref}
-                      className="text-xs font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
+                      className="text-sm font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
                     >
                       <span>{faq.linkText}</span>
-                      <ArrowRight size={12} />
+                      <ArrowRight size={13} />
                     </Link>
                   </div>
                 </div>
@@ -252,17 +252,17 @@ export default async function GuideArticlePage({ params }: Props) {
       <footer className="pt-8 border-t border-[var(--line)] flex flex-col sm:flex-row items-center justify-between gap-4">
         <Link
           href="/guide"
-          className="text-xs text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+          className="text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
         >
           ← Back to all guides
         </Link>
         {nextArticle && (
           <Link
             href={`/guide/${nextArticle.slug}`}
-            className="text-xs font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
+            className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
           >
             <span>Next: {nextArticle.title}</span>
-            <ArrowRight size={13} />
+            <ArrowRight size={14} />
           </Link>
         )}
       </footer>

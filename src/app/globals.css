@@ -50,6 +50,15 @@
     --card-foreground: var(--ink);
     --border: var(--line);
     --muted-foreground: var(--muted);
+
+    /* T-Scale Typography Tokens */
+    --text-display: 2.25rem;
+    --text-h1: 2rem;
+    --text-h2: 1.5rem;
+    --text-h3: 1.125rem;
+    --text-body: 1rem;
+    --text-small: 0.875rem;
+    --text-label: 0.75rem;
   }
 }
 
@@ -292,10 +301,10 @@ button {
 }
 
 .eyebrow {
-  font-size: 11px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--red);
 }
@@ -305,11 +314,10 @@ button {
 }
 
 .section-label {
-  font-size: 11px;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--muted);
 }
 
