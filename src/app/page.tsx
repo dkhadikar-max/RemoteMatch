@@ -91,7 +91,7 @@ export default function LandingPage() {
               href="/onboarding"
               className="soft-button primary inline-flex items-center justify-center gap-2 text-sm"
             >
-              <span>Find your matches →</span>
+              <span>Find your matches</span>
               <ArrowRight size={17} />
             </Link>
             <Link
@@ -165,7 +165,7 @@ export default function LandingPage() {
                   {current.location}
                 </span>
                 <span>·</span>
-                <span className="font-mono">{current.salary}</span>
+                <span className="tabular-nums">{current.salary}</span>
               </div>
             </div>
 
