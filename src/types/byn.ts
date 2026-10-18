@@ -132,39 +132,8 @@ export interface ProfileLocation {
   willingTimezones: string[];
 }
 
-// 2. RESUME INTELLIGENCE & 5-DIMENSION ANALYSIS
-export interface ProfileStrengthDimension {
-  name: string;
-  score: number; // 0-100
-  feedback: string;
-}
-
-export interface AIUncertaintyItem {
-  id: string;
-  skill: string;
-  prompt: string;
-  resolved: boolean;
-  resolution?: 'added' | 'not_relevant' | 'no';
-  whereUsed?: string;
-}
-
-export interface ProfileStrengthAnalysis {
-  overallScore: number; // e.g. 78 / 100
-  dimensions: {
-    relevance: ProfileStrengthDimension;
-    evidence: ProfileStrengthDimension;
-    impact: ProfileStrengthDimension;
-    atsReadability: ProfileStrengthDimension;
-    targetAlignment: ProfileStrengthDimension;
-  };
-  strongAreas: string[];
-  improvementAreas: Array<{
-    title: string;
-    explanation: string;
-    action: string;
-  }>;
-  uncertainties: AIUncertaintyItem[];
-}
+// 2. RESUME INTELLIGENCE — the old client-side 5-dimension analysis types (ProfileStrengthAnalysis,
+//    AIUncertaintyItem, ProfileStrengthDimension) were removed with their only producer in resume PR A.
 
 // 3. JOB-SPECIFIC RESUME ANALYSIS
 export interface JobSpecificResumeImprovement {

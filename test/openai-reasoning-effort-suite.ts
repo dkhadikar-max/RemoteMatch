@@ -36,10 +36,11 @@ function assert(condition: boolean, message: string) {
 }
 
 // src/lib/ai/resume.ts (the unused resume parser) was deleted in the resume P1 clean-up: it had zero importers, so its one
-// chat.completions.create() call site is gone. Every REMAINING call site is still checked below.
+// chat.completions.create() call site is gone. resume-intelligence.ts's unreachable analyzeResumeWithAI, together with its call
+// site, was removed in resume PR A. Every REMAINING call site is still checked below; the new server-side Resume
+// Intelligence service (PR B) must be added to this list when it lands.
 const FILES = [
   'src/lib/ai/materials.ts',
-  'src/lib/ai/resume-intelligence.ts',
 ];
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -87,7 +88,7 @@ async function main() {
     totalCallSites += callSiteCount;
   }
 
-  assert(totalCallSites === 2, `exactly 2 total chat.completions.create() call sites across both files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
+  assert(totalCallSites === 1, `exactly 1 total chat.completions.create() call site across the listed files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
 
   console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
   process.exit(failed > 0 ? 1 : 0);

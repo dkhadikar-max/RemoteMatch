@@ -21,10 +21,9 @@ import ws from 'ws';
 if (!(global as any).WebSocket) (global as any).WebSocket = ws;
 
 import { PersonProfile, CanonicalOpportunity } from '../src/types/byn';
-import {
-  analyzeResumeHeuristically,
-  generateJobSpecificResumeAnalysis,
-} from '../src/lib/ai/resume-intelligence';
+import { generateJobSpecificResumeAnalysis } from '../src/lib/ai/resume-intelligence';
+import { checkResumeAgainstSkills } from '../src/lib/resume/resume-check';
+import { isGeneratedKitSupported } from '../src/lib/ai/anti-fabrication';
 import { generateApplicationKit } from '../src/lib/ai/materials';
 import { checkHardEligibility, computeScreeningFit, generateRuleBasedMatchAnalysis } from '../src/lib/matching/engine';
 
@@ -132,27 +131,26 @@ Education: BS Computer Science, 2021.`,
   };
 
   console.log('--- TEST 1: Ambiguous Evidence Detection (Skill Claimed But Absent in Text) ---');
-  const profileAnalysis = analyzeResumeHeuristically(candidate1, candidate1.rawResumeText!);
-
-  const goUncertainty = profileAnalysis.uncertainties.find((u) => u.skill.toLowerCase() === 'go');
-  assert(Boolean(goUncertainty), 'Uncertainty generated for Go (claimed in form, absent in resume text)');
-  assert(
-    goUncertainty?.prompt.includes('Go') || false,
-    'Prompts candidate to qualify ambiguous experience rather than assuming mastery'
-  );
+  // The deprecated client-side analyser was removed (resume PR A). The production contracts for these invariants are
+  // onboarding's facts-only resume check and the anti-fabrication screen applied to every generated rewrite.
+  const resumeCheck = checkResumeAgainstSkills(candidate1.skills.map((s) => s.skillName), candidate1.rawResumeText);
+  assert(resumeCheck.status === 'ok' && resumeCheck.notFound.includes('Go'), 'Go (claimed in form, absent in resume text) is reported as not found');
+  assert(!resumeCheck.found.includes('Go'), 'An absent skill is never reported as demonstrated (no assumed mastery)');
 
   console.log('\n--- TEST 2: Anti-Hallucination on Absent Metrics & Scale ---');
-  // Verify impact analysis does not award false unearned score
-  assert(profileAnalysis.dimensions.impact.score <= 65, 'Sparse metrics receive truthful modest impact score (<= 65)');
-  assert(
-    profileAnalysis.dimensions.impact.feedback.includes('measurable') ||
-    profileAnalysis.improvementAreas.some((i) => i.action.includes('percentages') || i.action.includes('metrics')),
-    'Coaches candidate to add measurable outcomes instead of inventing fake % numbers'
-  );
+  const rewrite = (suggestedRewrite: string) => ({
+    coverLetter: '',
+    resumeTweaks: { summaryAdjustment: '', bulletRewrites: [{ originalContext: '', suggestedRewrite, targetRequirement: '' }] },
+  });
+  const ctx1 = { gapSkills: ['Rust', 'Kubernetes'], rawResumeText: candidate1.rawResumeText!, opportunityCompany: jobFullStack.company };
+  assert(!isGeneratedKitSupported(rewrite('Improved page load speed by 40% across the product.'), ctx1), 'A rewrite inventing a % metric absent from the resume is rejected');
+  assert(!isGeneratedKitSupported(rewrite('Served 200 customers per day with React components.'), ctx1), 'A rewrite inventing a scale number is rejected');
+  assert(!isGeneratedKitSupported(rewrite('Deployed services on Kubernetes for the team.'), ctx1), 'A rewrite adding a technology the candidate does not show is rejected');
+  assert(isGeneratedKitSupported(rewrite('Developed modular user interface components using React and TypeScript.'), ctx1), 'A rewrite that stays within the resume evidence passes');
 
-  // Verify strongAreas does not contain fake percentages or fake technologies
-  const inventedTechInStrong = profileAnalysis.strongAreas.some((s) => /kubernetes|rust|aws|docker|microservices/i.test(s));
-  assert(!inventedTechInStrong, 'Does not invent technologies not found in candidate profile');
+  // The resume check reports declared skills only — nothing outside the profile can appear as found.
+  const inventedTechInFound = resumeCheck.found.some((s) => /kubernetes|rust|aws|docker|microservices/i.test(s));
+  assert(!inventedTechInFound, 'Does not invent technologies not found in candidate profile');
 
   console.log('\n--- TEST 3: Match Engine Factuality & Gap Truthfulness ---');
   const eligibility = checkHardEligibility(candidate1, jobFullStack);
@@ -235,12 +233,9 @@ Education: BS Computer Science, 2021.`,
     rawResumeText: `Reduced p99 database latency by 45% using Postgres read replicas. Scaled architecture to 200k daily queries.`,
   };
 
-  const analysis2 = analyzeResumeHeuristically(candidate2, candidate2.rawResumeText!);
-  assert(analysis2.dimensions.impact.score >= 70, 'Verified metric in resume correctly recognized in Impact Score (>= 70)');
-  assert(
-    analysis2.dimensions.impact.feedback.includes('quantifiable') || analysis2.dimensions.impact.feedback.includes('metric'),
-    'Acknowledges candidate real quantifiable metrics'
-  );
+  const ctx2 = { gapSkills: [], rawResumeText: candidate2.rawResumeText!, opportunityCompany: 'ScaleWorks' };
+  assert(isGeneratedKitSupported(rewrite('Reduced p99 database latency by 45% using Postgres read replicas.'), ctx2), 'A metric that IS in the resume (45%) may be used in a rewrite');
+  assert(!isGeneratedKitSupported(rewrite('Reduced p99 database latency by 60% using Postgres read replicas.'), ctx2), 'Inflating that real metric (45% → 60%) is rejected');
 
   console.log('\n--- TEST 6: Strict Verification of 12 Prohibited Manufacture Categories ---');
   const categories = [

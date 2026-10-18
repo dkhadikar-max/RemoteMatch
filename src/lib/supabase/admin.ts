@@ -67,8 +67,8 @@ let adminClient: SupabaseClient | null = null;
  *     registry, never from client-supplied input.
  *   - `src/lib/ai/spend-ledger.ts` (AI Phase 1B,
  *     docs/ai-phase1b-implementation-plan.md), used by `materials.ts`
- *     (O3/O4), `resume.ts` and `resume-intelligence.ts` (O5, still
- *     structurally unreachable — see those files' own headers). UNLIKE the
+ *     (O3/O4). (`resume.ts` and `resume-intelligence.ts`'s client-side
+ *     analyser, O5, were removed in the resume P1 / PR A clean-ups.) UNLIKE the
  *     C3/C5 entries above, these ARE user-facing call sites (reached from
  *     `/api/opportunities/swipe`'s proposal-generation flow and
  *     onboarding), so the trust anchor here is the same shape as
