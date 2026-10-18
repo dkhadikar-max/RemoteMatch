@@ -13,10 +13,8 @@ import {
   computeScreeningFit,
   generateRuleBasedMatchAnalysis,
 } from '../src/lib/matching/engine';
-import {
-  analyzeResumeHeuristically,
-  generateJobSpecificResumeAnalysis,
-} from '../src/lib/ai/resume-intelligence';
+import { generateJobSpecificResumeAnalysis } from '../src/lib/ai/resume-intelligence';
+import { checkResumeAgainstSkills } from '../src/lib/resume/resume-check';
 import {
   cleanOfficialUrl,
   createNormalizedJobKey,
@@ -60,17 +58,17 @@ async function runAllTests() {
 Worked with React, TypeScript, and Node.js to build scalable web applications.
 Experienced in PostgreSQL and modern cloud deployment.`;
 
-  const analysis = analyzeResumeHeuristically(candidateWithUncertainty, resumeWithoutPython);
-
-  const pythonUncertainty = analysis.uncertainties.find((u) => u.skill.toLowerCase() === 'python');
+  // The deprecated client-side analyser was removed (resume PR A); onboarding's facts-only resume check is the
+  // production contract for this invariant.
+  const check = checkResumeAgainstSkills(candidateWithUncertainty.skills.map((s) => s.skillName), resumeWithoutPython);
   assert(
-    Boolean(pythonUncertainty),
+    check.status === 'ok' && check.notFound.includes('Python'),
     'Detects claimed skill (Python) missing from resume text',
-    'Uncertainty item should be generated'
+    JSON.stringify(check)
   );
   assert(
-    pythonUncertainty?.prompt.includes('Python') || false,
-    'Uncertainty prompt explicitly asks user to clarify missing experience'
+    check.found.includes('React') && !check.found.includes('Python'),
+    'A claimed skill that IS in the text is reported found; the missing one is never reported found'
   );
 
   // --------------------------------------------------------------------------
@@ -97,37 +95,28 @@ Experienced in PostgreSQL and modern cloud deployment.`;
   console.log('\nTEST 3: No Hallucination Invariant');
   const sparseResume = `Alex Chen. Software Developer.
 Worked on web development and fixed bugs for client applications.`;
-  const sparseAnalysis = analyzeResumeHeuristically(DEFAULT_DEMO_PROFILE, sparseResume);
-
-  // Check impact feedback
-  const impactFeedback = sparseAnalysis.dimensions.impact.feedback;
+  const sparseCheck = checkResumeAgainstSkills(DEFAULT_DEMO_PROFILE.skills.map((s) => s.skillName), sparseResume);
+  const allowedKeys = ['status', 'characterCount', 'wordCount', 'found', 'notFound', 'skillsChecked'];
   assert(
-    impactFeedback.includes('measurable') || sparseAnalysis.improvementAreas.some((i) => i.action.includes('quantifiable') || i.action.includes('metric')),
-    'Advises candidate to add measurable outcomes rather than hallucinating fake % metrics'
+    Object.keys(sparseCheck).every((k) => allowedKeys.includes(k)),
+    'The resume check returns only computable facts — no score, strengths, feedback or improvement text',
+    Object.keys(sparseCheck).join(',')
   );
   assert(
-    !sparseAnalysis.strongAreas.some((a) => /\d{2}%/.test(a)),
-    'Does not invent fake percentages in strong areas'
+    sparseCheck.found.every((s) => DEFAULT_DEMO_PROFILE.skills.some((d) => d.skillName === s)),
+    'Nothing reported as found that is not a declared skill (no invented strengths)'
   );
 
   // --------------------------------------------------------------------------
-  // TEST 4: 5-Dimension Profile Strength Calculation
+  // TEST 4: Resume check failure states (replaces the removed 5-dimension score)
   // --------------------------------------------------------------------------
-  console.log('\nTEST 4: 5-Dimension Profile Strength Calculation');
-  assert(
-    typeof sparseAnalysis.dimensions.relevance.score === 'number' &&
-    typeof sparseAnalysis.dimensions.evidence.score === 'number' &&
-    typeof sparseAnalysis.dimensions.impact.score === 'number' &&
-    typeof sparseAnalysis.dimensions.atsReadability.score === 'number' &&
-    typeof sparseAnalysis.dimensions.targetAlignment.score === 'number',
-    'All 5 readiness dimensions evaluated independently'
-  );
-
-  // Verify sparse resume receives appropriate impact score (not false 95)
-  assert(
-    sparseAnalysis.dimensions.impact.score <= 60,
-    'Sparse resume without metrics does not receive falsely inflated impact score'
-  );
+  console.log('\nTEST 4: Resume check failure states');
+  assert(checkResumeAgainstSkills(['React'], '').status === 'empty', 'Empty resume text → status "empty", nothing claimed');
+  const tiny = checkResumeAgainstSkills(['React', 'Python'], 'React dev');
+  assert(tiny.status === 'too_short' && tiny.notFound.length === 0, 'Too little text → positives only; never claims a skill is missing');
+  let threw = false;
+  try { checkResumeAgainstSkills(['C++', '((('], null); checkResumeAgainstSkills('not-an-array', 42); } catch { threw = true; }
+  assert(!threw, 'Hostile skills and non-string text never throw');
 
   // --------------------------------------------------------------------------
   // TEST 5: Hard Eligibility Gate Correctness

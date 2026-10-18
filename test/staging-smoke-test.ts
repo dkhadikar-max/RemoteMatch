@@ -19,7 +19,7 @@ import {
   DecisionSnapshot,
 } from '../src/types/byn';
 import { checkHardEligibility, computeScreeningFit, generateRuleBasedMatchAnalysis } from '../src/lib/matching/engine';
-import { analyzeResumeHeuristically } from '../src/lib/ai/resume-intelligence';
+import { checkResumeAgainstSkills } from '../src/lib/resume/resume-check';
 import { generateApplicationKit } from '../src/lib/ai/materials';
 import { cleanOfficialUrl } from '../src/lib/ingestion/pipeline';
 
@@ -130,11 +130,15 @@ FinTech Cloud (2021 - Present): Senior Software Engineer
 - Led distributed async team delivering core features on schedule.
 Technical Skills: React, TypeScript, Node.js, PostgreSQL, Docker.`;
 
-  const resumeAnalysis = analyzeResumeHeuristically(user, user.rawResumeText);
-  user.profileStrength = resumeAnalysis.overallScore;
-
-  assert(user.profileStrength >= 70, `STAGE 2: Profile Strength evaluated (${user.profileStrength}/100)`);
-  assert(resumeAnalysis.dimensions.impact.score >= 70, 'STAGE 2: Verified impact metrics recognized in profile readiness');
+  // The deprecated 0-100 "profile strength" analyser was removed (resume PR A); onboarding's facts-only resume check
+  // is the production step here. It reports which declared skills the text shows, and nothing else.
+  const resumeCheck = checkResumeAgainstSkills(user.skills.map((s) => s.skillName), user.rawResumeText);
+  assert(resumeCheck.status === 'ok', `STAGE 2: Resume text accepted for the check (${resumeCheck.wordCount} words)`);
+  assert(
+    resumeCheck.found.length === user.skills.length && resumeCheck.notFound.length === 0,
+    'STAGE 2: Every declared skill is found in the resume text',
+    JSON.stringify(resumeCheck)
+  );
 
   // --------------------------------------------------------------------------
   // STAGE 3: JOB FEED & OPPORTUNITY VIEWED

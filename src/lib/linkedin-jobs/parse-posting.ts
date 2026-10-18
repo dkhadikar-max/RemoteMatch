@@ -1,8 +1,8 @@
 /**
  * LinkedIn Job Finder — heuristic single-paste parser (plan §26 option (b)).
  *
- * Non-AI, best-effort, styled after analyzeResumeHeuristically's fallback
- * shape (src/lib/ai/resume-intelligence.ts): regex/keyword-over-raw-text,
+ * Non-AI, best-effort, styled after the (since removed) client-side resume
+ * heuristic's fallback shape: regex/keyword-over-raw-text,
  * never a network call, never invents a field it can't find. The UI always
  * shows the result as an editable confirm/edit step (plan §26 option (c))
  * — this function's job is to save typing, not to be authoritative.

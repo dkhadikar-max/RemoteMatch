@@ -21,7 +21,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import type { PersonProfile } from '../src/types/byn';
-import { analyzeResumeHeuristically, generateJobSpecificResumeAnalysis } from '../src/lib/ai/resume-intelligence';
+import { generateJobSpecificResumeAnalysis } from '../src/lib/ai/resume-intelligence';
 import { checkResumeAgainstSkills } from '../src/lib/resume/resume-check';
 import { skillAppearsInText } from '../src/lib/resume/skill-evidence';
 import { CURATED_JOBS } from '../src/lib/providers/curated';
@@ -75,8 +75,10 @@ function safe<T>(fn: () => T): { ok: T } | { threw: string } {
   try { return { ok: fn() }; } catch (e) { return { threw: (e as Error).message }; }
 }
 function computeGolden() {
+  // `analyzer` is no longer computed: analyzeResumeHeuristically was removed in resume PR A. ANALYZER_CASES stays as
+  // documentation of the recorded corpus (the golden file still holds the outputs that justified the removal).
+  void ANALYZER_CASES;
   return {
-    analyzer: ANALYZER_CASES.map(([name, p, text]) => [name, safe(() => analyzeResumeHeuristically(p, text))]),
     jobSpecific: [profile(['React', 'TypeScript'], ['Frontend Engineer'], REAL_RESUME), profile(['Go'], ['Backend Engineer'], ''), profile([], [])]
       .map((p, pi) => OPPS.map((o, oi) => [`${pi}/${oi}`, safe(() => generateJobSpecificResumeAnalysis(p, o))])),
     check: CHECK_CASES.map(([name, s, t]) => [name, checkResumeAgainstSkills(s, t)]),
@@ -106,43 +108,34 @@ async function main() {
   const now = JSON.parse(JSON.stringify(golden));
   // P1b INTENTIONALLY replaced generateJobSpecificResumeAnalysis (invented template text → data-derived suggestions);
   // that function is therefore no longer pinned to the P1 golden and is covered by test/resume-p1b-suite.ts instead.
-  for (const key of ['analyzer', 'check', 'matcher'] as const) {
+  // `analyzer`: the function was REMOVED in resume PR A (docs/resume-intelligence-design.md §1), so it is no longer pinned.
+  for (const key of ['check', 'matcher'] as const) {
     assert(JSON.stringify(now[key]) === JSON.stringify(recorded[key]), `${key}: output identical to the recorded base output (${(recorded[key] as unknown[]).length} cases)`);
   }
   assert(JSON.stringify(now.jobSpecific) !== JSON.stringify(recorded.jobSpecific), 'jobSpecific: deliberately CHANGED by P1b (the old golden documents the invented text that was removed)');
   assert((recorded.analyzer as any[]).some(([n, r]) => n.startsWith('C++') && 'threw' in r), 'the golden corpus really includes the known C++ analyser crash (so "identical" includes unfixed legacy quirks — they are P-later, not P1)');
 
-  console.log('\n2. Extracted PDF functions == the original inline expressions');
+  console.log('\n2. PDF extraction — DELIBERATELY changed by resume PR A (layout-aware; was equivalence-pinned in P1)');
+  // P1 proved the extracted functions equal the original one-line join. Resume PR A (Deep-approved, decision 2 of
+  // docs/resume-intelligence-design.md §10) replaces that join with a layout-aware one, so equivalence is NO LONGER the
+  // contract: test/pdf-extraction-fidelity-suite.ts is. Here we only record that the change is real and intended.
   const mod = await import('../src/lib/resume/extract-pdf-text');
   assert(typeof mod.joinPageItems === 'function' && typeof mod.assemblePdfText === 'function', 'joinPageItems / assemblePdfText exist and are exported');
-  let rng = 424242;
-  const rnd = () => { rng = (rng * 1103515245 + 12345) & 0x7fffffff; return rng / 0x7fffffff; };
-  const atoms = ['Hello', 'World', ' ', '', 'C++', 'résumé', '\u00A0', '\t', 'a  b', '日本語', '\n', 'x'.repeat(50), '•'];
-  let joinOk = true; let assembleOk = true; let detail = '';
-  for (let i = 0; i < 3000; i++) {
-    const items = Array.from({ length: Math.floor(rnd() * 30) }, () => (rnd() < 0.15 ? { type: 'beginMarkedContent' } : { str: atoms[Math.floor(rnd() * atoms.length)], hasEOL: rnd() < 0.3 }));
-    if (mod.joinPageItems(items) !== ORIGINAL_join(items)) { joinOk = false; detail = JSON.stringify(items).slice(0, 120); break; }
-    const pages = Array.from({ length: Math.floor(rnd() * 6) }, () => ORIGINAL_join(Array.from({ length: Math.floor(rnd() * 12) }, () => ({ str: atoms[Math.floor(rnd() * atoms.length)] }))));
-    if (mod.assemblePdfText(pages) !== ORIGINAL_assemble(pages)) { assembleOk = false; detail = JSON.stringify(pages).slice(0, 120); break; }
-  }
-  assert(joinOk, 'joinPageItems equals the original `items.map(str).join(" ")` on 3,000 generated item lists (incl. non-text items, empty, unicode, NBSP, tabs)', detail);
-  assert(assembleOk, 'assemblePdfText equals the original `pages.join("\\n\\n").replace(/[ \\t]+/g," ").trim()` on 3,000 generated page lists', detail);
   assert(mod.assemblePdfText([]) === '' && mod.assemblePdfText(['  ', '\t']) === '', 'empty / whitespace-only pages assemble to "" (the caller still raises its "no text" error)');
   assert(mod.assemblePdfText(['a', 'b']) === 'a\n\nb', 'pages are still separated by a blank line');
 
-  // The real pdfjs on a hand-built PDF: characterises the CURRENT behaviour (line breaks are lost) — not changed in P1.
+  // The real pdfjs on a hand-built two-line PDF: P1 characterised "line breaks are lost"; PR A flips that.
   const pdf = buildPdf(['Hello World', 'Second line C++ and Go']);
   const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const std = path.join(root, 'node_modules', 'pdfjs-dist', 'standard_fonts').split(path.sep).join('/') + '/'; // pdfjs wants forward slashes + a trailing slash
-  let real = '';
   try {
     const doc = await pdfjs.getDocument({ data: new Uint8Array(pdf), standardFontDataUrl: std, useSystemFonts: false, isEvalSupported: false }).promise;
     const page = await doc.getPage(1);
     const content = await page.getTextContent();
-    real = mod.assemblePdfText([mod.joinPageItems(content.items)]);
-    assert(real === ORIGINAL_assemble([ORIGINAL_join(content.items)]), 'on real pdfjs output the extracted functions equal the original expressions');
-    assert(/Hello World/.test(real) && /C\+\+ and Go/.test(real), 'real PDF text is extracted', JSON.stringify(real));
-    assert(!real.includes('\n'), 'CHARACTERISATION (unchanged by P1): the two PDF lines come out as ONE line — line breaks are lost; fixing it changes persisted resume text, so it is a later, approved phase', JSON.stringify(real));
+    const real = mod.assemblePdfText([mod.joinPageItems(content.items)]);
+    const old = ORIGINAL_assemble([ORIGINAL_join(content.items)]);
+    assert(real === 'Hello World\nSecond line C++ and Go', 'CHARACTERISATION (changed by PR A): the two PDF lines now come out as two lines', JSON.stringify(real));
+    assert(!old.includes('\n') && old.replace(/\s+/g, ' ') === real.replace(/\s+/g, ' '), 'the only difference from the original join is whitespace layout — the same words in the same order', JSON.stringify({ old, real }));
   } catch (e) {
     assert(false, 'pdfjs (legacy build, Node) could read the hand-built PDF', (e as Error).message);
   }
@@ -167,7 +160,9 @@ async function main() {
   const importers = prod.filter((p) => /lib\/ai\/resume-intelligence/.test(fs.readFileSync(p, 'utf8'))).map(rel);
   assert(importers.length === 1 && importers[0] === 'src/app/match/[jobId]/page.tsx', 'the only production importer of resume-intelligence.ts is the match page (generateJobSpecificResumeAnalysis, unchanged)', importers.join(', '));
   const ri = fs.readFileSync(path.join(root, 'src/lib/ai/resume-intelligence.ts'), 'utf8');
-  assert((ri.match(/@deprecated/g) ?? []).length >= 2, 'analyzeResumeHeuristically and analyzeResumeWithAI carry @deprecated notices');
+  assert(!/export\s+(async\s+)?function\s+(analyzeResumeHeuristically|analyzeResumeWithAI)\b/.test(ri), 'analyzeResumeHeuristically and analyzeResumeWithAI are REMOVED (resume PR A), not just deprecated');
+  const anyRef = all.filter((p) => /\b(analyzeResumeHeuristically|analyzeResumeWithAI)\s*\(/.test(fs.readFileSync(p, 'utf8'))).map(rel);
+  assert(anyRef.length === 0, 'nothing in src/, test/ or scripts/ calls the removed analysers', anyRef.join(', '));
 
   console.log('\n4. Scope — no matching, scoring, persistence, API or snapshot change (pinned to the P1 commit itself)');
   // These guards describe what the P1 commit changed. They read that immutable commit (not the branch diff), so they
