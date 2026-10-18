@@ -26,40 +26,29 @@ function hasAuthCookie(): boolean {
 export function Navbar() {
   const pathname = usePathname();
   const isLanding = pathname === '/';
-  // /login is reachable with no session by construction (it's where an
-  // unauthenticated visitor lands) — showing the authenticated app's nav
-  // (Jobs/Applications/Profile, saves badge, avatar) there is misleading,
-  // since none of it reflects real state for a signed-out visitor.
-  const isAuthPage = pathname === '/login';
+  // Auth pages (/login, /signup, /forgot-password, /reset-password) are
+  // focused conversion flows reachable with no session — showing the
+  // authenticated app's nav (Jobs/Applications/Profile, saves badge, avatar)
+  // or mobile bottom bar there is misleading and distracts from the auth task.
+  const isAuthPage =
+    pathname === '/login' ||
+    pathname === '/signup' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password';
   // The public /remote-jobs SEO directory renders its own in-page category
   // navigation near the bottom of the initial mobile viewport; the fixed
-  // app-shortcut bar (Jobs/Applications/Profile — all auth-gated
-  // destinations a public-directory visitor may not even have a session
-  // for) has been confirmed, via measured DOM overlap, to sit directly on
-  // top of that in-page navigation on mobile, making the second row of
-  // category chips untappable. Scoped to exactly this route family — the
-  // authenticated app pages this bar actually serves are unaffected.
+  // app-shortcut bar has been confirmed via measured DOM overlap to sit
+  // directly on top of that in-page navigation on mobile.
   const isRemoteJobsDirectory = pathname?.startsWith('/remote-jobs') ?? false;
-  // Same overlap class of bug, confirmed via measured DOM coordinates on the
-  // landing page itself: the fixed app-shortcut bar (Jobs/Applications/
-  // Profile) sits directly over non-interactive section headings at several
-  // scroll positions ("Find. Understand. Apply.", the pricing section
-  // heading), since the landing page's own long-form marketing content was
-  // never designed with this bar's fixed footprint in mind. Same fix as
-  // /remote-jobs: an anonymous landing-page visitor doesn't have real
-  // Applications/Profile state for this bar to reflect anyway.
-  const isLandingForMobileNav = isLanding;
-  // Same overlap class again, confirmed via screenshot on both /guide and
-  // /guide/[slug]: their long-form cards/article text run under the fixed
-  // bar's footprint the same way /remote-jobs and the landing page did, and
-  // a public guide reader doesn't have real Applications/Profile state for
-  // this bar to reflect either.
   const isGuideDirectory = pathname?.startsWith('/guide') ?? false;
+  const isPublicRoute = isLanding || isRemoteJobsDirectory || isGuideDirectory;
 
   // Server-authoritative entitlement. `null` until it resolves AND whenever
   // there is no session — the navbar never renders a fabricated quota/plan.
   const [ent, setEnt] = useState<ServerEntitlement | null>(null);
   const sessionPossible = !isLanding && !isAuthPage;
+  const showMarketingNav = isPublicRoute && !ent;
+  const hideMobileBottomNav = isAuthPage || isPublicRoute || pathname === '/onboarding';
 
   // Admin-host detection deferred to an effect (not evaluated directly in the
   // render body) so the CLIENT'S FIRST render matches the SERVER'S: `window`
@@ -156,10 +145,10 @@ export function Navbar() {
             <span className="text-lg font-bold tracking-tight text-[var(--ink)]">RemoteMatch</span>
           </Link>
 
-          {/* Center Navigation Links — omitted entirely on /login; see isAuthPage above */}
+          {/* Center Navigation Links — omitted entirely on auth pages; see isAuthPage above */}
           {!isAuthPage && (
           <nav className="hidden items-center gap-1 md:flex">
-            {isLanding ? (
+            {showMarketingNav ? (
               <>
                 <Link
                   href="/feed"
@@ -169,28 +158,36 @@ export function Navbar() {
                 </Link>
                 <Link
                   href="/remote-jobs"
-                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
+                  className={`rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors lg:px-3.5 ${
+                    pathname?.startsWith('/remote-jobs')
+                      ? 'text-[var(--red)] font-semibold'
+                      : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                  }`}
                 >
                   Directory
                 </Link>
                 <a
-                  href="#how-it-works"
+                  href="/#how-it-works"
                   className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   How It Works
                 </a>
                 <Link
                   href="/guide"
-                  className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
+                  className={`rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap transition-colors lg:px-3.5 ${
+                    pathname?.startsWith('/guide')
+                      ? 'text-[var(--red)] font-semibold'
+                      : 'text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)]'
+                  }`}
                 >
                   Guides
                 </Link>
-                <Link
-                  href="/settings?tab=billing"
+                <a
+                  href="/#pricing"
                   className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Pricing
-                </Link>
+                </a>
               </>
             ) : (
               <>
@@ -243,10 +240,10 @@ export function Navbar() {
           </nav>
           )}
 
-          {/* Right Controls — omitted entirely on /login; brand/header only */}
+          {/* Right Controls — omitted entirely on auth pages; brand/header only */}
           {!isAuthPage && (
           <div className="flex items-center gap-3">
-            {isLanding ? (
+            {showMarketingNav ? (
               <>
                 {/* Hidden below sm: on a narrow viewport this pair wrapped
                     onto multiple lines next to the logo (no responsive
@@ -295,12 +292,9 @@ export function Navbar() {
       </header>
 
       {/* Mobile Bottom Navigation Bar (Thumb-friendly, 44px+ target) —
-          omitted on /login for the same reason as the desktop right controls,
-          on /remote-jobs where it overlaps that page's own category nav on
-          mobile (see isRemoteJobsDirectory above), and on the landing page
-          where it overlaps marketing section headings while scrolling (see
-          isLandingForMobileNav above). */}
-      {!isAuthPage && !isRemoteJobsDirectory && !isLandingForMobileNav && !isGuideDirectory && (
+          omitted on auth pages, on public content routes where it overlaps
+          in-page category nav/content, and on onboarding wizard. */}
+      {!hideMobileBottomNav && (
       <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"
