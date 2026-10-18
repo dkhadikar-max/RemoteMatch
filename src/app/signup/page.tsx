@@ -47,8 +47,8 @@ export default function SignupPage() {
           <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
             <ShieldCheck size={20} />
           </div>
-          <h1 className="text-xl font-bold text-[var(--ink)]">Create your account</h1>
-          <p className="text-xs text-[var(--muted)]">
+          <h1 className="text-xl sm:text-2xl font-bold text-[var(--ink)]">Create your account</h1>
+          <p className="text-sm text-[var(--muted)]">
             Set a password, then we&apos;ll email you a code to verify your address.
           </p>
         </div>
@@ -56,31 +56,31 @@ export default function SignupPage() {
         <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Name</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Name</label>
               <input
                 type="text"
                 required
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="name"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Email</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="email"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Password</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Password</label>
               <input
                 type="password"
                 required
@@ -88,18 +88,18 @@ export default function SignupPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="new-password"
               />
             </div>
 
             {message && (
               <p
-                className={`text-xs font-medium flex items-start gap-1.5 ${
+                className={`text-sm font-medium flex items-start gap-1.5 ${
                   message.type === 'success' ? 'text-[#04714f]' : 'text-[var(--red)]'
                 }`}
               >
-                {message.type === 'success' && <CheckCircle2 size={13} className="shrink-0 mt-0.5" />}
+                {message.type === 'success' && <CheckCircle2 size={15} className="shrink-0 mt-0.5" />}
                 <span>{message.text}</span>
               </p>
             )}
@@ -107,14 +107,14 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={pending || !name.trim() || !email || password.length < 8}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-sm font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
             >
               <span>{pending ? 'Sending…' : 'Continue'}</span>
-              <ArrowRight size={13} />
+              <ArrowRight size={15} />
             </button>
           </form>
 
-          <p className="text-center text-xs text-[var(--muted)]">
+          <p className="text-center text-sm text-[var(--muted)]">
             Already have an account?{' '}
             <Link href="/login" className="font-semibold text-[var(--red)] hover:underline">
               Sign in

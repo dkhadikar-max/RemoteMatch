@@ -76,10 +76,10 @@ export default function GuideHubPage() {
           Practical guides for the modern remote job search.
         </h1>
         <div className="soft-card p-5 bg-[var(--surface-soft)] border border-[var(--line)]">
-          <p className="text-sm font-medium text-[var(--ink)] leading-relaxed">
+          <p className="text-sm sm:text-base font-medium text-[var(--ink)] leading-relaxed">
             RemoteMatch provides tactical guides to help remote job seekers evaluate job requirements, navigate international timezones, understand transparent salary structures, write concise proposal letters, and track applications from application to offer.
           </p>
-          <p className="text-xs text-[var(--muted)] mt-2 leading-relaxed">
+          <p className="text-sm text-[var(--muted)] mt-2 leading-relaxed">
             Read practical recommendations below, or explore verified remote openings in our active directory.
           </p>
         </div>
@@ -87,13 +87,13 @@ export default function GuideHubPage() {
 
       {/* Topical Clusters Navigation */}
       <div className="flex flex-wrap gap-2 pt-1">
-        <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mr-2 self-center">
+        <span className="text-xs sm:text-sm font-semibold text-[var(--muted)] uppercase tracking-wider mr-2 self-center">
           Topical Clusters:
         </span>
         {Array.from(new Set(SEO_GUIDE_ARTICLES.map((a) => a.topicalCluster))).map((cluster) => (
           <span
             key={cluster}
-            className="rounded-full bg-[var(--surface)] border border-[var(--line)] px-3 py-1 text-[11px] font-medium text-[var(--ink)] shadow-sm"
+            className="rounded-full bg-[var(--surface)] border border-[var(--line)] px-3 py-1 text-xs sm:text-sm font-medium text-[var(--ink)] shadow-sm"
           >
             {cluster}
           </span>
@@ -108,38 +108,38 @@ export default function GuideHubPage() {
             className="soft-card p-6 sm:p-7 flex flex-col justify-between hover:shadow-md transition-shadow group border border-[var(--line)] bg-[var(--surface)]"
           >
             <div className="space-y-3">
-              <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-                <span className="tag !text-[10px] !bg-[var(--surface-soft)]">
+              <div className="flex items-center justify-between text-xs sm:text-sm text-[var(--muted)]">
+                <span className="tag !bg-[var(--surface-soft)]">
                   {article.category}
                 </span>
                 <span className="flex items-center gap-1">
-                  <Clock size={12} />
+                  <Clock size={13} />
                   {article.readingTime}
                 </span>
               </div>
 
-              <h2 className="text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors leading-snug">
+              <h2 className="text-lg sm:text-xl font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors leading-snug">
                 <Link href={`/guide/${article.slug}`}>
                   {article.title}
                 </Link>
               </h2>
 
-              <p className="text-xs text-[var(--muted)] leading-relaxed line-clamp-3">
+              <p className="text-sm text-[var(--muted)] leading-relaxed line-clamp-3">
                 {article.description}
               </p>
             </div>
 
             <div className="mt-6 pt-4 border-t border-[var(--line)] flex items-center justify-between">
-              <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
-                <Calendar size={12} />
+              <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+                <Calendar size={13} />
                 {article.publishedDate}
               </span>
               <Link
                 href={`/guide/${article.slug}`}
-                className="text-xs font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
+                className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
               >
                 <span>Read guide</span>
-                <ArrowRight size={13} />
+                <ArrowRight size={14} />
               </Link>
             </div>
           </article>
@@ -148,10 +148,10 @@ export default function GuideHubPage() {
 
       {/* Relevant Hubs Integration */}
       <section className="soft-card p-6 sm:p-8 space-y-4">
-        <h3 className="text-sm font-semibold text-[var(--ink)]">
+        <h3 className="text-base font-semibold text-[var(--ink)]">
           Explore Related Remote Opportunities by Category
         </h3>
-        <p className="text-xs text-[var(--muted)] leading-relaxed">
+        <p className="text-sm text-[var(--muted)] leading-relaxed">
           Put these strategies into practice with verified live opportunities in our curated directory:
         </p>
         <div className="flex flex-wrap gap-2 pt-1">
@@ -159,7 +159,7 @@ export default function GuideHubPage() {
             <Link
               key={cat.slug}
               href={`/remote-jobs/${cat.slug}`}
-              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
+              className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs sm:text-sm text-[var(--ink)] hover:border-[var(--red)] hover:text-[var(--red)] transition-colors"
             >
               {cat.title}
             </Link>
@@ -170,10 +170,10 @@ export default function GuideHubPage() {
       {/* Conversion Banner */}
       <div className="soft-card p-8 text-center space-y-4 bg-gradient-to-b from-white to-[var(--surface-soft)]">
         <span className="tag">Know Your Chances Before You Apply</span>
-        <h2 className="text-2xl font-semibold text-[var(--ink)]">
+        <h2 className="text-2xl sm:text-3xl font-semibold text-[var(--ink)]">
           Put tactical advice to work on your real profile.
         </h2>
-        <p className="text-xs text-[var(--muted)] max-w-md mx-auto leading-relaxed">
+        <p className="text-sm text-[var(--muted)] max-w-md mx-auto leading-relaxed">
           Upload your resume, set your role preferences, and see which remote opportunities match your experience best.
         </p>
         <div className="pt-2">

@@ -141,7 +141,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
 
       {/* Relevant Skills Tags */}
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider mr-2">
+        <span className="text-xs sm:text-sm font-semibold text-[var(--muted)] mr-2">
           Relevant skills:
         </span>
         {category.tags.map((tag) => (
@@ -161,7 +161,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
             <h2 className="text-xl font-semibold text-[var(--ink)]">
               {category.title} Listings
             </h2>
-            <p className="text-xs text-[var(--muted)] mt-0.5">
+            <p className="text-xs sm:text-sm text-[var(--muted)] mt-0.5">
               {totalJobs > jobs.length
                 ? `Showing ${pageOffset + 1}–${pageOffset + jobs.length} of ${totalJobs} verified active positions`
                 : `Showing ${totalJobs} verified active position${totalJobs === 1 ? '' : 's'}`}
@@ -169,7 +169,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
           </div>
           <Link
             href="/feed"
-            className="text-xs font-medium text-[var(--red)] hover:underline flex items-center gap-1"
+            className="text-xs sm:text-sm font-medium text-[var(--red)] hover:underline flex items-center gap-1"
           >
             <span>Interactive Match Deck</span>
             <ArrowRight size={13} />
@@ -181,11 +181,11 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
             <p className="text-sm font-semibold text-[var(--ink)]">
               No active listings in this category right now.
             </p>
-            <p className="text-xs text-[var(--muted)]">
+            <p className="text-sm text-[var(--muted)]">
               We update verified listings continuously. Browse all remote openings or create a match profile.
             </p>
             <div className="pt-2">
-              <Link href="/remote-jobs" className="soft-button secondary text-xs">
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
                 Browse all remote jobs
               </Link>
             </div>
@@ -200,23 +200,23 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="text-xs font-medium text-[var(--muted)]">{job.company}</span>
-                      <h3 className="text-base font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
+                      <span className="text-sm font-medium text-[var(--muted)]">{job.company}</span>
+                      <h3 className="text-base sm:text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
                         <Link href={`/remote-jobs/view/${job.sourceId}`}>
                           {job.title}
                         </Link>
                       </h3>
                     </div>
-                    <span className="tag !text-[11px] whitespace-nowrap">
+                    <span className="tag whitespace-nowrap">
                       {job.employmentType}
                     </span>
                   </div>
 
-                  <p className="text-xs text-[var(--muted)] line-clamp-3 leading-relaxed">
+                  <p className="text-sm text-[var(--muted)] line-clamp-3 leading-relaxed">
                     {job.description}
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs text-[var(--muted)]">
+                  <div className="flex flex-wrap items-center gap-y-2 gap-x-4 text-xs sm:text-sm text-[var(--muted)]">
                     <span className="inline-flex items-center gap-1">
                       <MapPin size={13} className="text-[var(--muted)]" />
                       {job.remoteType}
@@ -233,14 +233,14 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
                 <div className="mt-5 pt-4 border-t border-[var(--line)] flex items-center justify-between gap-3">
                   <Link
                     href={`/remote-jobs/view/${job.sourceId}`}
-                    className="text-xs font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
+                    className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
                   >
                     <span>View job details</span>
                     <ArrowRight size={13} />
                   </Link>
                   <Link
                     href="/onboarding"
-                    className="soft-button secondary text-xs !py-1 !px-2.5"
+                    className="soft-button secondary text-sm !py-1.5 !px-3"
                   >
                     <span>Check my match score →</span>
                   </Link>
@@ -265,20 +265,20 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
           <div className="divide-y divide-[var(--line)]">
             {category.faqs.map((faq, idx) => (
               <div key={idx} className="py-4 space-y-2 first:pt-0 last:pb-0">
-                <h3 className="text-sm font-semibold text-[var(--ink)]">{faq.q}</h3>
-                <p className="text-xs font-medium text-[var(--ink)] leading-relaxed">
+                <h3 className="text-base font-semibold text-[var(--ink)]">{faq.q}</h3>
+                <p className="text-sm sm:text-base font-medium text-[var(--ink)] leading-relaxed">
                   {faq.directAnswer}
                 </p>
-                <p className="text-xs text-[var(--muted)] leading-relaxed">
+                <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                   {faq.explanation}
                 </p>
                 <div>
                   <Link
                     href={faq.linkHref}
-                    className="text-xs font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
+                    className="text-sm font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
                   >
                     <span>{faq.linkText}</span>
-                    <ArrowRight size={12} />
+                    <ArrowRight size={14} />
                   </Link>
                 </div>
               </div>
@@ -289,7 +289,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
 
       {/* Internal Linking: Other Hubs */}
       <section className="space-y-3 pt-2">
-        <h3 className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
+        <h3 className="text-xs sm:text-sm font-semibold text-[var(--muted)]">
           Explore Other Remote Categories & Locations
         </h3>
         <div className="flex flex-wrap gap-2">
