@@ -111,8 +111,40 @@ export function classifyRemoteEligibility(locationStr?: string, tags: string[] =
     return { remoteType: 'Contractor only', eligibleCountries: [] };
   }
 
+  // 8. US remote (additive; reached only when nothing above matched). A listing that says "remote" and names the
+  // US in a form conditions 1-7 do not know ("Remote U.S.", "US-Remote", "Remote (US)", "Remote, US"). Without
+  // this it fell through to the 'Worldwide' default below, which is wrong for a US-only job. The matching of this
+  // rule is intentionally duplicated in classifyExplicitRemoteScope() (see that function's header: no shared code).
+  if (isUsRemoteForEligibility(locationStr)) {
+    return { remoteType: 'US', eligibleCountries: ['US', 'USA'] };
+  }
+
   // Default to Worldwide if not restricted
   return { remoteType: 'Worldwide', eligibleCountries: [] };
+}
+
+// Any OTHER country or region named anywhere in the string makes a listing multi-country/ambiguous: the US-remote rule
+// below then declines (typing "Remote, Canada; Remote, US" as US would wrongly mark Canadian candidates ineligible).
+// UK names are in the list on purpose: UK handling is a separate, later decision. Duplicated in
+// isUsRemoteForScope() by design — keep the two in sync (test/classifier-us-remote-suite.ts asserts they agree).
+const ELIGIBILITY_OTHER_COUNTRY_OR_REGION =
+  /\b(united kingdom|england|scotland|wales|northern ireland|great britain|canada|mexico|brazil|argentina|colombia|chile|peru|costa rica|australia|new zealand|singapore|india|japan|china|korea|taiwan|hong kong|israel|uae|dubai|turkey|saudi|south africa|nigeria|kenya|egypt|ghana|philippines|indonesia|vietnam|thailand|malaysia|pakistan|bangladesh|sri lanka|germany|france|spain|italy|portugal|netherlands|belgium|ireland|sweden|norway|denmark|finland|switzerland|austria|poland|czech|romania|bulgaria|hungary|greece|ukraine|serbia|croatia|estonia|latvia|lithuania|apac|latam|asia|africa|oceania|americas|mena|worldwide|global|anywhere)\b/;
+
+/**
+ * True only for a REMOTE listing that names the US and nothing else: the location (tags are deliberately NOT read —
+ * department names would cause accidents) has no other country/region, and some `;`/`|`/`•`-separated segment has a
+ * remote marker, no onsite/in-office marker, and a US token ("US", "U.S.", "U.S.A.").
+ */
+function isUsRemoteForEligibility(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!loc.trim()) return false;
+  if (ELIGIBILITY_OTHER_COUNTRY_OR_REGION.test(loc)) return false;
+  for (const seg of loc.split(/[;|•]/)) {
+    if (!/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(seg)) continue;
+    if (/\b(on-?site|in[- ]office|office[- ]based)\b/.test(seg)) continue;
+    if (/\bu\.s\.(a\.)?|\bus\b/.test(seg)) return true;
+  }
+  return false;
 }
 
 export type ExplicitRemoteScope = 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
@@ -189,10 +221,33 @@ export function classifyExplicitRemoteScope(locationStr?: string, tags: string[]
     return 'explicit_restricted';
   }
 
+  // US remote (additive; mirrors classifyRemoteEligibility() condition 8). Reached only when nothing above matched, so
+  // every string recognised before is unchanged. Duplicated, not shared — see the KNOWN TRADEOFF above.
+  if (isUsRemoteForScope(locationStr)) {
+    return 'explicit_restricted';
+  }
+
   // classifyRemoteEligibility() would default to 'Worldwide' here. This
   // function reports the honest state instead: nothing in the listing
   // text matched any known pattern.
   return 'unknown';
+}
+
+// See ELIGIBILITY_OTHER_COUNTRY_OR_REGION: same list, duplicated on purpose so neither classifier can change the other.
+const SCOPE_OTHER_COUNTRY_OR_REGION =
+  /\b(united kingdom|england|scotland|wales|northern ireland|great britain|canada|mexico|brazil|argentina|colombia|chile|peru|costa rica|australia|new zealand|singapore|india|japan|china|korea|taiwan|hong kong|israel|uae|dubai|turkey|saudi|south africa|nigeria|kenya|egypt|ghana|philippines|indonesia|vietnam|thailand|malaysia|pakistan|bangladesh|sri lanka|germany|france|spain|italy|portugal|netherlands|belgium|ireland|sweden|norway|denmark|finland|switzerland|austria|poland|czech|romania|bulgaria|hungary|greece|ukraine|serbia|croatia|estonia|latvia|lithuania|apac|latam|asia|africa|oceania|americas|mena|worldwide|global|anywhere)\b/;
+
+/** Same rule as isUsRemoteForEligibility(), duplicated by design. */
+function isUsRemoteForScope(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!loc.trim()) return false;
+  if (SCOPE_OTHER_COUNTRY_OR_REGION.test(loc)) return false;
+  for (const seg of loc.split(/[;|•]/)) {
+    if (!/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(seg)) continue;
+    if (/\b(on-?site|in[- ]office|office[- ]based)\b/.test(seg)) continue;
+    if (/\bu\.s\.(a\.)?|\bus\b/.test(seg)) return true;
+  }
+  return false;
 }
 
 // Calculate Quality Score (0-100)
