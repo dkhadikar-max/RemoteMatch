@@ -80,6 +80,15 @@ const matrix: Row[] = [
   ['US Remote; Chicago, Atlanta, Canada', 'unknown', 'Worldwide', []],
   ['Remote, US; Remote, United Kingdom', 'unknown', 'Worldwide', []],
   ['Remote, Canada; Remote, United Kingdom; Remote, United States', 'explicit_restricted', 'US', ['US', 'USA']], // already US via "united states" before this PR
+  // UNCHANGED: names that are BOTH a country and a US place veto on purpose (a false reject keeps the old behaviour)
+  ['US-SF, US-Seattle, US-NYC, US-Chicago, US-Georgia or US-Remote', 'unknown', 'Worldwide', []],
+  ['Remote, US; Atlanta, Georgia', 'unknown', 'Worldwide', []],
+  ['Remote, US; Amman, Jordan', 'unknown', 'Worldwide', []],
+  // UNCHANGED: countries the previous (77-name) list did not know — now covered
+  ['Remote, US; Remote, Jamaica', 'unknown', 'Worldwide', []],
+  ['US-Remote, Iceland', 'unknown', 'Worldwide', []],
+  ['Remote U.S. or Morocco', 'unknown', 'Worldwide', []],
+  ['Qatar; Remote, US', 'unknown', 'Worldwide', []],
   // UNCHANGED: onsite / no remote marker / ambiguous
   ['New York, NY, onsite', 'unknown', 'Worldwide', []],
   ['Remote, US, onsite', 'unknown', 'Worldwide', []],
@@ -123,7 +132,9 @@ assert(unexpected.length === 0, `REGRESSION: every golden entry is identical exc
 assert(golden.entries.every(([loc, tags, gScope, gType, gCountries]) => gScope === 'unknown' || (() => { const o = out(loc, tags); return o.scope === gScope && o.type === gType && JSON.stringify(o.countries) === JSON.stringify(gCountries); })()), 'no previously-recognised entry changed (scope, remoteType or eligibleCountries)');
 assert(golden.entries.filter(([, , gScope]) => gScope !== 'unknown').length === 600, 'the golden contains 600 previously-recognised entries (598 restricted + 2 worldwide): the no-regression guarantee is not vacuous');
 console.log(`  identical: ${identical}; intentionally changed: ${changed.length}`);
-assert(changed.length === 119 && identical === 1230, `the rule changes EXACTLY 119 of the 749 previously-unknown entries and leaves the other 1,230 identical (pinned: catches any widening or narrowing)`, `changed ${changed.length}, identical ${identical}`);
+// 118, not 119: with the full country list "Georgia" (a US state AND a country) vetoes, so "...US-Georgia or US-Remote" stays
+// rejected. Deliberate: ambiguous names veto, because a false reject is the old behaviour while a false admit mistypes a job.
+assert(changed.length === 118 && identical === 1231, `the rule changes EXACTLY 118 of the 749 previously-unknown entries and leaves the other 1,231 identical (pinned: catches any widening or narrowing)`, `changed ${changed.length}, identical ${identical}`);
 assert(changed.every(([loc]) => hasRemote(loc) && hasUs(loc)), 'every changed entry has a remote marker and a US token');
 assert(changed.every(([loc]) => !hasOther(loc)), 'no changed entry names another country');
 assert(golden.entries.filter(([loc]) => /on-?site|in[- ]office/i.test(loc) && !hasRemote(loc)).every(([loc, tags, s, t]) => { const o = out(loc, tags); return o.scope === s && o.type === t; }), 'onsite-only entries are untouched');
@@ -182,6 +193,42 @@ assert(nondet === 0, 'deterministic on 4,000 random strings');
 assert((() => { try { return out('a'.repeat(200000)).scope === 'unknown' && out('remote '.repeat(40000)).scope === 'unknown'; } catch { return false; } })(), 'very long inputs (200k chars) are handled without error and stay unknown');
 assert((() => { const t0 = Date.now(); out('remote us '.repeat(20000)); out(('Remote, ' + 'x'.repeat(50) + '; ').repeat(5000) + 'US'); return Date.now() - t0 < 2000; })(), 'no catastrophic regex backtracking on adversarial inputs (< 2 s)');
 assert(scope(undefined) === 'unknown' && elig(undefined).remoteType === 'Worldwide', 'undefined location is unknown / Worldwide');
+
+// ---------------------------------------------------------------- 7. the other-country veto list is complete and consistent
+console.log('\n7. Other-country veto: every sovereign country vetoes; the two copies are identical');
+// A test-owned, independent list (UN members + observers + common aliases). The production list must cover ALL of it.
+const COUNTRIES = ['Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua', 'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus',
+  'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia', 'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cambodia', 'Cameroon', 'Canada', 'Cape Verde', 'Central African Republic',
+  'Chad', 'Chile', 'China', 'Colombia', 'Comoros', 'Congo', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czechia', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador',
+  'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji', 'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala', 'Guinea', 'Guyana', 'Haiti',
+  'Honduras', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Ivory Coast', 'Jamaica', 'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait',
+  'Kyrgyzstan', 'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands',
+  'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua',
+  'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland', 'Portugal', 'Qatar',
+  'Romania', 'Russia', 'Rwanda', 'Saint Kitts', 'Saint Lucia', 'Saint Vincent', 'Samoa', 'San Marino', 'Sao Tome', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia',
+  'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria', 'Taiwan', 'Tajikistan', 'Tanzania',
+  'Thailand', 'Timor', 'Togo', 'Tonga', 'Trinidad', 'Tunisia', 'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Vatican',
+  'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe', 'Hong Kong', 'Burma', 'Holland', 'Britain', 'Türkiye', 'England', 'Scotland', 'Wales', 'Northern Ireland'];
+const REGIONS = ['Latin America', 'Southeast Asia', 'South Asia', 'Middle East', 'Caribbean', 'Nordics', 'Scandinavia', 'Balkans', 'DACH', 'Benelux', 'APAC', 'LATAM', 'MENA', 'EU', 'EEA', 'Asia', 'Africa', 'Oceania', 'Americas'];
+assert(COUNTRIES.length >= 200, `the independent country list has ${COUNTRIES.length} names`);
+const shapes = (c: string) => [`Remote, US; Remote, ${c}`, `US-Remote, ${c}`, `${c}; Remote, US`, `Remote U.S. ${c}`, `Remote (US), ${c}`];
+const leaked: string[] = [];
+for (const c of [...COUNTRIES, ...REGIONS]) for (const s of shapes(c)) if (out(s).type === 'US') leaked.push(s);
+assert(leaked.length === 0, `no "US + <other country/region>" string is typed US (${(COUNTRIES.length + REGIONS.length) * 5} strings over ${COUNTRIES.length} countries and ${REGIONS.length} regions)`, leaked.slice(0, 6).join(' | '));
+// the production source: both lists present, byte-identical, and each covers every name above
+const pipeSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'ingestion', 'pipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
+const lit = (n: string) => { const m = new RegExp('const ' + n + '\\s*=\\n\\s*(/[^\\n]+/);').exec(pipeSrc); return m ? m[1] : null; };
+const litE = lit('ELIGIBILITY_OTHER_COUNTRY_OR_REGION'), litS = lit('SCOPE_OTHER_COUNTRY_OR_REGION');
+assert(!!litE && !!litS, 'both veto lists are present in pipeline.ts');
+assert(litE === litS, 'the two veto lists are byte-identical (the duplicated rule cannot drift)');
+const vetoRe = new RegExp((litE as string).slice(1, (litE as string).lastIndexOf('/')));
+const uncovered = [...COUNTRIES, ...REGIONS].filter((c) => !vetoRe.test(c.toLowerCase()));
+assert(uncovered.length === 0, 'the production veto list covers every name in the independent list', uncovered.join(', '));
+// the two helpers share one body (modulo names)
+const bodyOf = (n: string) => { const i = pipeSrc.indexOf('function ' + n + '('); const j = pipeSrc.indexOf('\n}\n', i); return pipeSrc.slice(i, j + 3).replace(/isUsRemoteFor(Eligibility|Scope)/g, 'F').replace(/(ELIGIBILITY|SCOPE)_OTHER/g, 'X_OTHER'); };
+assert(bodyOf('isUsRemoteForEligibility') === bodyOf('isUsRemoteForScope') && bodyOf('isUsRemoteForScope').length > 200, 'the two helper functions are identical apart from their names');
+// strings with NO other country still admit (the veto is not over-broad for ordinary US text)
+assert(['Remote, US', 'US-Remote', 'Remote (US)', 'San Francisco, CA, US; Remote, US', 'New York, NY, remote, US, New York, NY', 'Remote, Remote, Remote U.S.'].every((s) => out(s).type === 'US'), 'ordinary US-only strings (no other country) are still admitted');
 
 console.log('\n' + '='.repeat(78));
 console.log(`RESULT: ${passed} passed, ${failed} failed`);
