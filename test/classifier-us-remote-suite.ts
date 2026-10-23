@@ -89,6 +89,27 @@ const matrix: Row[] = [
   ['US-Remote, Iceland', 'unknown', 'Worldwide', []],
   ['Remote U.S. or Morocco', 'unknown', 'Worldwide', []],
   ['Qatar; Remote, US', 'unknown', 'Worldwide', []],
+  // UNCHANGED: accented / decomposed / non-English country names must veto too (a bypass found in review)
+  ['Remote, US; Remote, Côte d’Ivoire', 'unknown', 'Worldwide', []],
+  ["Remote, US; Remote, Côte d'Ivoire", 'unknown', 'Worldwide', []],
+  ["Remote, US; Remote, Cote d'Ivoire", 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Co\u0302te d’Ivoire', 'unknown', 'Worldwide', []],      // decomposed o + combining circumflex
+  ['Remote, US; Remote, São Tomé and Príncipe', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Sao Tome and Principe', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Sa\u0303o Tome\u0301 and Pri\u0301ncipe', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, México', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Me\u0301xico', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Perú', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Panamá', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Brasil', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, España', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Deutschland', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Österreich', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Suisse', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Nederland', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Curaçao', 'unknown', 'Worldwide', []],
+  ['Remote, US; Remote, Türkiye', 'unknown', 'Worldwide', []],
+  ['Rémote, US', 'unknown', 'Worldwide', []],                                          // the remote MARKER is not accent-folded: stays rejected (conservative)
   // UNCHANGED: onsite / no remote marker / ambiguous
   ['New York, NY, onsite', 'unknown', 'Worldwide', []],
   ['Remote, US, onsite', 'unknown', 'Worldwide', []],
@@ -227,6 +248,24 @@ assert(uncovered.length === 0, 'the production veto list covers every name in th
 // the two helpers share one body (modulo names)
 const bodyOf = (n: string) => { const i = pipeSrc.indexOf('function ' + n + '('); const j = pipeSrc.indexOf('\n}\n', i); return pipeSrc.slice(i, j + 3).replace(/isUsRemoteFor(Eligibility|Scope)/g, 'F').replace(/(ELIGIBILITY|SCOPE)_OTHER/g, 'X_OTHER'); };
 assert(bodyOf('isUsRemoteForEligibility') === bodyOf('isUsRemoteForScope') && bodyOf('isUsRemoteForScope').length > 200, 'the two helper functions are identical apart from their names');
+// ---- accents, decomposed accents and non-English names (the review bypass) ----
+const ACCENTED = ['Côte d’Ivoire', "Côte d'Ivoire", "Cote d'Ivoire", 'São Tomé and Príncipe', 'Sao Tome and Principe', 'México', 'Mexico', 'Perú', 'Panamá', 'Jamáica', 'Cánada', 'Curaçao', 'Réunion', 'Türkiye', 'Turkiye',
+  'Brasil', 'España', 'Deutschland', 'Österreich', 'Suisse', 'Schweiz', 'Nederland', 'Italia', 'Polska', 'Belgique', 'Sverige', 'Norge', 'Danmark', 'Suomi', 'Hrvatska', 'Magyarország'];
+const accentLeaks: string[] = [];
+for (const name of ACCENTED) for (const form of [name.normalize('NFC'), name.normalize('NFD'), name.normalize('NFKD')]) for (const s of shapes(form)) if (out(s).type === 'US') accentLeaks.push(s);
+assert(accentLeaks.length === 0, `no accented / decomposed / non-English country name lets a string through as US (${ACCENTED.length} names x 3 Unicode forms x 5 shapes)`, accentLeaks.slice(0, 5).join(' | '));
+// property: put a COMBINING ACUTE after every vowel of every country (decomposed) and also its precomposed-where-possible form
+const decorated: string[] = [];
+for (const c of COUNTRIES) { const d = c.replace(/[aeiou]/gi, (v) => v + '\u0301'); decorated.push(d, d.normalize('NFC')); }
+const decoratedLeaks: string[] = [];
+for (const d of decorated) for (const s of [`Remote, US; Remote, ${d}`, `US-Remote, ${d}`]) if (out(s).type === 'US') decoratedLeaks.push(s);
+assert(decoratedLeaks.length === 0, `accent-decorating every one of ${COUNTRIES.length} countries (decomposed and composed) never lets "US + country" through (${decorated.length * 2} strings)`, decoratedLeaks.slice(0, 4).join(' | '));
+const stripAcc = (x: string) => x.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+const uncoveredAcc = ACCENTED.filter((a) => !(vetoRe.test(a.toLowerCase()) || vetoRe.test(stripAcc(a))));
+assert(uncoveredAcc.length === 0, 'the production list (original or accent-stripped) covers every accented / non-English name', uncoveredAcc.join(', '));
+assert((pipeSrc.match(/\.normalize\('NFKD'\)\.replace\(\/\[\\u0300-\\u036f\]\/g, ''\)/g) || []).length === 2, 'BOTH classifiers normalize (exactly two accent-stripped veto checks in the source)');
+assert(['Remote, US', 'US-Remote', 'Remote (US)'].every((s) => out(s.normalize('NFD')).type === 'US'), 'normalization does not break ordinary US strings (decomposed input still admits)');
+
 // strings with NO other country still admit (the veto is not over-broad for ordinary US text)
 assert(['Remote, US', 'US-Remote', 'Remote (US)', 'San Francisco, CA, US; Remote, US', 'New York, NY, remote, US, New York, NY', 'Remote, Remote, Remote U.S.'].every((s) => out(s).type === 'US'), 'ordinary US-only strings (no other country) are still admitted');
 
