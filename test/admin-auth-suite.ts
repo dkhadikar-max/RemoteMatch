@@ -30,6 +30,10 @@ async function adminPageGate(cookie: string | null): Promise<{ status: number; l
 }
 
 const TEST_PASSWORD = 'Admin-Suite-Test-Pass-1';
+// DELETE /api/admin/admins/[id] is probed over real HTTP below. It always targets the nil UUID, which matches no row, so
+// whichever guard answers (401 / 403 / 404) nothing real can be revoked.
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+const revokeUrl = () => `${BASE_URL}/api/admin/admins/${NIL_UUID}`;
 
 async function main() {
   console.log('='.repeat(78));
@@ -102,6 +106,12 @@ async function main() {
       const res = await fetch(`${BASE_URL}${path_}`);
       assert(res.status === 401, `GET ${path_} with no session -> 401 (got ${res.status})`);
     }
+    // The revoke handler over real HTTP: no Authorization header → the cookie-session path inside a real request scope
+    // (which an in-process handler test cannot reach: cookies() throws outside one).
+    const revokeNoSession = await fetch(revokeUrl(), { method: 'DELETE' });
+    assert(revokeNoSession.status === 401, `DELETE /api/admin/admins/[id] with no session -> 401 (got ${revokeNoSession.status})`);
+    const revokeBadToken = await fetch(revokeUrl(), { method: 'DELETE', headers: { Authorization: 'Bearer not-a-real-token' } });
+    assert(revokeBadToken.status === 401, `DELETE /api/admin/admins/[id] with an invalid token -> 401 (got ${revokeBadToken.status})`);
 
     // --- 2. Verified, real, NON-admin account ---
     console.log('\n2. VERIFIED NON-ADMIN ACCOUNT');
@@ -121,6 +131,12 @@ async function main() {
     }
     const forbiddenBody = await (await fetch(`${BASE_URL}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${nonAdminToken}` } })).json();
     assert(/not authorized for admin access/i.test(forbiddenBody.error || ''), 'the 403 message is the admin-specific one, distinct from the generic unverified-account 403');
+    const revokeNonAdmin = await fetch(revokeUrl(), { method: 'DELETE', headers: { Authorization: `Bearer ${nonAdminToken}` } });
+    const revokeNonAdminBody = await revokeNonAdmin.json().catch(() => ({}));
+    assert(
+      revokeNonAdmin.status === 403 && /not authorized for admin access/i.test(revokeNonAdminBody.error || ''),
+      `DELETE /api/admin/admins/[id] as a verified NON-admin -> 403 with the admin-forbidden message (got ${revokeNonAdmin.status} "${revokeNonAdminBody.error ?? ''}")`,
+    );
 
     // Page gate (middleware): is BASE_URL an admin host at all? (/admin/login is the one
     // un-gated admin page; on a consumer host every /admin/** path is a 404.)
@@ -161,6 +177,13 @@ async function main() {
       'dashboard returns real numeric counts, not fabricated/placeholder values',
     );
 
+    // Reaching the handler as a real admin, end to end through the middleware: a nonexistent target is a 404 (never the
+    // last-admin 409), whatever the number of admins in this database — and nothing is mutated.
+    const adminCountBefore = (await admin.from('admin_users').select('id', { count: 'exact', head: true })).count;
+    const revokeMissing = await fetch(revokeUrl(), { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } });
+    assert(revokeMissing.status === 404, `DELETE /api/admin/admins/[id] as an ACTIVE admin, nonexistent target -> 404, never 409 (got ${revokeMissing.status})`);
+    assert((await admin.from('admin_users').select('id', { count: 'exact', head: true })).count === adminCountBefore, 'the 404 revoke changed no admin_users row');
+
     if (pageGateTestable) {
       const adminPage = await adminPageGate(sessionCookieHeader(adminSession.session));
       assert(adminPage.status === 200, `GET /admin as an ACTIVE admin -> 200, not bounced to forbidden (got ${adminPage.status} ${adminPage.location ?? ''})`);
@@ -171,6 +194,8 @@ async function main() {
     await admin.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', adminUser.user.id);
     const revokedRes = await fetch(`${BASE_URL}/api/admin/dashboard`, { headers: { Authorization: `Bearer ${adminToken}` } });
     assert(revokedRes.status === 403, `GET /api/admin/dashboard as a REVOKED admin (same still-valid token) -> 403 (got ${revokedRes.status})`);
+    const revokeRevoked = await fetch(revokeUrl(), { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } });
+    assert(revokeRevoked.status === 403, `DELETE /api/admin/admins/[id] as a REVOKED admin (same still-valid token) -> 403 (got ${revokeRevoked.status})`);
 
     if (pageGateTestable) {
       const revokedPage = await adminPageGate(sessionCookieHeader(adminSession.session));
