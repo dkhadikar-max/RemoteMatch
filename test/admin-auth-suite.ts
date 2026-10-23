@@ -12,8 +12,14 @@
  * Supabase env) exercises real accounts against a real running server.
  *
  * Run: TEST_BASE_URL=... npx tsx test/admin-auth-suite.ts
+ *
+ * The live section needs a dev server that treats TEST_BASE_URL as the ADMIN host (start it with
+ * ADMIN_HOST_OVERRIDE=<host:port of TEST_BASE_URL>); on a consumer host every /api/admin/** call is a 404 and sections 1–5
+ * fail. Section 6 additionally selects the admin host by the Host header's "admin." prefix and so does not depend on it.
+ * Point it ONLY at a server connected to an isolated test project: it creates and deletes disposable accounts.
  */
 import * as fs from 'fs';
+import * as http from 'http';
 import * as path from 'path';
 import { hasRequiredEnv, adminClient, anonKeyClient, uniqueEmail, sessionCookieHeader } from './helpers/verified-session';
 
@@ -34,6 +40,29 @@ const TEST_PASSWORD = 'Admin-Suite-Test-Pass-1';
 // whichever guard answers (401 / 403 / 404) nothing real can be revoked.
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const revokeUrl = () => `${BASE_URL}/api/admin/admins/${NIL_UUID}`;
+
+// A request to BASE_URL's server with an explicit Host header (fetch() forbids overriding Host, node:http does not).
+// The admin host is decided from this header by the middleware ("admin." prefix, or ADMIN_HOST_OVERRIDE).
+function httpCall(method: string, urlPath: string, opts: { host: string; cookie?: string; bearer?: string }): Promise<{ status: number; body: any }> {
+  const u = new URL(BASE_URL);
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = { Host: opts.host };
+    if (opts.cookie) headers.Cookie = opts.cookie;
+    if (opts.bearer) headers.Authorization = `Bearer ${opts.bearer}`;
+    const req = http.request({ hostname: u.hostname, port: u.port || 80, method, path: urlPath, headers }, (res) => {
+      let data = '';
+      res.on('data', (d) => (data += d));
+      res.on('end', () => {
+        let body: any = null;
+        try { body = JSON.parse(data); } catch { body = data.slice(0, 80); }
+        resolve({ status: res.statusCode ?? 0, body });
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(90000, () => req.destroy(new Error('timeout')));
+    req.end();
+  });
+}
 
 async function main() {
   console.log('='.repeat(78));
@@ -216,6 +245,58 @@ async function main() {
       headers: { Authorization: `Bearer ${nonAdminToken}` }, // non-admin token, regardless of any body content
     });
     assert(fakeAdminBody.status === 403, 'POST .../promote as a non-admin is rejected (403) before ever reaching promoteCompanyToAllowlist()');
+
+    // --- 6. Admin-host detection + the COOKIE-SESSION path (no Authorization header) ---
+    // Everything above authenticates with a Bearer token. Here the DELETE revoke handler is reached the way a browser
+    // reaches it — a real @supabase/ssr session cookie — and the admin host is selected by the Host header alone.
+    console.log('\n6. ADMIN-HOST DETECTION + COOKIE-SESSION PATH (DELETE /api/admin/admins/[id], nil UUID)');
+    const baseUrl = new URL(BASE_URL);
+    if (baseUrl.protocol !== 'http:') {
+      skip('BASE_URL is not plain http — the Host-header / cookie checks use node:http and are skipped');
+    } else {
+      const baseHost = baseUrl.host; // includes the port
+      // The "admin." PREFIX rule selects the admin host here, not ADMIN_HOST_OVERRIDE (the override only matches the one exact
+      // host string it is set to), so these checks exercise the same host rule production uses for admin.remotematch.online.
+      // (Sections 1–5 above still need the server run with ADMIN_HOST_OVERRIDE=<TEST_BASE_URL host:port> — see the header.)
+      const adminHostHeader = `admin.${baseHost}`;
+      const adminGet = (host: string, p: string) => httpCall('GET', p, { host }).then((r) => r.status);
+
+      // A. host detection
+      assert((await adminGet(adminHostHeader, '/api/admin/dashboard')) === 401, `Host ${adminHostHeader}: /api/admin/dashboard with no session -> 401 (the admin host reaches the handler)`);
+      assert((await adminGet(`ADMIN.${baseHost.toUpperCase()}`, '/api/admin/dashboard')) === 401, 'the host is matched case-insensitively (ADMIN.<host> is an admin host)');
+      assert((await adminGet(adminHostHeader, '/api/health')) === 404, 'the admin host serves only admin paths (/api/health -> 404)');
+      assert((await adminGet(`notadmin.${baseHost}`, '/api/admin/dashboard')) === 404, 'Host "notadmin.<host>" is a CONSUMER host: the admin API is blocked (the prefix must be exactly "admin.")');
+      assert((await httpCall('DELETE', `/api/admin/admins/${NIL_UUID}`, { host: `notadmin.${baseHost}` })).status === 404, 'Host "notadmin.<host>": DELETE /api/admin/admins/[id] -> 404 (blocked on a consumer host before the handler)');
+      assert((await adminGet(`admin-x.${baseHost}`, '/api/admin/dashboard')) === 404, 'Host "admin-x.<host>" is NOT an admin host (the dot is required)');
+
+      // B. the cookie-session path
+      const revokeViaCookie = (cookie?: string, bearer?: string) => httpCall('DELETE', `/api/admin/admins/${NIL_UUID}`, { host: adminHostHeader, cookie, bearer });
+      const cookieRows = async () => (await admin.from('admin_users').select('id', { count: 'exact', head: true })).count;
+      const cookieAudits = async () => (await admin.from('admin_audit_log').select('id', { count: 'exact', head: true })).count;
+      const rowsBeforeCookie = await cookieRows();
+      const auditsBeforeCookie = await cookieAudits();
+
+      assert((await revokeViaCookie()).status === 401, 'cookie path: no cookie, no bearer -> 401');
+      const supaRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).host.split('.')[0];
+      assert((await revokeViaCookie(`sb-${supaRef}-auth-token=base64-AAAA`)).status === 401, 'cookie path: a malformed session cookie -> 401');
+
+      const nonAdminCookie = sessionCookieHeader(nonAdminSession.session!);
+      const rNon = await revokeViaCookie(nonAdminCookie);
+      assert(rNon.status === 403 && /not authorized for admin access/i.test(rNon.body?.error ?? ''), `cookie path: valid cookie, verified NON-admin -> 403 with the admin-forbidden message (got ${rNon.status} "${rNon.body?.error ?? ''}")`);
+
+      const adminCookie = sessionCookieHeader(adminSession.session!);
+      const rAdmin = await revokeViaCookie(adminCookie);
+      assert(rAdmin.status === 404, `cookie path: valid cookie, ACTIVE admin, nonexistent target -> 404, never 409 (got ${rAdmin.status}) — proves the cookie is actually parsed and reaches the handler`);
+
+      const tamperedSession = { ...adminSession.session!, access_token: adminSession.session!.access_token.slice(0, -4) + 'AAAA' };
+      assert((await revokeViaCookie(sessionCookieHeader(tamperedSession))).status === 401, 'cookie path: a well-formed cookie with a TAMPERED access token -> 401');
+      assert((await revokeViaCookie(adminCookie, 'not-a-real-token')).status === 401, 'cookie path: an invalid Bearer alongside a valid admin cookie -> 401 (the bearer path takes precedence; it does not fall back to the cookie)');
+
+      await admin.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', adminUser.user.id);
+      assert((await revokeViaCookie(adminCookie)).status === 403, 'cookie path: the same valid cookie after the admin is REVOKED -> 403');
+
+      assert((await cookieRows()) === rowsBeforeCookie && (await cookieAudits()) === auditsBeforeCookie, 'cookie path: none of these calls changed an admin_users row or wrote an audit record');
+    }
   } finally {
     for (const id of cleanupAdminRowIds) { try { await admin.from('admin_users').delete().eq('id', id); } catch { /* best-effort cleanup */ } }
     for (const id of cleanupUserIds) await admin.auth.admin.deleteUser(id).catch(() => {});
