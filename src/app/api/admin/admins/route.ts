@@ -3,7 +3,7 @@ import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { recordAdminAction } from '@/lib/admin/audit-log';
-import { must } from '@/lib/supabase/query-helpers';
+import { likeLiteral, must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** GET — list every admin, active and revoked (for a full audit trail). */
@@ -57,15 +57,22 @@ export async function POST(req: NextRequest) {
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  let targetProfile: { id: string; email: string } | null;
+  // Wildcards escaped, then an exact (case-insensitive) comparison: the typed
+  // email must resolve to exactly one account or nothing is granted.
+  let matches: { id: string; email: string }[];
   try {
-    targetProfile = must(await db.from('profiles').select('id, email').ilike('email', email).maybeSingle(), 'profiles').data;
+    matches = must(await db.from('profiles').select('id, email').ilike('email', likeLiteral(email)).limit(2), 'profiles').data ?? [];
   } catch (err) {
     return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
-  if (!targetProfile) {
+  const exact = matches.filter((p) => (p.email ?? '').toLowerCase() === email);
+  if (exact.length === 0) {
     return NextResponse.json({ error: 'No RemoteMatch account exists with that email.' }, { status: 404 });
   }
+  if (exact.length > 1) {
+    return NextResponse.json({ error: 'More than one account matches that email; nothing was changed.' }, { status: 409 });
+  }
+  const targetProfile = exact[0];
 
   const { error: upsertErr } = await db
     .from('admin_users')

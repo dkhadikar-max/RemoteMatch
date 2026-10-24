@@ -60,6 +60,15 @@ export function isMissingRelation(err: { message: string; code?: string } | null
   return err.code === 'PGRST205' || err.code === '42P01' || /schema cache|does not exist/i.test(err.message);
 }
 
+/**
+ * Escapes LIKE/ILIKE wildcards (and the escape character itself) so a value
+ * used as an `.ilike()` pattern matches only itself, case-insensitively.
+ * Without it "a_b@example.com" also matches "axb@example.com".
+ */
+export function likeLiteral(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 const DEFAULT_PAGE_SIZE = 1000;
 const DEFAULT_MAX_ROWS = 500_000;
 

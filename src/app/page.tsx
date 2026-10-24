@@ -91,7 +91,7 @@ export default function LandingPage() {
               href="/onboarding"
               className="soft-button primary inline-flex items-center justify-center gap-2 text-sm"
             >
-              <span>Find your matches →</span>
+              <span>Find your matches</span>
               <ArrowRight size={17} />
             </Link>
             <Link
@@ -102,7 +102,7 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-5 text-xs text-[var(--muted)]">
+          <div className="mt-8 flex flex-wrap gap-5 text-xs sm:text-sm text-[var(--muted)]">
             <span className="flex items-center gap-1.5 font-medium">
               <CircleCheck size={16} className="text-[#04714f]" />
               <span>Know your chances before you apply</span>
@@ -123,10 +123,10 @@ export default function LandingPage() {
           {/* Card Header & Preview Switcher */}
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--line)]">
             <div>
-              <h3 className="text-xs font-bold text-[var(--ink)] uppercase tracking-wider">
+              <h3 className="text-sm sm:text-base font-semibold text-[var(--ink)]">
                 Jobs picked for you
               </h3>
-              <p className="text-[11px] text-[var(--muted)] mt-0.5">
+              <p className="text-xs sm:text-sm text-[var(--muted)] mt-0.5">
                 A focused list of remote opportunities matched to your experience.
               </p>
             </div>
@@ -135,7 +135,7 @@ export default function LandingPage() {
                 <button
                   key={job.company}
                   onClick={() => setActiveIdx(idx)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors min-h-[36px] ${
+                  className={`px-3 py-1.5 text-xs sm:text-sm font-medium rounded-xl transition-colors min-h-[36px] ${
                     activeIdx === idx
                       ? 'bg-[var(--red)] text-white font-semibold shadow-sm'
                       : 'bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)]'
@@ -153,19 +153,19 @@ export default function LandingPage() {
               <div className={`grid size-11 place-items-center rounded-2xl font-bold text-sm shadow-sm ${current.badgeBg}`}>
                 {current.badge}
               </div>
-              <p className="mt-3 text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
+              <p className="mt-3 text-xs sm:text-sm font-medium text-[var(--muted)] tracking-wide">
                 {current.company}
               </p>
-              <h2 className="text-xl font-bold text-[var(--ink)] mt-0.5">
+              <h2 className="text-xl sm:text-2xl font-bold text-[var(--ink)] mt-0.5">
                 {current.title}
               </h2>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-[var(--muted)]">
                 <span className="flex items-center gap-1">
                   <MapPin size={13} className="text-[var(--red)]" />
                   {current.location}
                 </span>
                 <span>·</span>
-                <span className="font-mono">{current.salary}</span>
+                <span className="tabular-nums">{current.salary}</span>
               </div>
             </div>
 
@@ -174,16 +174,16 @@ export default function LandingPage() {
               <div className="mono text-3xl font-bold text-[var(--red)]">
                 {current.score}%
               </div>
-              <div className="text-[11px] font-semibold text-[var(--red)] mt-0.5 uppercase tracking-wider">
+              <div className="text-xs font-semibold text-[var(--red)] mt-0.5 uppercase tracking-wide">
                 match
               </div>
             </div>
           </div>
 
           {/* Why it matches */}
-          <div className="mt-5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-4 text-xs">
-            <p className="font-semibold text-[#04714f] flex items-center gap-1.5">
-              <Check size={14} className="stroke-[3]" />
+          <div className="mt-5 rounded-2xl bg-[#ecfdf5] border border-[#a7f3d0] p-4 text-xs sm:text-sm">
+            <p className="font-semibold text-[#04714f] flex items-center gap-1.5 text-sm">
+              <Check size={16} className="stroke-[3]" />
               <span>Why it matches</span>
             </p>
             <p className="mt-1 text-[#065f46] leading-relaxed">
@@ -192,8 +192,8 @@ export default function LandingPage() {
           </div>
 
           {/* What may be missing */}
-          <div className="mt-3 rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-4 text-xs">
-            <p className="font-semibold text-[#b45309]">What may be missing</p>
+          <div className="mt-3 rounded-2xl bg-[#fffbeb] border border-[#fde68a] p-4 text-xs sm:text-sm">
+            <p className="font-semibold text-[#b45309] text-sm">What may be missing</p>
             <p className="mt-1 text-[#92400e] leading-relaxed">
               {current.missingItem}
             </p>
@@ -203,13 +203,13 @@ export default function LandingPage() {
           <div className="mt-4 flex items-center gap-3 pt-2">
             <Link
               href={matchHref(current.id)}
-              className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
+              className="flex-1 rounded-xl border border-[var(--line)] bg-[var(--surface)] hover:bg-[var(--surface-soft)] text-[var(--ink)] text-sm font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center"
             >
               See why it matches
             </Link>
             <Link
               href="/feed"
-              className="flex-1 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center gap-1.5"
+              className="flex-1 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-sm font-semibold py-3 text-center transition-colors shadow-sm min-h-[44px] flex items-center justify-center gap-1.5"
             >
               <span>Apply →</span>
             </Link>
@@ -280,7 +280,7 @@ export default function LandingPage() {
                 <h3 className="mt-4 font-bold text-base text-[var(--ink)] leading-snug">
                   {step.title}
                 </h3>
-                <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
                   {step.desc}
                 </p>
               </div>
@@ -309,11 +309,11 @@ export default function LandingPage() {
             <div className="soft-card p-7 sm:p-8 rounded-3xl border border-[var(--line)] bg-[var(--surface)] space-y-6">
               <div>
                 <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Free</h3>
-                <p className="mt-1 text-xs text-[var(--muted)]">Get started for free.</p>
-                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">$0</div>
+                <p className="mt-1 text-sm text-[var(--muted)]">Get started for free.</p>
+                <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">₹0</div>
               </div>
 
-              <ul className="space-y-3 text-xs text-[var(--muted)]">
+              <ul className="space-y-3 text-sm text-[var(--muted)]">
                 <li className="flex items-center gap-2">
                   <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>15 saves per day</span>
@@ -334,7 +334,7 @@ export default function LandingPage() {
 
               <Link
                 href="/feed"
-                className="block w-full text-center rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-xs font-semibold text-[var(--ink)] py-3 transition-colors shadow-sm min-h-[44px]"
+                className="block w-full text-center rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] hover:bg-[var(--surface)] text-sm font-semibold text-[var(--ink)] py-3 transition-colors shadow-sm min-h-[44px]"
               >
                 Start finding jobs →
               </Link>
@@ -342,19 +342,19 @@ export default function LandingPage() {
 
             {/* Pro Tier */}
             <div className="soft-card p-7 sm:p-8 rounded-3xl border-2 border-[var(--red)] bg-[var(--surface)] space-y-6 relative shadow-md">
-              <div className="absolute top-4 right-4 rounded-full bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+              <div className="absolute top-4 right-4 rounded-full bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)] px-3 py-1 text-xs font-semibold uppercase tracking-wide">
                 Recommended
               </div>
 
               <div>
                 <h3 className="text-xl font-bold text-[var(--ink)]">RemoteMatch Pro</h3>
-                <p className="mt-1 text-xs text-[var(--muted)]">More ways to find the right job.</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">More ways to find the right job.</p>
                 <div className="mt-4 text-3xl font-bold text-[var(--ink)] mono">
-                  $12 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                  ₹499 <span className="text-sm font-normal text-[var(--muted)]">/month</span>
                 </div>
               </div>
 
-              <ul className="space-y-3 text-xs text-[var(--ink)] font-medium">
+              <ul className="space-y-3 text-sm text-[var(--ink)] font-medium">
                 <li className="flex items-center gap-2">
                   <Check size={15} className="text-[#04714f] stroke-[3]" />
                   <span>Unlimited saves</span>
@@ -375,7 +375,7 @@ export default function LandingPage() {
 
               <Link
                 href="/settings?tab=billing"
-                className="block w-full text-center rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold py-3 transition-colors shadow-sm min-h-[44px]"
+                className="block w-full text-center rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-sm font-semibold py-3 transition-colors shadow-sm min-h-[44px]"
               >
                 Upgrade to Pro →
               </Link>
@@ -396,129 +396,129 @@ export default function LandingPage() {
             </h2>
           </div>
 
-          <div className="space-y-4 text-xs">
+          <div className="space-y-4">
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 What is RemoteMatch?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 We evaluate why an opportunity fits your background, identify requirements that may need attention, and help you track every application through to an offer.
               </p>
               <div>
-                <Link href="/remote-jobs" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/remote-jobs" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>Browse the remote jobs directory</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 How does RemoteMatch work?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 You tell us your role, seniority, and preferences, and we compare each remote job against the experience and preferences you give us.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 Every opportunity displays a clear fit score, lists matching capabilities, and highlights potential gaps before you invest time applying.
               </p>
               <div>
-                <Link href="/guide/how-remote-matching-works" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/guide/how-remote-matching-works" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>Read our guide on how remote matching works</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 How do I find remote jobs that match my experience?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 You can browse curated categories in our public directory or create a profile to unlock personalized recommendations.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 Our match analysis examines technical frameworks, team scope, and timezone overlap rather than relying on automated keyword counting.
               </p>
               <div>
-                <Link href="/onboarding" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/onboarding" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>Find your matches now</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 Can I see why a remote job matches me?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 Yes. Every match view outlines why the role fits and what prerequisites might need attention.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 This insight gives you the exact context needed to highlight relevant achievements or tailor your application proposal.
               </p>
               <div>
-                <Link href="/feed" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/feed" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>Explore the live match feed</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 Can I track remote job applications?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 Yes. The built-in Application Tracker monitors every role through Applied, Screening, Interview, and Offer stages.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 You can save interview notes, log recruiter contacts, and keep your entire remote search organized in one dashboard.
               </p>
               <div>
-                <Link href="/tracker" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/tracker" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>View the Application Tracker</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 Are all jobs on RemoteMatch 100% remote?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 Yes. RemoteMatch excludes hybrid roles requiring in-office attendance.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 Each listing clearly states geographic eligibility — whether it is Worldwide, US/Canada only, or European timezones.
               </p>
               <div>
-                <Link href="/remote-jobs/worldwide" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/remote-jobs/worldwide" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>See worldwide remote roles</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
 
             <div className="rounded-2xl bg-[var(--surface)] border border-[var(--line)] p-5 shadow-sm space-y-2">
-              <h3 className="font-bold text-sm text-[var(--ink)]">
+              <h3 className="font-bold text-base text-[var(--ink)]">
                 How often are job listings updated?
               </h3>
-              <p className="font-medium text-[var(--ink)] leading-relaxed">
+              <p className="font-medium text-sm sm:text-base text-[var(--ink)] leading-relaxed">
                 Listings are validated daily. Confirmed closed positions are removed from the active directory and sitemap.
               </p>
-              <p className="text-[var(--muted)] leading-relaxed">
+              <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed">
                 This guarantees you never spend time applying to expired openings that are no longer accepting applicants.
               </p>
               <div>
-                <Link href="/remote-jobs" className="text-[var(--red)] font-semibold hover:underline inline-flex items-center gap-1">
+                <Link href="/remote-jobs" className="text-[var(--red)] text-sm font-semibold hover:underline inline-flex items-center gap-1">
                   <span>Explore active remote positions</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={14} />
                 </Link>
               </div>
             </div>
@@ -532,12 +532,12 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <span className="font-bold text-base text-[var(--ink)]">RemoteMatch</span>
-              <p className="text-[11px] text-[var(--muted)] max-w-xl leading-relaxed">
+              <p className="text-xs text-[var(--muted)] max-w-xl leading-relaxed">
                 RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences, understand why a job fits, identify what may be missing, and track applications from application to offer.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 text-xs font-semibold shrink-0">
+            <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm font-semibold shrink-0">
               <Link href="/remote-jobs" className="hover:text-[var(--ink)]">Directory</Link>
               <Link href="/guide" className="hover:text-[var(--ink)]">Guides</Link>
               <Link href="/feed" className="hover:text-[var(--ink)]">Jobs</Link>
@@ -546,7 +546,7 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[var(--line)]/80 pt-4 text-[11px]">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 border-t border-[var(--line)]/80 pt-4 text-xs">
             <span className="font-semibold text-[var(--ink)]">
               Know your chances before you apply.
             </span>

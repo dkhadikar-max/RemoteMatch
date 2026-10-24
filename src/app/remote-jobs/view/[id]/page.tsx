@@ -23,6 +23,7 @@ import {
   SEO_CATEGORIES,
 } from '@/lib/seo/data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
+import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -165,15 +166,15 @@ export default async function PublicJobDetailPage({ params }: Props) {
       {/* Closed Position Notice (For Expired Jobs Retained for Historical Reference) */}
       {!isLive && (
         <div className="rounded-2xl border border-[var(--line)] bg-[#fff5f5] p-5 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-red-700">
+          <div className="flex items-center gap-2 text-sm font-semibold text-red-700">
             <AlertCircle size={16} />
             <span>This position at {job.company} has closed</span>
           </div>
-          <p className="text-xs text-[var(--muted)] leading-relaxed">
+          <p className="text-sm text-[var(--muted)] leading-relaxed">
             This job posting is no longer accepting new applications. You can explore active remote positions matching this role below or calculate your match score for active openings.
           </p>
           <div className="pt-2">
-            <Link href="/remote-jobs" className="soft-button secondary text-xs">
+            <Link href="/remote-jobs" className="soft-button secondary text-sm">
               Browse active remote jobs →
             </Link>
           </div>
@@ -185,10 +186,10 @@ export default async function PublicJobDetailPage({ params }: Props) {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">
+              <span className="text-xs sm:text-sm font-semibold text-[var(--muted)] uppercase tracking-wider">
                 {job.company}
               </span>
-              <span className="tag !text-[10px]">
+              <span className="tag whitespace-nowrap">
                 {isLive ? '100% Remote' : 'Closed'}
               </span>
             </div>
@@ -199,15 +200,14 @@ export default async function PublicJobDetailPage({ params }: Props) {
 
           {isLive && (
             <div className="flex flex-wrap items-center gap-2 self-start">
-              <a
+              <TrackedApplyLink
                 href={job.officialUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="soft-button primary text-xs flex items-center gap-1.5"
+                opportunityId={job.id}
+                className="soft-button primary text-sm flex items-center gap-1.5"
               >
                 <span>Apply on employer&apos;s website</span>
-                <ExternalLink size={13} />
-              </a>
+                <ExternalLink size={14} />
+              </TrackedApplyLink>
             </div>
           )}
         </div>
@@ -216,33 +216,33 @@ export default async function PublicJobDetailPage({ params }: Props) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 pb-3 border-y border-[var(--line)]">
           {job.employmentType && (
             <div className="space-y-0.5">
-              <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
-                <Briefcase size={12} /> Employment
+              <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+                <Briefcase size={13} /> Employment
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)]">{job.employmentType}</p>
+              <p className="text-sm font-semibold text-[var(--ink)]">{job.employmentType}</p>
             </div>
           )}
           {job.remoteType && (
             <div className="space-y-0.5">
-              <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
-                <MapPin size={12} /> Remote Scope
+              <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+                <MapPin size={13} /> Remote Scope
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)]">{job.remoteType}</p>
+              <p className="text-sm font-semibold text-[var(--ink)]">{job.remoteType}</p>
             </div>
           )}
           {formatSalaryRange(job) && (
             <div className="space-y-0.5">
-              <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
-                <DollarSign size={12} /> Compensation
+              <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+                <DollarSign size={13} /> Compensation
               </span>
-              <p className="text-xs font-semibold text-[var(--ink)] font-mono">{formatSalaryRange(job)}</p>
+              <p className="text-sm font-semibold text-[var(--ink)] tabular-nums">{formatSalaryRange(job)}</p>
             </div>
           )}
           <div className="space-y-0.5">
-            <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
-              <Calendar size={12} /> Date Posted
+            <span className="text-xs text-[var(--muted)] flex items-center gap-1">
+              <Calendar size={13} /> Date Posted
             </span>
-            <p className="text-xs font-semibold text-[var(--ink)]">
+            <p className="text-sm font-semibold text-[var(--ink)]">
               {new Date(job.postedAt).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
@@ -255,17 +255,17 @@ export default async function PublicJobDetailPage({ params }: Props) {
         {/* Conversion Callout: Know your chances before you apply */}
         <div className="rounded-2xl border border-[var(--red-soft-border)] bg-[var(--red-soft)] p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--red)]">
-              <Target size={14} />
+            <div className="flex items-center gap-1.5 text-sm font-semibold text-[var(--red)]">
+              <Target size={15} />
               <span>Know your chances before you apply</span>
             </div>
-            <p className="text-xs text-[var(--ink)] max-w-lg leading-relaxed">
+            <p className="text-sm text-[var(--ink)] max-w-lg leading-relaxed">
               RemoteMatch analyzes your experience against this role&apos;s specific tech stack, timezone overlap, and requirements.
             </p>
           </div>
           <Link
             href="/onboarding"
-            className="soft-button primary text-xs whitespace-nowrap self-stretch sm:self-auto text-center"
+            className="soft-button primary text-sm whitespace-nowrap self-stretch sm:self-auto text-center"
           >
             <span>Check my match score →</span>
           </Link>
@@ -273,8 +273,8 @@ export default async function PublicJobDetailPage({ params }: Props) {
 
         {/* Factual Job Description */}
         <section className="space-y-3 pt-2">
-          <h2 className="text-base font-semibold text-[var(--ink)]">About the Role</h2>
-          <div className="text-xs sm:text-sm text-[var(--muted)] leading-relaxed space-y-3">
+          <h2 className="text-lg font-semibold text-[var(--ink)]">About the Role</h2>
+          <div className="text-base text-[var(--ink)]/90 leading-relaxed space-y-4">
             <p>{job.description}</p>
           </div>
         </section>
@@ -282,12 +282,12 @@ export default async function PublicJobDetailPage({ params }: Props) {
         {/* Factual Skills & Tech Stack */}
         {job.requiredSkills && job.requiredSkills.length > 0 && (
           <section className="space-y-3 pt-2">
-            <h2 className="text-base font-semibold text-[var(--ink)]">Required Skills & Technologies</h2>
+            <h2 className="text-lg font-semibold text-[var(--ink)]">Required Skills & Technologies</h2>
             <div className="flex flex-wrap gap-2">
               {job.requiredSkills.map((tag, idx) => (
                 <span
                   key={idx}
-                  className="rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] px-2.5 py-1 text-xs text-[var(--ink)] font-medium"
+                  className="rounded-lg bg-[var(--surface-soft)] border border-[var(--line)] px-3 py-1.5 text-xs sm:text-sm text-[var(--ink)] font-medium"
                 >
                   {tag}
                 </span>
@@ -299,9 +299,9 @@ export default async function PublicJobDetailPage({ params }: Props) {
         {/* Freshness & Sourcing Note — linkCheckedAt is the one genuinely
             real freshness fact (Live Supply Activation); never fabricated
             when the link hasn't actually been checked yet. */}
-        <div className="text-[11px] text-[var(--muted)] pt-3 border-t border-[var(--line)] flex flex-wrap items-center justify-between gap-2">
+        <div className="text-xs text-[var(--muted)] pt-3 border-t border-[var(--line)] flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1">
-            <Clock size={11} />
+            <Clock size={12} />
             {job.linkCheckedAt
               ? `Link verified: ${new Date(job.linkCheckedAt).toLocaleDateString()}`
               : `Posted: ${new Date(job.postedAt).toLocaleDateString()}`}
@@ -320,20 +320,19 @@ export default async function PublicJobDetailPage({ params }: Props) {
         <div className="pt-4 border-t border-[var(--line)] flex flex-col sm:flex-row items-center justify-between gap-4">
           <Link
             href="/remote-jobs"
-            className="text-xs text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
+            className="text-sm text-[var(--muted)] hover:text-[var(--ink)] transition-colors"
           >
             ← Back to all remote jobs
           </Link>
           {isLive && (
-            <a
+            <TrackedApplyLink
               href={job.officialUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="soft-button primary text-xs flex items-center gap-1.5 w-full sm:w-auto justify-center"
+              opportunityId={job.id}
+              className="soft-button primary text-sm flex items-center gap-1.5 w-full sm:w-auto justify-center"
             >
               <span>Apply on {job.company}&apos;s website</span>
-              <ExternalLink size={13} />
-            </a>
+              <ExternalLink size={14} />
+            </TrackedApplyLink>
           )}
         </div>
       </article>
@@ -341,7 +340,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
       {/* Related Active Opportunities */}
       {relatedJobs.length > 0 && (
         <section className="space-y-4">
-          <h2 className="text-lg font-semibold text-[var(--ink)]">
+          <h2 className="text-xl font-semibold text-[var(--ink)]">
             Other Active Remote Opportunities
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -351,11 +350,11 @@ export default async function PublicJobDetailPage({ params }: Props) {
                 href={`/remote-jobs/view/${related.sourceId}`}
                 className="soft-card p-4 hover:shadow-sm transition-all group block border border-[var(--line)] bg-[var(--surface)]"
               >
-                <span className="text-[11px] text-[var(--muted)] block">{related.company}</span>
-                <h3 className="text-xs font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5 line-clamp-1">
+                <span className="text-xs sm:text-sm text-[var(--muted)] block">{related.company}</span>
+                <h3 className="text-sm sm:text-base font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5 line-clamp-1">
                   {related.title}
                 </h3>
-                <p className="text-[11px] text-[var(--muted)] mt-2 font-mono">
+                <p className="text-xs sm:text-sm text-[var(--muted)] mt-2 tabular-nums">
                   {formatSalaryRange(related) || related.remoteType}
                 </p>
               </Link>

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
-import { notifyEntitlementChanged } from '@/lib/entitlement/client';
+import { startProUpgrade } from '@/lib/razorpay-checkout';
 
 export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition' | 'linkedinSearch' | 'linkedinPeopleConnect';
 
@@ -73,46 +73,30 @@ export function UpgradeModal({
   onUpgraded,
 }: UpgradeModalProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const copy = REASON_COPY[reason] || REASON_COPY.rewind;
 
   const handleUpgrade = async () => {
+    // No session-provisioning step needed here — every page that can show
+    // this modal is already behind the verified-account gate (middleware +
+    // getAuthenticatedUser), so a real session is guaranteed.
     setIsUpgrading(true);
+    setUpgradeError(null);
+    setUpgradeNotice(null);
     try {
-      // No session-provisioning step needed here anymore — every page that
-      // can show this modal is already behind the verified-account gate
-      // (middleware + getAuthenticatedUser), so a real session is
-      // guaranteed by the time a user reaches this button.
-      const res = await fetch('/api/stripe/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const data = await res.json();
-
-      if (data.url) {
-        // If mock session, verify and complete immediately
-        if (data.isMock) {
-          await fetch('/api/stripe/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: 'mock_session_success' }),
-          });
-          // Plan just changed server-side — tell the navbar (and any other
-          // listener) to refetch. Carries no data; listeners re-read /api/profile.
-          notifyEntitlementChanged();
-          if (onUpgraded) {
-            onUpgraded();
-          }
-          onClose();
-        } else {
-          // Stripe checkout redirect
-          window.location.href = data.url;
-        }
+      const result = await startProUpgrade();
+      if (result.status === 'upgraded') {
+        onUpgraded?.();
+        onClose();
+      } else if (result.status === 'confirming') {
+        setUpgradeNotice(result.message);
+      } else if (result.status === 'error') {
+        setUpgradeError(result.message);
       }
-    } catch (err) {
-      console.error('Upgrade failed:', err);
     } finally {
       setIsUpgrading(false);
     }
@@ -173,9 +157,15 @@ export function UpgradeModal({
             disabled={isUpgrading}
             className="w-full soft-button primary text-xs font-semibold py-3.5 min-h-[46px] flex items-center justify-center gap-2 shadow-md"
           >
-            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro — $12/month'}</span>
+            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro — ₹499/month'}</span>
             <ArrowRight size={14} />
           </button>
+          {upgradeError && (
+            <p className="text-[11px] font-medium text-[var(--red)] text-center mt-2">{upgradeError}</p>
+          )}
+          {upgradeNotice && (
+            <p role="status" className="text-[11px] font-medium text-[var(--ink)] text-center mt-2">{upgradeNotice}</p>
+          )}
           <p className="text-[11px] text-[var(--muted)] text-center mt-2">
             Cancel anytime. Immediate access upon upgrade.
           </p>

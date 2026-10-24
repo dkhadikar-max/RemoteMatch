@@ -132,39 +132,8 @@ export interface ProfileLocation {
   willingTimezones: string[];
 }
 
-// 2. RESUME INTELLIGENCE & 5-DIMENSION ANALYSIS
-export interface ProfileStrengthDimension {
-  name: string;
-  score: number; // 0-100
-  feedback: string;
-}
-
-export interface AIUncertaintyItem {
-  id: string;
-  skill: string;
-  prompt: string;
-  resolved: boolean;
-  resolution?: 'added' | 'not_relevant' | 'no';
-  whereUsed?: string;
-}
-
-export interface ProfileStrengthAnalysis {
-  overallScore: number; // e.g. 78 / 100
-  dimensions: {
-    relevance: ProfileStrengthDimension;
-    evidence: ProfileStrengthDimension;
-    impact: ProfileStrengthDimension;
-    atsReadability: ProfileStrengthDimension;
-    targetAlignment: ProfileStrengthDimension;
-  };
-  strongAreas: string[];
-  improvementAreas: Array<{
-    title: string;
-    explanation: string;
-    action: string;
-  }>;
-  uncertainties: AIUncertaintyItem[];
-}
+// 2. RESUME INTELLIGENCE — the old client-side 5-dimension analysis types (ProfileStrengthAnalysis,
+//    AIUncertaintyItem, ProfileStrengthDimension) were removed with their only producer in resume PR A.
 
 // 3. JOB-SPECIFIC RESUME ANALYSIS
 export interface JobSpecificResumeImprovement {
@@ -221,6 +190,10 @@ export interface CanonicalOpportunity {
    *  no location information was found — never conflated with a real
    *  value. */
   explicitRemoteScope?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
+  /** INGESTION-ONLY (C3 ATS gate): true when the raw location says "hybrid" and names no remote marker
+   *  (see isHybridWithoutRemoteMarker() in src/lib/ingestion/pipeline.ts). Read only by the gate; never persisted
+   *  (it is not in the catalog's content fields) and never used by matching. */
+  hybridWithoutRemoteMarker?: boolean;
   status: 'active' | 'expired' | 'draft' | 'unknown';
   isActive?: boolean;
   /** Live Supply Activation — drives the existing 410-vs-noindex SEO

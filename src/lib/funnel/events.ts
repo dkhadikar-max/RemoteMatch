@@ -14,6 +14,13 @@
  * and are read directly from those by the reporting script, never
  * duplicated here.
  *
+ * Migration 034 adds two steps that had no persisted source at all:
+ * `match_analyzed` (the match page rendered an analysis for this job — it is
+ * computed in the browser, so the page reports it, like job_viewed) and
+ * `apply_clicked` (an Apply link to the employer was clicked; `surface` says
+ * which one). A click is not an application: "I applied" stays in
+ * application_feedback / application_events.
+ *
  * Every field accepted by an event type is enumerated in
  * FUNNEL_EVENT_RULES below — there is no free-text field anywhere in this
  * module or the table itself, structurally preventing resume/application
@@ -25,14 +32,22 @@ export type FunnelEventType =
   | 'landing_viewed'
   | 'signup_attributed'
   | 'feed_viewed'
-  | 'job_viewed';
+  | 'job_viewed'
+  | 'match_analyzed'
+  | 'apply_clicked';
 
 const FUNNEL_EVENT_TYPES: readonly FunnelEventType[] = [
   'landing_viewed',
   'signup_attributed',
   'feed_viewed',
   'job_viewed',
+  'match_analyzed',
+  'apply_clicked',
 ];
+
+/** Where an apply_clicked came from — the four Apply links to an employer. */
+export type ApplySurface = 'feed_card' | 'match_view' | 'job_modal' | 'job_page';
+const APPLY_SURFACES: readonly ApplySurface[] = ['feed_card', 'match_view', 'job_modal', 'job_page'];
 
 export function isFunnelEventType(value: unknown): value is FunnelEventType {
   return typeof value === 'string' && (FUNNEL_EVENT_TYPES as readonly string[]).includes(value);
@@ -76,6 +91,16 @@ const FUNNEL_EVENT_RULES: Record<FunnelEventType, FunnelEventRule> = {
     allowedFields: ['opportunity_id'],
     requiredFields: ['opportunity_id'],
   },
+  match_analyzed: {
+    requiresAuth: true,
+    allowedFields: ['opportunity_id'],
+    requiredFields: ['opportunity_id'],
+  },
+  apply_clicked: {
+    requiresAuth: true,
+    allowedFields: ['opportunity_id', 'surface'],
+    requiredFields: ['opportunity_id', 'surface'],
+  },
 };
 
 export function funnelEventRequiresAuth(eventType: FunnelEventType): boolean {
@@ -90,7 +115,7 @@ const ANONYMOUS_ID_PATTERN = /^[A-Za-z0-9-]{8,100}$/;
 const MAX_FIELD_LENGTH = 200;
 
 export type ValidatedFunnelFields = Partial<
-  Record<'anonymous_id' | 'opportunity_id' | 'utm_source' | 'utm_medium' | 'utm_campaign', string>
+  Record<'anonymous_id' | 'opportunity_id' | 'utm_source' | 'utm_medium' | 'utm_campaign' | 'surface', string>
 >;
 
 /**
@@ -133,6 +158,9 @@ export function validateFunnelEventBody(
   if (fields.opportunity_id !== undefined && !fields.opportunity_id.startsWith('opp-')) {
     return { ok: false, error: 'Invalid opportunity_id format' };
   }
+  if (fields.surface !== undefined && !(APPLY_SURFACES as readonly string[]).includes(fields.surface)) {
+    return { ok: false, error: 'Invalid surface' };
+  }
 
   return { ok: true, fields };
 }
@@ -161,6 +189,9 @@ export async function recordFunnelEvent(
     utm_source: fields.utm_source ?? null,
     utm_medium: fields.utm_medium ?? null,
     utm_campaign: fields.utm_campaign ?? null,
+    // Only sent when present, so the existing events keep working on a
+    // database where migration 034 (which adds the column) isn't applied yet.
+    ...(fields.surface !== undefined ? { surface: fields.surface } : {}),
   });
   if (error) {
     return { ok: false, error: error.message };

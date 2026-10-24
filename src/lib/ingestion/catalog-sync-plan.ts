@@ -238,7 +238,9 @@ export function isGateRejected(
   opp: NormalizedOpp,
   policy: Pick<UpsertPolicy, 'atsGated' | 'passesFreshness'>
 ): boolean {
-  return policy.atsGated.has(opp.source) && (!policy.passesFreshness(opp.postedAt) || opp.explicitRemoteScope === 'unknown');
+  // Rejected when: stale, OR scope unknown, OR the location says "hybrid" with no remote marker (isHybridWithoutRemoteMarker,
+  // pipeline.ts — policy "hybrid option 2"). The legacy path in catalog-sync.ts applies the same three conditions.
+  return policy.atsGated.has(opp.source) && (!policy.passesFreshness(opp.postedAt) || opp.explicitRemoteScope === 'unknown' || opp.hybridWithoutRemoteMarker === true);
 }
 
 export function planUpserts(

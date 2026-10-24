@@ -46,14 +46,14 @@ export default function ResetPasswordPage() {
           <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
             <KeyRound size={20} />
           </div>
-          <h1 className="text-xl font-bold text-[var(--ink)]">Set a new password</h1>
-          <p className="text-xs text-[var(--muted)]">Choose a password for your account.</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-[var(--ink)]">Set a new password</h1>
+          <p className="text-sm text-[var(--muted)]">Choose a password for your account.</p>
         </div>
 
         <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">New password</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">New password</label>
               <input
                 type="password"
                 required
@@ -61,12 +61,12 @@ export default function ResetPasswordPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="At least 8 characters"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="new-password"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Confirm password</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Confirm password</label>
               <input
                 type="password"
                 required
@@ -74,18 +74,18 @@ export default function ResetPasswordPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Retype your password"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="new-password"
               />
             </div>
 
             {message && (
               <p
-                className={`text-xs font-medium flex items-start gap-1.5 ${
+                className={`text-sm font-medium flex items-start gap-1.5 ${
                   message.type === 'success' ? 'text-[#04714f]' : 'text-[var(--red)]'
                 }`}
               >
-                {message.type === 'success' && <CheckCircle2 size={13} className="shrink-0 mt-0.5" />}
+                {message.type === 'success' && <CheckCircle2 size={15} className="shrink-0 mt-0.5" />}
                 <span>{message.text}</span>
               </p>
             )}
@@ -93,9 +93,9 @@ export default function ResetPasswordPage() {
             <button
               type="submit"
               disabled={pending || password.length < 8 || !confirmPassword}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-sm font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
             >
-              <KeyRound size={13} />
+              <KeyRound size={15} />
               <span>{pending ? 'Saving…' : 'Save password'}</span>
             </button>
           </form>

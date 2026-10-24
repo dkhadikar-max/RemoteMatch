@@ -206,7 +206,9 @@ async function run() {
     assert(JSON.stringify(r.calls) === JSON.stringify(['sync', 'translate', 'reconcile', 'invalidate']), `the steps still run in the same order (got ${JSON.stringify(r.calls)})`);
     const runId = ((r.logs[0] ?? '').match(/^\[sync ([0-9a-f]{8})\] start action=sync$/) || [])[1];
     assert(!!runId, 'a start line is logged with a run id');
-    assert(r.logs[1] === `[sync ${runId}] done providers=1/2`, `a done line with the same run id and provider counts (got "${r.logs[1]}")`);
+    // main also logs a `[catalog-sync] summary` line between start and done (logCatalogSyncResult), so find the done line by its run id.
+    const doneLine = r.logs.find((l: string) => l.startsWith(`[sync ${runId}] done`));
+    assert(doneLine === `[sync ${runId}] done providers=1/2`, `a done line with the same run id and provider counts (got "${doneLine}")`);
     assert(r.errors.length === 0, 'nothing is logged as an error on success');
     mocks.sync = async () => ({ providerOutcomes: [{ sourceKey: 'a', success: false, jobCount: 0 }] });
     const none = await call();

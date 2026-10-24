@@ -39,12 +39,12 @@ export default function ForgotPasswordPage() {
           <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
             <CheckCircle2 size={20} />
           </div>
-          <h1 className="text-xl font-bold text-[var(--ink)]">Check your email</h1>
-          <p className="text-xs text-[var(--muted)]">
+          <h1 className="text-xl sm:text-2xl font-bold text-[var(--ink)]">Check your email</h1>
+          <p className="text-sm text-[var(--muted)]">
             If an account exists for <span className="font-semibold text-[var(--ink)]">{email}</span>, we&apos;ve
             sent a link to set a new password.
           </p>
-          <Link href="/login" className="inline-block text-xs font-semibold text-[var(--red)] hover:underline">
+          <Link href="/login" className="inline-block text-sm font-semibold text-[var(--red)] hover:underline">
             Back to sign in
           </Link>
         </div>
@@ -59,8 +59,8 @@ export default function ForgotPasswordPage() {
           <div className="mx-auto grid size-11 place-items-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)]">
             <KeyRound size={20} />
           </div>
-          <h1 className="text-xl font-bold text-[var(--ink)]">Reset your password</h1>
-          <p className="text-xs text-[var(--muted)]">
+          <h1 className="text-xl sm:text-2xl font-bold text-[var(--ink)]">Reset your password</h1>
+          <p className="text-sm text-[var(--muted)]">
             Enter your email and we&apos;ll send you a link to set a new password.
           </p>
         </div>
@@ -68,33 +68,33 @@ export default function ForgotPasswordPage() {
         <div className="soft-card p-6 space-y-4 border border-[var(--line)]">
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-[var(--ink)] block mb-1">Email</label>
+              <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Email</label>
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="soft-input py-2 px-3 text-xs"
+                className="soft-input py-2.5 px-3.5 text-sm"
                 autoComplete="email"
               />
             </div>
 
             {message && (
-              <p className="text-xs font-medium text-[var(--red)]">{message.text}</p>
+              <p className="text-sm font-medium text-[var(--red)]">{message.text}</p>
             )}
 
             <button
               type="submit"
               disabled={pending || !email}
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-xs font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-sm font-semibold px-3.5 py-2.5 transition-colors min-h-[44px]"
             >
-              <Send size={13} />
+              <Send size={15} />
               <span>{pending ? 'Sending…' : 'Send reset link'}</span>
             </button>
           </form>
 
-          <p className="text-center text-xs text-[var(--muted)]">
+          <p className="text-center text-sm text-[var(--muted)]">
             <Link href="/login" className="font-semibold text-[var(--red)] hover:underline">
               Back to sign in
             </Link>

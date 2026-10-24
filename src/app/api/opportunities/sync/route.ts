@@ -8,6 +8,7 @@ import {
 import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
 import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
 import { newSyncRunId, describeSyncFailure } from '@/lib/ingestion/sync-failure-report';
+import { logCatalogSyncResult } from '@/lib/ingestion/lifecycle-log';
 
 
 /**
@@ -57,6 +58,11 @@ export async function POST(req: NextRequest) {
     // header for why this is a code-level parameter, not an env var.
     stage = 'catalog_sync';
     const result = await syncOpportunitiesToCatalog(undefined, { allowLiveProviderFetch: true });
+
+    // Print the sync summary + lifecycle report to the service log NOW, before the (slow) translation pass: Railway's edge cuts this
+    // request at ~5 minutes, so the response body — which carries the shadow report — often never reaches the cron. Log-only; cannot
+    // fail the sync (the helper swallows every error).
+    logCatalogSyncResult(result);
 
     // Multilingual translation pass — runs after sync has written all newly-
     // discovered and refreshed rows, before cross-provider reconciliation.

@@ -125,6 +125,51 @@ for (const untouched of ['bg', 'surface', 'surface-soft', 'ink', 'red-soft']) {
   assert(token(untouched).toLowerCase() === orig[untouched], `--${untouched} unchanged (${orig[untouched]})`);
 }
 
+console.log('\n6. Placeholder text (::placeholder) on input surfaces');
+const phMatch = css.match(/::placeholder\s*\{([^}]*)\}/);
+assert(Boolean(phMatch), '::placeholder rule found in src/app/globals.css');
+assert(/input::placeholder/.test(css) && /textarea::placeholder/.test(css), 'placeholder rule covers input and textarea to override Tailwind preflight specificity');
+const phBlock = phMatch ? phMatch[1] : '';
+const phColorToken = (phBlock.match(/color:\s*var\(--(\w[\w-]*)\)/) ?? [])[1];
+const phColorMix = phBlock.match(/color:\s*color-mix\(in\s+srgb,\s*var\(--(\w[\w-]*)\)\s*(\d+)%,\s*transparent\)/);
+const phOpacityMatch = phBlock.match(/opacity:\s*([0-9.]+)/);
+const phOpacity = phOpacityMatch ? parseFloat(phOpacityMatch[1]) : 1.0;
+
+let baseHex = '';
+let alpha = phOpacity;
+
+if (phColorToken && (T as any)[phColorToken]) {
+  baseHex = (T as any)[phColorToken];
+} else if (phColorMix && (T as any)[phColorMix[1]]) {
+  baseHex = (T as any)[phColorMix[1]];
+  alpha *= parseFloat(phColorMix[2]) / 100;
+} else {
+  const hexMatch = phBlock.match(/color:\s*(#[0-9a-fA-F]{3,6})/);
+  if (hexMatch) baseHex = hexMatch[1];
+}
+
+assert(Boolean(baseHex), `::placeholder color resolves to a valid token/hex (resolved ${baseHex}, alpha ${alpha})`);
+
+const inputSurfaces = [
+  ['.soft-input background (var(--surface))', T.surface],
+  ['onboarding textarea background (var(--surface-soft))', T.soft],
+  ['input on page background (var(--bg))', T.bg],
+  ['input on white background', WHITE],
+] as const;
+
+for (const [desc, bgHex] of inputSurfaces) {
+  let effectiveHex = baseHex;
+  if (alpha < 1) {
+    const [fr, fg, fb] = rgb(baseHex);
+    const [br, bg_, bb] = rgb(bgHex);
+    const effR = Math.round(alpha * fr + (1 - alpha) * br);
+    const effG = Math.round(alpha * fg + (1 - alpha) * bg_);
+    const effB = Math.round(alpha * fb + (1 - alpha) * bb);
+    effectiveHex = '#' + [effR, effG, effB].map((x) => x.toString(16).padStart(2, '0')).join('');
+  }
+  check(`placeholder on ${desc}`, effectiveHex, bgHex, AA);
+}
+
 console.log('\n' + '='.repeat(78));
 console.log(`RESULT: ${passed} passed, ${failed} failed`);
 console.log('='.repeat(78));

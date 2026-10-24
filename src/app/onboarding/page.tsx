@@ -70,6 +70,7 @@ export default function OnboardingPage() {
   const [resumeFileName, setResumeFileName] = useState('');
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [pdfExtractionError, setPdfExtractionError] = useState<string | null>(null);
+  const [pdfExtractionWarnings, setPdfExtractionWarnings] = useState<string[]>([]);
 
   // Result of the plain-text resume check shown on the review step (facts only — see resume-check.ts).
   const [resumeCheck, setResumeCheck] = useState<ResumeCheck | null>(null);
@@ -154,11 +155,13 @@ export default function OnboardingPage() {
     if (!file) return;
 
     setPdfExtractionError(null);
+    setPdfExtractionWarnings([]);
     setIsExtractingPdf(true);
     try {
-      const text = await extractPdfText(file);
-      setResumeText(text);
+      const result = await extractPdfText(file);
+      setResumeText(result.text);
       setResumeFileName(file.name);
+      setPdfExtractionWarnings(result.warnings.map((w) => w.message));
     } catch (err) {
       setPdfExtractionError(
         err instanceof PdfTextExtractionError ? err.message : 'Could not read this PDF. Please try again.',
@@ -330,7 +333,7 @@ export default function OnboardingPage() {
             <p className="text-sm font-semibold text-[var(--red)]">Profile Setup</p>
             <p className="mt-0.5 text-sm text-[var(--muted)]">One decision at a time</p>
           </div>
-          <span className="font-mono text-sm text-[var(--muted)]">
+          <span className="tabular-nums text-sm text-[var(--muted)]">
             {step === 7 ? 'Review' : `Stage ${step} / 6`}
           </span>
         </div>
@@ -762,6 +765,16 @@ export default function OnboardingPage() {
                   </label>
                   {pdfExtractionError && (
                     <p className="text-xs font-medium text-[var(--danger)]">{pdfExtractionError}</p>
+                  )}
+                  {pdfExtractionWarnings.length > 0 && (
+                    <ul
+                      className="space-y-1 rounded-xl border border-[var(--amber-border)] bg-[var(--amber-soft)] p-3"
+                      aria-live="polite"
+                    >
+                      {pdfExtractionWarnings.map((w) => (
+                        <li key={w} className="text-xs font-medium text-[var(--ink)]">{w}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
 

@@ -6,6 +6,7 @@ import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import Link from 'next/link';
 import { Check } from 'lucide-react';
 import { matchHref } from '@/lib/match/match-href';
+import { trackApplyClick } from '@/lib/funnel/client';
 
 interface JobCardProps {
   opportunity: CanonicalOpportunity;
@@ -161,7 +162,10 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           href={opportunity.officialUrl || opportunity.sourceUrl || '#'}
           target="_blank"
           rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            trackApplyClick(opportunity.id, 'feed_card');
+          }}
           className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white flex-1 text-xs font-semibold text-center justify-center flex items-center gap-1.5 py-2.5 transition-colors shadow-sm min-h-[44px]"
         >
           <span>Apply →</span>
