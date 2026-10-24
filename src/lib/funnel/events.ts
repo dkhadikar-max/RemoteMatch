@@ -34,7 +34,8 @@ export type FunnelEventType =
   | 'feed_viewed'
   | 'job_viewed'
   | 'match_analyzed'
-  | 'apply_clicked';
+  | 'apply_clicked'
+  | 'company_radar_viewed';
 
 const FUNNEL_EVENT_TYPES: readonly FunnelEventType[] = [
   'landing_viewed',
@@ -43,11 +44,14 @@ const FUNNEL_EVENT_TYPES: readonly FunnelEventType[] = [
   'job_viewed',
   'match_analyzed',
   'apply_clicked',
+  'company_radar_viewed',
 ];
 
-/** Where an apply_clicked came from — the four Apply links to an employer. */
-export type ApplySurface = 'feed_card' | 'match_view' | 'job_modal' | 'job_page';
-const APPLY_SURFACES: readonly ApplySurface[] = ['feed_card', 'match_view', 'job_modal', 'job_page'];
+/** Where an apply_clicked came from — the five Apply links to an employer
+ *  (the four original surfaces, plus a Company Radar profile page —
+ *  migration 035, Company Radar validation period). */
+export type ApplySurface = 'feed_card' | 'match_view' | 'job_modal' | 'job_page' | 'company_profile';
+const APPLY_SURFACES: readonly ApplySurface[] = ['feed_card', 'match_view', 'job_modal', 'job_page', 'company_profile'];
 
 export function isFunnelEventType(value: unknown): value is FunnelEventType {
   return typeof value === 'string' && (FUNNEL_EVENT_TYPES as readonly string[]).includes(value);
@@ -100,6 +104,16 @@ const FUNNEL_EVENT_RULES: Record<FunnelEventType, FunnelEventRule> = {
     requiresAuth: true,
     allowedFields: ['opportunity_id', 'surface'],
     requiredFields: ['opportunity_id', 'surface'],
+  },
+  // Company Radar validation period (migration 035). Deliberately identical
+  // shape to landing_viewed — anonymous-allowed, anonymous_id only. A single
+  // combined signal for both /companies and /companies/view/[company]; not
+  // split by page type, since the authorized measurement scope for this
+  // validation period does not require that split.
+  company_radar_viewed: {
+    requiresAuth: false,
+    allowedFields: ['anonymous_id'],
+    requiredFields: ['anonymous_id'],
   },
 };
 

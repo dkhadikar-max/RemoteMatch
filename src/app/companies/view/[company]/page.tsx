@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { ArrowRight, MapPin, ExternalLink } from 'lucide-react';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { getOpportunitiesByExactCompany, isValidCompanyName, labelForSource } from '@/lib/companies/catalog';
+import CompanyRadarViewBeacon, { CompanyProfileApplyLink } from '../../CompanyRadarViewBeacon';
 
 interface Props {
   params: Promise<{ company: string }>;
@@ -54,6 +55,7 @@ export default async function CompanyProfilePage({ params }: Props) {
 
   return (
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-5xl mx-auto space-y-10">
+      <CompanyRadarViewBeacon />
       <nav aria-label="Breadcrumb" className="text-xs text-[var(--muted)] flex items-center gap-2">
         <Link href="/" className="hover:text-[var(--ink)] transition-colors">Home</Link>
         <span>/</span>
@@ -143,18 +145,16 @@ export default async function CompanyProfilePage({ params }: Props) {
                   )}
                 </div>
                 <div className="mt-5 pt-4 border-t border-[var(--line)]">
-                  {/* Plain outbound link, no apply-click tracking — Phase 0
-                      deliberately does not integrate funnel instrumentation;
-                      that is a separate, later enhancement if ever approved. */}
-                  <a
+                  {/* Validation-period instrumentation (migration 035):
+                      attributed apply_clicked, surface: 'company_profile'. */}
+                  <CompanyProfileApplyLink
                     href={opp.officialUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    canonicalId={opp.canonicalId}
                     className="text-sm font-semibold text-[var(--red)] hover:underline inline-flex items-center gap-1"
                   >
                     <span>{labelForSource(opp.source)}</span>
                     <ExternalLink size={13} />
-                  </a>
+                  </CompanyProfileApplyLink>
                 </div>
               </article>
             ))}
