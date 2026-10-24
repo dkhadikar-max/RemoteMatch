@@ -6,6 +6,7 @@ import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { searchCompanies } from '@/lib/companies/catalog';
 import { DIRECTORY_PAGE_SIZE, MAX_DIRECTORY_PAGE, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
+import CompanyRadarViewBeacon from './CompanyRadarViewBeacon';
 
 interface Props {
   searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
@@ -48,6 +49,7 @@ export default async function CompanySearchPage({ searchParams }: Props) {
 
   return (
     <div className="min-h-screen py-10 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto space-y-10">
+      <CompanyRadarViewBeacon />
       <header className="space-y-4 max-w-3xl">
         <span className="tag">Company Radar</span>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-[var(--ink)]">

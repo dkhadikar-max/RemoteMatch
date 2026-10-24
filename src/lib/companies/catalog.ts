@@ -29,7 +29,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const COMPANY_READ_COLUMNS =
   'company, company_logo, title, source, source_url, official_url, remote_type, ' +
-  'eligible_countries, excluded_countries, required_skills, status, posted_at';
+  'eligible_countries, excluded_countries, required_skills, status, posted_at, canonical_id';
 
 interface CompanyOpportunityRow {
   company: string;
@@ -44,6 +44,12 @@ interface CompanyOpportunityRow {
   required_skills: string[] | null;
   status: string;
   posted_at: string;
+  // Persisted generated column, 'opp-<source>-<source_id>' (migration 012) —
+  // selected (Company Radar validation period, migration 035) solely so the
+  // profile page can attribute an apply_clicked funnel event to a real
+  // opportunity id, the same id format every other apply-click surface
+  // already uses. Not used for display.
+  canonical_id: string;
 }
 
 export interface CompanyOpportunity {
@@ -58,6 +64,7 @@ export interface CompanyOpportunity {
   excludedCountries: string[];
   requiredSkills: string[];
   postedAt: string;
+  canonicalId: string;
 }
 
 function mapRow(row: CompanyOpportunityRow): CompanyOpportunity {
@@ -73,6 +80,7 @@ function mapRow(row: CompanyOpportunityRow): CompanyOpportunity {
     excludedCountries: row.excluded_countries ?? [],
     requiredSkills: row.required_skills ?? [],
     postedAt: row.posted_at,
+    canonicalId: row.canonical_id,
   };
 }
 
