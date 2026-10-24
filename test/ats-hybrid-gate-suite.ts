@@ -69,7 +69,29 @@ const matrix: Array<[string, boolean, string]> = [   // [location, gateRejected,
   ['Hybrid - London, UK', true, 'rejected even though "uk" alone would have admitted it: a hybrid role is not remote'],
   ['London, United Kingdom, hybrid', true, 'same, spelled out'],
   ['Hybrid - Bangalore, India', true, 'same, India'],
-  ['Hybrid - Remote-less', false, '"remote" appears as a word inside "remote-less" -> marker present (literal reading)'],
+  // NEGATED markers do not count (review finding, hardening): the word "remote" is there but means the opposite
+  ['Hybrid - Remote-less', true, 'negated by a following "-less": no marker'],
+  ['Hybrid - not remote', true, 'negated by a preceding "not"'],
+  ['Hybrid - non-remote', true, 'negated by a preceding "non-"'],
+  ['Hybrid (Non Remote)', true, '"non" + space'],
+  ['Hybrid, no remote', true, 'negated by a preceding "no"'],
+  ['Hybrid - without remote', true, 'negated by "without"'],
+  ['Hybrid - never remote', true, 'negated by "never"'],
+  ['Hybrid - remote-free', true, 'negated by a following "-free"'],
+  ['Hybrid, remote not available', true, 'negated by a following "not"'],
+  ['Hybrid - remote is not allowed', true, 'negated by a following "is not"'],
+  ['Hybrid - remote n/a', true, 'negated by a following "n/a"'],
+  ['Hybrid - remote unavailable', true, 'negated by a following "unavailable"'],
+  ['Hybrid - NOT REMOTE', true, 'case-insensitive'],
+  // a negation that is NOT adjacent, or a second genuine marker, keeps the listing
+  ['Hybrid, no travel, remote', false, 'the negator is not adjacent to the marker'],
+  ['Hybrid - Remote, no relocation', false, 'negator follows the comma, not the marker'],
+  ['Hybrid - not remote; Remote, US', false, 'one negated marker + one genuine marker: genuine wins'],
+  ['Hybrid; Remote (not hybrid)', false, 'the marker is followed by a parenthesis, not by a negator'],
+  ['Hybrid - remote on Fridays', false, 'plain marker'],
+  ['Anon-remote hybrid', false, '"anon" is not the negator "non": word boundary respected'],
+  ['Hybrid - Remote OK', false, 'plain marker'],
+  ['Hybrid - Remote, not required', false, 'comma between marker and "not": not adjacent'],
   ['Hybrid - remotex', true, '"remotex" is not the word remote: no marker'],
   ['Hybrid - unremote', true, '"unremote" is not the word remote: no marker'],
   ['Hybrid - hyperremote', true, '"hyperremote" is not the word remote: no marker'],
@@ -105,7 +127,38 @@ assert(golden.entries.length >= 1300, 'the golden fixture is the full recorded c
 // independent oracle: manual word scan, no shared regex
 const isW = (ch: string | undefined) => !!ch && /[a-z0-9_]/.test(ch);
 const hasWord = (s: string, w: string) => { for (let i = s.indexOf(w); i >= 0; i = s.indexOf(w, i + 1)) { if (!isW(s[i - 1]) && !isW(s[i + w.length])) return true; } return false; };
-const oracleHybridNoRemote = (loc: string) => { const s = (loc || '').toLowerCase(); return hasWord(s, 'hybrid') && !['remote', 'remotely', 'work from home', 'work-from-home', 'wfh'].some((w) => hasWord(s, w)); };
+// ---- independent oracle, hand-written character scan (no shared regex with the production code) ----
+const isSep = (c: string | undefined) => c !== undefined && (c === '-' || c.trim() === '');           // hyphen or any whitespace
+const isWs = (c: string | undefined) => c !== undefined && c.trim() === '';
+const wordBack = (s: string, end: number) => { let i = end; while (i > 0 && isW(s[i - 1])) i--; return s.slice(i, end); };
+const wordFwd = (s: string, from: number) => { let i = from; while (i < s.length && isW(s[i])) i++; return s.slice(from, i); };
+/** every whole-word marker occurrence [start, end) */
+const markerSpans = (s: string): Array<[number, number]> => {
+  const out: Array<[number, number]> = [];
+  const forms = ['remote', 'remotely', 'wfh', 'work from home', 'work-from-home', 'work from-home', 'work-from home'];
+  for (const w of forms) for (let i = s.indexOf(w); i >= 0; i = s.indexOf(w, i + 1)) if (!isW(s[i - 1]) && !isW(s[i + w.length])) out.push([i, i + w.length]);
+  return out;
+};
+const NEGATORS = ['non', 'not', 'no', 'without', 'never'];
+const negatedMarker = (s: string, start: number, end: number): boolean => {
+  let c = 0; while (c < 5 && start - c - 1 >= 0 && isSep(s[start - c - 1])) c++;                       // separators right before the marker
+  if (c <= 4 && NEGATORS.includes(wordBack(s, start - c))) return true;
+  let a = 0; while (a < 3 && isSep(s[end + a])) a++;                                                      // "-less" / " free"
+  if (a <= 2 && ['less', 'free'].includes(wordFwd(s, end + a))) return true;
+  let w = 0; while (w < 5 && isWs(s[end + w])) w++;                                                       // whitespace-only run
+  if (w >= 1 && w <= 4) {
+    const p = end + w, word = wordFwd(s, p);
+    const target = (from: number) => { const x = wordFwd(s, from); return x === 'not' || x === 'unavailable' || (x === 'n' && s.startsWith('n/a', from) && !isW(s[from + 3])); };
+    if (target(p)) return true;
+    if (word === 'is') { let q = p + 2; if (isWs(s[q])) { while (isWs(s[q])) q++; if (target(q)) return true; } }
+  }
+  return false;
+};
+const oracleHybridNoRemote = (loc: string) => {
+  const s = (loc || '').toLowerCase();
+  if (!hasWord(s, 'hybrid')) return false;
+  return !markerSpans(s).some(([a, b]) => !negatedMarker(s, a, b));        // true when there is no GENUINE (non-negated) marker
+};
 let identical = 0; const newlyRejected: Array<[string, string[]]> = []; const unexpected: string[] = []; let flippedToAdmitted = 0;
 for (const [loc, tags, was] of golden.entries) {
   const now = rejected(loc, tags);
@@ -130,7 +183,8 @@ console.log('\n3. gateRejected <=> (scope unknown OR hybrid-without-remote), on 
 function mulberry32(a: number) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 const rnd = mulberry32(424242);
 const pool = ['Remote', 'remote', 'REMOTE', 'Remotely', 'WFH', 'Work from home', 'work-from-home', 'Hybrid', 'hybrid', 'HYBRID', 'hybrid_remote', 'Hybridge', 'US', 'U.S.', 'US-Remote', 'Remote (US)', 'United States', 'USA', 'Europe', 'UK', 'United Kingdom', 'Canada', 'India',
-  'Worldwide', 'Anywhere', 'onsite', 'on-site', 'In-Office', 'office-friendly', 'Flexible location', 'Remote-friendly', 'PST', 'Westlake', 'New York, NY', 'London', 'San Francisco, CA', 'Berlin', 'ünï', '日本語', 'Híbrido', ';', ',', ' - ', '|', '•', '(', ')', ' ', '', '\n', '\t', '.*', '[', '\\'];
+  'Worldwide', 'Anywhere', 'onsite', 'on-site', 'In-Office', 'office-friendly', 'Flexible location', 'Remote-friendly', 'PST', 'Westlake', 'New York, NY', 'London', 'San Francisco, CA', 'Berlin', 'ünï', '日本語', 'Híbrido', ';', ',', ' - ', '|', '•', '(', ')', ' ', '', '\n', '\t', '.*', '[', '\\',
+  'not', 'no', 'non', 'non-', 'without', 'never', 'Not', 'NO', 'less', '-less', 'free', '-free', 'n/a', 'unavailable', 'is', 'is not', 'anon', 'knot', 'nor', 'remoteless', 'remote-less'];
 const randomString = () => Array.from({ length: 1 + Math.floor(rnd() * 8) }, () => pool[Math.floor(rnd() * pool.length)]).join(rnd() < 0.5 ? ' ' : rnd() < 0.5 ? ', ' : '');
 let badDef = 0; const badEx: string[] = [];
 const checkDef = (loc: string, tags: string[]) => { const want = classifyExplicitRemoteScope(loc, tags) === 'unknown' || oracleHybridNoRemote(loc); const got = rejected(loc, tags); if (want !== got) { badDef++; if (badEx.length < 4) badEx.push(JSON.stringify(loc)); } };
@@ -151,6 +205,16 @@ for (const [loc, tags] of newlyRejected) {
   must(isHybridWithoutRemoteMarker(loc.replace(/hybrid/gi, 'xxxxxx')) === false, 'removing the word hybrid clears the flag: ' + loc);
 }
 assert(mBad === 0, `all ${mN} metamorphic checks hold for the ${newlyRejected.length} newly rejected strings`, mEx.join(' | '));
+// negating the ONE marker of every KEPT hybrid string must flip it to rejected; restoring a genuine marker must flip it back
+const keptHybrid = golden.entries.filter(([loc]) => hasWord(loc.toLowerCase(), 'hybrid') && markerSpans(loc.toLowerCase()).length === 1 && !rejected(loc, []) );
+let nBad = 0, nN = 0; const nEx: string[] = [];
+const NEG_FORMS: Array<(w: string) => string> = [(w) => `non-${w}`, (w) => `not ${w}`, (w) => `no ${w}`, (w) => `without ${w}`, (w) => `never ${w}`, (w) => `${w}-less`, (w) => `${w}-free`, (w) => `${w} not available`, (w) => `${w} n/a`, (w) => `${w} unavailable`, (w) => `${w} is not allowed`];
+for (const [loc] of keptHybrid) {
+  const lower = loc.toLowerCase(); const [a, b] = markerSpans(lower)[0]; const word = loc.slice(a, b);
+  for (const f of NEG_FORMS) { nN++; const v = loc.slice(0, a) + f(word) + loc.slice(b); if (rejected(v, []) !== true) { nBad++; if (nEx.length < 4) nEx.push(JSON.stringify(v)); } }
+  nN++; if (rejected(`${loc}; Remote, US`, []) !== false) { nBad++; if (nEx.length < 4) nEx.push('restore: ' + JSON.stringify(loc)); }
+}
+assert(keptHybrid.length >= 100 && nBad === 0, `negating the single marker of each of the ${keptHybrid.length} kept hybrid strings (${NEG_FORMS.length} negation forms) rejects it, and adding a genuine marker keeps it (${nN} checks)`, nEx.join(' | '));
 
 // ---------------------------------------------------------------- 5. integration with the planner + back-compat + legacy gate
 console.log('\n5. planUpserts integration, optional flag, legacy gate');

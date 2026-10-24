@@ -266,11 +266,29 @@ function isUsRemoteForScope(locationStr?: string): boolean {
  * Not a classifier: it changes neither remoteType nor explicitRemoteScope (both stay frozen), only whether the gate admits
  * the job. Location only — department tags are never read. "Remote-friendly" counts as a marker (it contains the word
  * "remote"), which is the literal reading of the policy. Hybrid spelled in another language is not detected.
+ *
+ * A NEGATED marker does not count: the word "remote" immediately preceded by non / not / no / without / never ("non-remote",
+ * "not remote", "no remote", "without remote"), or immediately followed by less / free ("remote-less", "remote-free") or by
+ * not / n/a / unavailable ("remote not available", "remote n/a"). "Hybrid - Remote-less" therefore has NO marker and is
+ * rejected. Only an ADJACENT negation counts ("Remote, no relocation" keeps its marker), and one genuine marker anywhere is
+ * enough ("Hybrid - not remote; Remote, US" is kept).
  */
 export function isHybridWithoutRemoteMarker(locationStr?: string): boolean {
   const loc = (locationStr || '').toLowerCase();
   if (!/\bhybrid\b/.test(loc)) return false;
-  return !/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(loc);
+  const marker = /\b(?:remote|remotely|work[- ]from[- ]home|wfh)\b/g; // fresh regex object per call (no shared lastIndex state)
+  let m: RegExpExecArray | null;
+  while ((m = marker.exec(loc)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = loc.slice(Math.max(0, start - 21), start);
+    const after = loc.slice(end, end + 48);
+    const negated =
+      /(?:^|[^a-z0-9_])(?:non|not|no|without|never)[-\s]{0,4}$/.test(before) ||
+      /^(?:[-\s]{0,2}(?:less|free)\b|\s{1,4}(?:is\s+)?(?:not|n\/a|unavailable)\b)/.test(after);
+    if (!negated) return false; // a genuine remote marker: the hybrid listing is admissible
+  }
+  return true; // hybrid, and every remote marker (if any) is negated
 }
 
 // Calculate Quality Score (0-100)
