@@ -258,6 +258,21 @@ function isUsRemoteForScope(locationStr?: string): boolean {
   return false;
 }
 
+/**
+ * C3 ATS gate rule (policy decided by Deep, 2026-10-24: "hybrid option 2"): a Greenhouse/Lever/Ashby listing whose LOCATION
+ * says "hybrid" is admitted only if the same location string ALSO carries an explicit remote marker. So
+ *   "Remote, Hybrid, New York, NY"  -> kept   (the employer flagged remote; Ashby/Lever prefix "Remote" from isRemote)
+ *   "Hybrid" / "Hybrid - Chicago" / "New York, NY (Hybrid)" / "New York, NY, hybrid" -> rejected
+ * Not a classifier: it changes neither remoteType nor explicitRemoteScope (both stay frozen), only whether the gate admits
+ * the job. Location only — department tags are never read. "Remote-friendly" counts as a marker (it contains the word
+ * "remote"), which is the literal reading of the policy. Hybrid spelled in another language is not detected.
+ */
+export function isHybridWithoutRemoteMarker(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!/\bhybrid\b/.test(loc)) return false;
+  return !/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(loc);
+}
+
 // Calculate Quality Score (0-100)
 export function computeQualityScore(payload: RawJobPayload): number {
   let score = 55;
@@ -365,6 +380,7 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     salaryQuality: raw.salaryMin && raw.salaryMin > 0 ? 'verified' : raw.salaryString ? 'estimated' : 'unspecified',
     remotePolicyConfidence: remoteType === 'Worldwide' || eligibleCountries.length > 0 ? 'high' : 'medium',
     explicitRemoteScope,
+    hybridWithoutRemoteMarker: isHybridWithoutRemoteMarker(raw.locationString),
     status: status,
     isActive: status === 'active',
     postedAt: raw.publicationDate,
