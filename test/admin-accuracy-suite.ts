@@ -28,7 +28,13 @@ import { NextRequest } from 'next/server';
 
 import { must, mustCount, fetchAllRows, isMissingRelation, QueryError } from '../src/lib/supabase/query-helpers';
 import { runSections } from '../src/lib/admin/sections';
+import { authErrorResponse } from '../src/lib/auth/api-error';
+import { AdminForbiddenError } from '../src/lib/auth/get-authenticated-admin';
+import { UnauthenticatedError, UnverifiedAccountError } from '../src/lib/auth/get-authenticated-user';
 import { hasRequiredEnv, newVerifiedSession, adminClient, TestSession } from './helpers/verified-session';
+
+/** The admin-forbidden 403's message (src/lib/auth/api-error.ts) — distinct from the unverified-account 403. */
+const ADMIN_FORBIDDEN_MESSAGE = /not authorized for admin access/i;
 
 let passed = 0, failed = 0, skipped = 0;
 const assert = (c: boolean, n: string, d?: string) => {
@@ -120,6 +126,16 @@ async function run() {
     });
     assert(sec.values.good === 42 && sec.values.alsoGood === 'ok' && sec.values.bad === undefined, 'runSections: a failing section does not affect its siblings, and has NO value');
     assert(sec.failed.length === 1 && sec.failed[0].section === 'bad' && sec.failed[0].message.includes('schema cache'), 'runSections: the failure is reported with the real message');
+
+    // The two 403s must be told apart by message, because the revoke-route authorization test below relies on it.
+    const forbiddenRes = authErrorResponse(new AdminForbiddenError());
+    const unverifiedRes = authErrorResponse(new UnverifiedAccountError());
+    const unauthRes = authErrorResponse(new UnauthenticatedError());
+    const forbiddenMsg = (await forbiddenRes!.json()).error as string;
+    const unverifiedMsg = (await unverifiedRes!.json()).error as string;
+    assert(forbiddenRes!.status === 403 && unverifiedRes!.status === 403, 'authErrorResponse: admin-forbidden and unverified-account are BOTH 403 (status alone cannot tell them apart)');
+    assert(ADMIN_FORBIDDEN_MESSAGE.test(forbiddenMsg) && !ADMIN_FORBIDDEN_MESSAGE.test(unverifiedMsg), 'authErrorResponse: the admin-forbidden message matches the revoke test\'s pattern and the unverified-account message does NOT');
+    assert(unauthRes!.status === 401, 'authErrorResponse: an unauthenticated caller is 401');
   }
 
   // ==========================================================================
@@ -127,7 +143,25 @@ async function run() {
   // ==========================================================================
   {
     const routeFiles = walk(path.join(ROOT, 'src/app/api/admin'), (f) => f.endsWith('route.ts'));
-    assert(routeFiles.length === 15, `found all 15 admin routes (${routeFiles.length})`);
+    // The reviewed inventory of admin API routes, by path (not just a count): the loop below applies the error-handling
+    // rules to every discovered route, so a route that escapes discovery — or a new one added without review — must
+    // fail here. 15 original routes (admin console, #3) + the 2 billing-access routes (purchase access, PR #23).
+    // Adding or removing an admin route means editing this list on purpose.
+    const EXPECTED_ADMIN_ROUTES = [
+      'admins/[id]', 'admins', 'audit-log', 'billing-access/[id]', 'billing-access', 'dashboard',
+      'discovery/[id]/promote', 'discovery/[id]/reject', 'discovery', 'employers',
+      'opportunities/[id]', 'opportunities', 'sources', 'sync-health', 'translation', 'users/[id]', 'users',
+    ].sort();
+    const foundRoutes = routeFiles
+      .map((f) => path.relative(path.join(ROOT, 'src/app/api/admin'), f).replace(/\\/g, '/').replace(/\/route\.ts$/, ''))
+      .sort();
+    const missingRoutes = EXPECTED_ADMIN_ROUTES.filter((r) => !foundRoutes.includes(r));
+    const unexpectedRoutes = foundRoutes.filter((r) => !EXPECTED_ADMIN_ROUTES.includes(r));
+    assert(
+      missingRoutes.length === 0 && unexpectedRoutes.length === 0 && foundRoutes.length === 17,
+      `the admin route inventory is exactly the 17 reviewed routes (found ${foundRoutes.length})`,
+      `missing: [${missingRoutes.join(', ')}] unexpected: [${unexpectedRoutes.join(', ')}]`,
+    );
 
     const HANDLES_ERRORS = /\bmust\(|\bmustCount\(|\bfetchAllRows\(|\brunSections\(|if \(error\)|if \(upsertErr\)|if \(updateErr\)|if \(sourceErr\)/;
     for (const f of routeFiles) {
@@ -153,6 +187,14 @@ async function run() {
     const syncRules = fs.readFileSync(path.join(ROOT, 'src/lib/admin/sync-status.ts'), 'utf8');
     assert(/EXPECTED_INTERVAL_HOURS\s*=\s*6/.test(syncRules) && /EXPECTED_INTERVAL_HOURS/.test(sync), 'sync-health: expects the 6-hour cadence');
 
+    // Revoke ordering: a nonexistent target is a 404 BEFORE the last-admin lockout guard (409) can fire. Pinned
+    // statically so a revert is caught on any database, including one that happens to hold several admins.
+    const revokeRoute = stripComments(fs.readFileSync(path.join(ROOT, 'src/app/api/admin/admins/[id]/route.ts'), 'utf8'));
+    const iNotFound = revokeRoute.indexOf('if (!before)');
+    const iLastAdmin = revokeRoute.indexOf('activeCount <= 1');
+    assert(iNotFound > 0 && iLastAdmin > 0 && iNotFound < iLastAdmin, 'admins/[id]: the target-exists check (404) runs before the last-admin guard (409)');
+    assert(/getAuthenticatedAdmin\(req\)/.test(revokeRoute) && /Cannot revoke the last remaining active admin/.test(revokeRoute) && /admin_revoke/.test(revokeRoute), 'admins/[id]: still authenticates the caller, keeps the last-admin guard and audit-logs the revoke');
+
     const syncPage = fs.readFileSync(path.join(ROOT, 'src/app/admin/(dashboard)/sync-health/page.tsx'), 'utf8');
     assert(!/not a bug, it reflects that no pipeline/.test(syncPage) && !/Manual \/ not scheduled/.test(syncPage), 'sync-health page: the false "manual" explanation is gone');
 
@@ -172,6 +214,8 @@ async function run() {
   } else {
     const admin = adminClient();
     let session: TestSession | null = null;
+    let extraSession: TestSession | null = null; // second disposable admin for the revoke success path
+    let nonAdminSession: TestSession | null = null; // verified account WITHOUT an admin row, for the revoke 403 check
     try {
       session = await newVerifiedSession();
       await admin.from('admin_users').insert({ id: session.userId, email: session.email, granted_by: 'admin-accuracy-suite' });
@@ -285,6 +329,61 @@ async function run() {
         r = await call(adminOne(), 'DELETE', '/api/admin/admins/not-a-uuid', { params: { id: 'not-a-uuid' } });
         assert(r.status === 500 && !!r.json?.detail, `admins/[id]: a database error is a 500 with detail, not "Admin not found" (got ${r.status})`);
 
+        // ---- revoke: 404 (missing) → 409 (last admin) → success. Uses ONLY this suite's own disposable admins and
+        //      never mutates anyone else's row; the 409 case runs only when the suite's admin really is the sole
+        //      active one (it is on a fresh/isolated database) and says so when it cannot.
+        {
+          const adminRows = async () => (await admin.from('admin_users').select('id', { count: 'exact', head: true })).count ?? 0;
+          const revokeAudits = async (targetId: string) => (await admin.from('admin_audit_log').select('id', { count: 'exact', head: true }).eq('action', 'admin_revoke').eq('target_id', targetId)).count ?? 0;
+          const othersActive = async () => (await admin.from('admin_users').select('id', { count: 'exact', head: true }).is('revoked_at', null).neq('id', session!.userId)).count ?? 0;
+
+          // (0) authentication + authorization still guard the route. The target is the suite's OWN admin, so if either
+          //     guard ever failed the call would act on a real row — and the checks below prove it did not.
+          const selfId = session!.userId;
+          // An INVALID bearer token is exercised here. A request with NO Authorization header is deliberately not: it takes
+          // the cookie-session path, and next/headers cookies() throws outside a real request scope (these handlers are
+          // called in-process), which would be a harness artifact, not the route's behaviour. "No session → 401" for the
+          // shared getAuthenticatedAdmin() is proven over real HTTP by test/admin-auth-suite.ts on the six GET admin
+          // routes; this DELETE handler is not itself in that HTTP loop.
+          r = await call(adminOne(), 'DELETE', `/api/admin/admins/${selfId}`, { token: 'not-a-real-token', params: { id: selfId } });
+          assert(r.status === 401, `admins/[id]: DELETE with an invalid token → 401 (got ${r.status})`);
+          nonAdminSession = await newVerifiedSession();
+          r = await call(adminOne(), 'DELETE', `/api/admin/admins/${selfId}`, { token: nonAdminSession.token, params: { id: selfId } });
+          // Status AND message: an unverified-account 403 has the same status ("a verified account is required"), so a
+          // status-only check could pass for the wrong reason. This pins the admin-forbidden rejection specifically.
+          assert(r.status === 403 && ADMIN_FORBIDDEN_MESSAGE.test(r.json?.error ?? ''), `admins/[id]: DELETE as a verified NON-admin → 403 with the admin-forbidden message (got ${r.status} "${r.json?.error ?? ''}")`);
+          const { data: untouched } = await admin.from('admin_users').select('revoked_at').eq('id', selfId).maybeSingle();
+          assert(untouched?.revoked_at === null && (await revokeAudits(selfId)) === 0, 'admins/[id]: the rejected (401/403) attempts mutated nothing and wrote no audit record');
+
+          // (1) nonexistent target → 404, whatever the admin count; nothing mutated, nothing audited
+          const rowsBefore = await adminRows();
+          r = await call(adminOne(), 'DELETE', `/api/admin/admins/${NIL}`, { params: { id: NIL } });
+          assert(r.status === 404 && /not found/i.test(r.json?.error ?? ''), `admins/[id]: nonexistent target → 404 "not found", never the last-admin 409 (got ${r.status})`);
+          assert((await adminRows()) === rowsBefore && (await revokeAudits(NIL)) === 0, 'admins/[id]: the 404 mutated no admin row and wrote no audit record');
+
+          // (2) existing target that is the last active admin → 409, and it stays active
+          const others = await othersActive();
+          if (others === 0) {
+            r = await call(adminOne(), 'DELETE', `/api/admin/admins/${session!.userId}`, { params: { id: session!.userId } });
+            assert(r.status === 409 && /last remaining active admin/i.test(r.json?.error ?? ''), `admins/[id]: existing target that is the last active admin → 409 (got ${r.status})`);
+            const { data: still } = await admin.from('admin_users').select('revoked_at').eq('id', session!.userId).maybeSingle();
+            assert(still?.revoked_at === null && (await revokeAudits(session!.userId)) === 0, 'admins/[id]: the refused revoke left the admin active and wrote no audit record');
+          } else {
+            skip(`admins/[id]: last-admin 409 not exercised — this database has ${others} other active admin(s) and the suite will not touch their rows`);
+          }
+
+          // (3) existing, revocable target (needs a second active admin → the suite creates its own) → success
+          extraSession = await newVerifiedSession();
+          await admin.from('admin_users').insert({ id: extraSession.userId, email: extraSession.email, granted_by: 'admin-accuracy-suite' });
+          r = await call(adminOne(), 'DELETE', `/api/admin/admins/${extraSession.userId}`, { params: { id: extraSession.userId } });
+          assert(r.status === 200 && r.json?.revoked === true, `admins/[id]: existing revocable target → 200 { revoked: true } (got ${r.status})`);
+          const { data: revoked } = await admin.from('admin_users').select('revoked_at').eq('id', extraSession.userId).maybeSingle();
+          assert(!!revoked?.revoked_at, 'admins/[id]: the target is soft-revoked (revoked_at set, row kept)');
+          assert((await revokeAudits(extraSession.userId)) === 1, 'admins/[id]: the revoke was audit-logged exactly once');
+          const { data: caller } = await admin.from('admin_users').select('revoked_at').eq('id', session!.userId).maybeSingle();
+          assert(caller?.revoked_at === null, 'admins/[id]: the revoking admin is still active');
+        }
+
         // Discovery mutation routes against the C6 table: with it absent the
         // lookup itself FAILS, and must say so instead of reading "not found".
         const pr = await call(promote(), 'POST', `/api/admin/discovery/${NIL}/promote`, { params: { id: NIL } });
@@ -297,6 +396,20 @@ async function run() {
         }
       }
     } finally {
+      if (nonAdminSession) {
+        await admin.auth.admin.deleteUser(nonAdminSession.userId).catch(() => {});
+        const { data: gone } = await admin.auth.admin.getUserById(nonAdminSession.userId);
+        assert(!gone?.user, 'cleanup: the disposable non-admin account is gone');
+      }
+      if (extraSession) {
+        // remove the audit rows this run wrote for its own disposable target, then the target itself
+        await admin.from('admin_audit_log').delete().eq('target_id', extraSession.userId);
+        await admin.from('admin_users').delete().eq('id', extraSession.userId);
+        await admin.auth.admin.deleteUser(extraSession.userId).catch(() => {});
+        const { data: left2 } = await admin.from('admin_users').select('id').eq('id', extraSession.userId);
+        const { data: leftAudit } = await admin.from('admin_audit_log').select('id').eq('target_id', extraSession.userId);
+        assert((!left2 || left2.length === 0) && (!leftAudit || leftAudit.length === 0), 'cleanup: the second disposable admin and its audit rows are gone');
+      }
       if (session) {
         await admin.from('admin_users').delete().eq('id', session.userId);
         await admin.auth.admin.deleteUser(session.userId).catch(() => {});

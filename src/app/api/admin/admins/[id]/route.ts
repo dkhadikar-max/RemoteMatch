@@ -40,10 +40,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   } catch (err) {
     return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
+  // Existence BEFORE the lockout guard. Revoking an id that is not an admin changes nothing, so it must answer
+  // "not found" however many admins exist — checking the count first reported a misleading "last remaining
+  // admin" 409 for a nonexistent target whenever the caller happened to be the only admin (e.g. right after
+  // bootstrap). Only a target that really exists can be the last admin standing.
+  if (!before) return NextResponse.json({ error: 'Admin not found.' }, { status: 404 });
   if (activeCount <= 1) {
     return NextResponse.json({ error: 'Cannot revoke the last remaining active admin.' }, { status: 409 });
   }
-  if (!before) return NextResponse.json({ error: 'Admin not found.' }, { status: 404 });
 
   const { error } = await db.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', params.id);
 
