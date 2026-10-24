@@ -258,6 +258,39 @@ function isUsRemoteForScope(locationStr?: string): boolean {
   return false;
 }
 
+/**
+ * C3 ATS gate rule (policy decided by Deep, 2026-10-24: "hybrid option 2"): a Greenhouse/Lever/Ashby listing whose LOCATION
+ * says "hybrid" is admitted only if the same location string ALSO carries an explicit remote marker. So
+ *   "Remote, Hybrid, New York, NY"  -> kept   (the employer flagged remote; Ashby/Lever prefix "Remote" from isRemote)
+ *   "Hybrid" / "Hybrid - Chicago" / "New York, NY (Hybrid)" / "New York, NY, hybrid" -> rejected
+ * Not a classifier: it changes neither remoteType nor explicitRemoteScope (both stay frozen), only whether the gate admits
+ * the job. Location only — department tags are never read. "Remote-friendly" counts as a marker (it contains the word
+ * "remote"), which is the literal reading of the policy. Hybrid spelled in another language is not detected.
+ *
+ * A NEGATED marker does not count: the word "remote" immediately preceded by non / not / no / without / never ("non-remote",
+ * "not remote", "no remote", "without remote"), or immediately followed by less / free ("remote-less", "remote-free") or by
+ * not / n/a / unavailable ("remote not available", "remote n/a"). "Hybrid - Remote-less" therefore has NO marker and is
+ * rejected. Only an ADJACENT negation counts ("Remote, no relocation" keeps its marker), and one genuine marker anywhere is
+ * enough ("Hybrid - not remote; Remote, US" is kept).
+ */
+export function isHybridWithoutRemoteMarker(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!/\bhybrid\b/.test(loc)) return false;
+  const marker = /\b(?:remote|remotely|work[- ]from[- ]home|wfh)\b/g; // fresh regex object per call (no shared lastIndex state)
+  let m: RegExpExecArray | null;
+  while ((m = marker.exec(loc)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = loc.slice(Math.max(0, start - 21), start);
+    const after = loc.slice(end, end + 48);
+    const negated =
+      /(?:^|[^a-z0-9_])(?:non|not|no|without|never)[-\s]{0,4}$/.test(before) ||
+      /^(?:[-\s]{0,2}(?:less|free)\b|\s{1,4}(?:is\s+)?(?:not|n\/a|unavailable)\b)/.test(after);
+    if (!negated) return false; // a genuine remote marker: the hybrid listing is admissible
+  }
+  return true; // hybrid, and every remote marker (if any) is negated
+}
+
 // Calculate Quality Score (0-100)
 export function computeQualityScore(payload: RawJobPayload): number {
   let score = 55;
@@ -365,6 +398,7 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     salaryQuality: raw.salaryMin && raw.salaryMin > 0 ? 'verified' : raw.salaryString ? 'estimated' : 'unspecified',
     remotePolicyConfidence: remoteType === 'Worldwide' || eligibleCountries.length > 0 ? 'high' : 'medium',
     explicitRemoteScope,
+    hybridWithoutRemoteMarker: isHybridWithoutRemoteMarker(raw.locationString),
     status: status,
     isActive: status === 'active',
     postedAt: raw.publicationDate,

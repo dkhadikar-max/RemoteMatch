@@ -425,6 +425,10 @@ async function syncOpportunitiesToCatalogLegacy(
       if (opp.explicitRemoteScope === 'unknown') {
         continue;
       }
+      // "Hybrid option 2": a hybrid listing with no remote marker in its location is not a remote job (same rule as isGateRejected()).
+      if (opp.hybridWithoutRemoteMarker === true) {
+        continue;
+      }
     }
 
     const key = `${opp.source}:${opp.sourceId}`;
