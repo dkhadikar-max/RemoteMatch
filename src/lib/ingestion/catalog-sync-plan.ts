@@ -413,8 +413,10 @@ export function computeSourceCoverage(
 // Window metrics (spec v2.1 D-N5)
 // ---------------------------------------------------------------------------
 
-/** The run cadence the gap check is measured against (Railway cron: every 6h). */
-export const EXPECTED_CADENCE_HOURS = 6;
+/** The run cadence the gap check is measured against: Railway `remotematch-sync-cron` runs every 3 hours (minute 0, UTC; one POST
+ *  fetches every provider, so the cadence is the same for all sources). Observed run starts are 2h56m-3h04m apart. It was 6 while the
+ *  cron ran every 6h; it only feeds the reported `gapMarginHours` / `gapRisk` — no expiry, retirement or absence decision reads it. */
+export const EXPECTED_CADENCE_HOURS = 3;
 
 export interface WindowMetrics {
   /** age of the oldest fetched posting (the floor) at plan time */
