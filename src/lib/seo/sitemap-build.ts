@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { SEO_CATEGORIES, SEO_GUIDE_ARTICLES } from '@/lib/seo/data';
 import type { SitemapJobEntry } from '@/lib/ingestion/catalog-read';
+import { jobUrl } from '@/lib/seo/job-href';
 
 /**
  * Pure sitemap assembly. Extracted from src/app/sitemap.ts unchanged so the
@@ -65,7 +66,7 @@ export function buildSitemap(baseUrl: string, activeJobs: SitemapJobEntry[]): Me
   // Only index actively available jobs (expired jobs strictly excluded —
   // guaranteed by the RLS-backed read, not by filtering here)
   const jobRoutes: MetadataRoute.Sitemap = activeJobs.map((job) => ({
-    url: `${baseUrl}/remote-jobs/view/${job.sourceId}`,
+    url: jobUrl(job.sourceId, baseUrl),
     lastModified: new Date(job.postedAt),
     changeFrequency: 'weekly',
     priority: 0.75,

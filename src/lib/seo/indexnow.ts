@@ -9,6 +9,7 @@
 
 import { timingSafeEqual } from 'crypto';
 import { SITE_URL, SITE_HOST } from '@/lib/site';
+import { jobUrl } from '@/lib/seo/job-href';
 
 export const INDEXNOW_KEY = process.env.INDEXNOW_KEY || 'remotematch-key-849b8502';
 export const INDEXNOW_KEY_LOCATION = `${SITE_URL}/remotematch-indexnow-key.txt`;
@@ -120,7 +121,7 @@ export async function submitToIndexNow(urls: string[]): Promise<{
  */
 export async function notifyJobPublished(jobId: string) {
   const urls = [
-    `https://${INDEXNOW_HOST}/remote-jobs/view/${jobId}`,
+    jobUrl(jobId, `https://${INDEXNOW_HOST}`),
     `https://${INDEXNOW_HOST}/remote-jobs`,
   ];
   return submitToIndexNow(urls);
@@ -128,14 +129,14 @@ export async function notifyJobPublished(jobId: string) {
 
 export async function notifyJobUpdated(jobId: string) {
   const urls = [
-    `https://${INDEXNOW_HOST}/remote-jobs/view/${jobId}`,
+    jobUrl(jobId, `https://${INDEXNOW_HOST}`),
   ];
   return submitToIndexNow(urls);
 }
 
 export async function notifyJobExpired(jobId: string) {
   const urls = [
-    `https://${INDEXNOW_HOST}/remote-jobs/view/${jobId}`,
+    jobUrl(jobId, `https://${INDEXNOW_HOST}`),
     `https://${INDEXNOW_HOST}/remote-jobs`,
   ];
   return submitToIndexNow(urls);
