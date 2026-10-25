@@ -35,7 +35,7 @@ import ws from 'ws';
 (globalThis as any).WebSocket = ws;
 
 import http from 'http';
-import sitemap from '../src/app/sitemap';
+import { getSitemapEntries as sitemap } from '../src/lib/seo/sitemap-data';
 import robots from '../src/app/robots';
 import {
   SEO_CATEGORIES,
