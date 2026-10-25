@@ -20,6 +20,7 @@ import {
 } from '@/lib/seo/data';
 import { loadHubPage, loadSearchPage, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
+import { SITE_URL } from '@/lib/site';
 
 interface Props {
   searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
@@ -34,13 +35,13 @@ const baseMetadata: Metadata = {
   description:
     'Browse verified remote software engineering, product, design, and data jobs. Transparent salaries, verified remote scope, and match insights before you apply.',
   alternates: {
-    canonical: 'https://remotematch.com/remote-jobs',
+    canonical: `${SITE_URL}/remote-jobs`,
   },
   openGraph: {
     title: 'Remote Jobs Directory | RemoteMatch',
     description:
       'Browse verified remote jobs across engineering, design, product, and marketing. Know your chances before you apply.',
-    url: 'https://remotematch.com/remote-jobs',
+    url: `${SITE_URL}/remote-jobs`,
     type: 'website',
   },
 };
@@ -73,8 +74,8 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const pageOffset = (currentPage - 1) * (hub?.pageSize ?? jobs.length);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
   ]);
 
   const jsonLdItemList = {

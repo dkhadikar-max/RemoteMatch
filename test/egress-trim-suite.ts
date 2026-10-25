@@ -36,6 +36,7 @@ import {
 import { buildSitemap } from '../src/lib/seo/sitemap-build';
 import { createAsyncTtlCache } from '../src/lib/seo/ttl-cache';
 import { SEO_CATEGORIES, SEO_GUIDE_ARTICLES } from '../src/lib/seo/data';
+import { SITE_URL } from '../src/lib/site';
 
 let passed = 0;
 let failed = 0;
@@ -178,11 +179,11 @@ async function main() {
     requiredSkills: Array.from({ length: Math.floor(rnd() * 4) }, () => allTags[Math.floor(rnd() * allTags.length)]),
   }));
   const norm = (x: unknown) => JSON.stringify(x);
-  assert(norm(buildSitemap('https://remotematch.com', entries)) === norm(oldSitemap('https://remotematch.com', entries)), 'buildSitemap() === the old sitemap logic on 3,000 synthetic listings (urls, dates, priorities, order)');
-  assert(norm(buildSitemap('https://remotematch.com', [])) === norm(oldSitemap('https://remotematch.com', [])), 'identical on an empty catalog (static + category + guide routes only)');
+  assert(norm(buildSitemap(SITE_URL, entries)) === norm(oldSitemap(SITE_URL, entries)), 'buildSitemap() === the old sitemap logic on 3,000 synthetic listings (urls, dates, priorities, order)');
+  assert(norm(buildSitemap(SITE_URL, [])) === norm(oldSitemap(SITE_URL, [])), 'identical on an empty catalog (static + category + guide routes only)');
   const one = [{ sourceId: 'x', title: 'Solo', postedAt: '2026-10-05T10:00:00Z', requiredSkills: [] }];
-  assert(norm(buildSitemap('https://remotematch.com', one)) === norm(oldSitemap('https://remotematch.com', one)), 'identical on a one-listing catalog');
-  const built = buildSitemap('https://remotematch.com', entries);
+  assert(norm(buildSitemap(SITE_URL, one)) === norm(oldSitemap(SITE_URL, one)), 'identical on a one-listing catalog');
+  const built = buildSitemap(SITE_URL, entries);
   assert(built.filter((e) => e.url.includes('/remote-jobs/view/')).length === 3000, 'one /view/ URL per active listing');
   assert(built.every((e) => e.lastModified instanceof Date && !isNaN((e.lastModified as Date).getTime())), 'every lastModified is a valid Date');
 
@@ -315,7 +316,7 @@ async function main() {
     assert(restOpportunityCalls === 0, `the next two sitemap() calls made ${restOpportunityCalls} REST calls to opportunities (cache hit)`);
     assert(JSON.stringify(s1) === JSON.stringify(s2) && JSON.stringify(s2) === JSON.stringify(s3), 'cached calls return the identical sitemap');
     const jobUrls = s1.filter((e) => e.url.includes('/remote-jobs/view/')).map((e) => e.url);
-    assert(expectedVisible.size <= jobUrls.length && Array.from(expectedVisible).every((id) => jobUrls.includes(`https://remotematch.com/remote-jobs/view/${id}`)), 'sitemap() includes a /view/ URL for every visible seeded listing');
+    assert(expectedVisible.size <= jobUrls.length && Array.from(expectedVisible).every((id) => jobUrls.includes(`${SITE_URL}/remote-jobs/view/${id}`)), 'sitemap() includes a /view/ URL for every visible seeded listing');
     assert(!jobUrls.some((u) => u.includes(`${PREFIX}x-`)), 'sitemap() excludes the expired and untranslated-German listings');
 
     // 3d. bytes on the wire (uncompressed + a gzip estimate), same 1,000 rows, three column lists

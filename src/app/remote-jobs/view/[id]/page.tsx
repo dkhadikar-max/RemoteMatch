@@ -24,6 +24,7 @@ import {
 } from '@/lib/seo/data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
+import { SITE_URL } from '@/lib/site';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -58,7 +59,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${job.title} at ${job.company} (Remote) | RemoteMatch`,
     description: `${job.title} remote opportunity at ${job.company}.${salaryText}${locText} Know your chances before you apply with RemoteMatch.`,
     alternates: {
-      canonical: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+      canonical: `${SITE_URL}/remote-jobs/view/${job.sourceId}`,
     },
     robots: isLive
       ? { index: true, follow: true }
@@ -66,7 +67,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: `${job.title} at ${job.company} — Remote Role`,
       description: job.description.slice(0, 160),
-      url: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+      url: `${SITE_URL}/remote-jobs/view/${job.sourceId}`,
       type: 'website',
     },
   };
@@ -107,18 +108,18 @@ export default async function PublicJobDetailPage({ params }: Props) {
   });
 
   const breadcrumbItems = [
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
   ];
   if (matchedCategory) {
     breadcrumbItems.push({
       name: matchedCategory.title,
-      url: `https://remotematch.com/remote-jobs/${matchedCategory.slug}`,
+      url: `${SITE_URL}/remote-jobs/${matchedCategory.slug}`,
     });
   }
   breadcrumbItems.push({
     name: job.title,
-    url: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+    url: `${SITE_URL}/remote-jobs/view/${job.sourceId}`,
   });
 
   const breadcrumbsSchema = buildBreadcrumbSchema(breadcrumbItems);
