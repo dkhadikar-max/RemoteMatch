@@ -108,7 +108,7 @@ async function main() {
   assert(/CATALOG_INDEX_TTL_MS = 6 \* 60 \* 60 \* 1000/.test(dirSrc), 'the catalog index TTL is 6 hours');
   const relSrc = noComments(read('src/app/remote-jobs/view/[id]/page.tsx'));
   assert(/getRelatedJobs\(/.test(relSrc) && !/getActiveJobs/.test(relSrc), 'related-job reads are still the bounded LIMIT-3 read (preserved)');
-  const sm = noComments(read('src/app/sitemap.ts'));
+  const sm = noComments(read('src/lib/seo/sitemap-data.ts'));
   assert(/getSitemapJobEntries/.test(sm) && /createAsyncTtlCache/.test(sm) && !/getActiveJobs/.test(sm), 'sitemap keeps its slim read + TTL cache (preserved)');
 
   // ===========================================================================
@@ -338,7 +338,7 @@ async function main() {
     const { getRelatedJobs } = await import('../src/lib/seo/data');
     const rel = await measure(() => getRelatedJobs(anon, ids[0], 3));
     assert(rel.r.length === 3 && rel.calls === 1, `related jobs: still one LIMIT-3 read (${rel.calls} call, ${kb(rel.bytes)})`);
-    const { default: sitemap } = await import('../src/app/sitemap');
+    const { getSitemapEntries: sitemap } = await import('../src/lib/seo/sitemap-data');
     const sm1 = await measure(() => sitemap());
     const sm2 = await measure(() => sitemap());
     assert(sm1.calls >= 1 && sm2.calls === 0, `sitemap: first call ${sm1.calls} REST calls (${kb(sm1.bytes)} for ${idxAll.length} rows), repeat call ${sm2.calls}`);
