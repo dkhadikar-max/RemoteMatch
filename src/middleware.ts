@@ -4,6 +4,7 @@ import { getJobById, isJobPermanentlyRemoved } from '@/lib/seo/data';
 import { isAccountVerified } from '@/lib/auth/get-authenticated-user';
 import { isAdminHost } from '@/lib/auth/admin-host';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { jobIdSegmentFromPath, findJobByRouteParam } from '@/lib/seo/job-href';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -47,9 +48,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // --- Frozen SEO behavior: unchanged from the pre-remediation baseline ---
-  if (pathname.startsWith('/remote-jobs/view/')) {
-    const jobId = pathname.replace('/remote-jobs/view/', '').split('/')[0];
-    const job = await getJobById(jobId);
+  const jobIdSegment = jobIdSegmentFromPath(pathname);
+  if (jobIdSegment !== null) {
+    const job = await findJobByRouteParam(jobIdSegment, getJobById);
     if (job && isJobPermanentlyRemoved(job)) {
       return new NextResponse(
         `410 Gone: The job listing "${job.title}" at ${job.company} has been permanently removed.`,
