@@ -55,7 +55,7 @@ console.log('\n2. Source scan of src/');
   const nonUa = hits.filter((h) => !/\+https:\/\/remotematch\.com/.test(h.line) || !/(User-Agent|botUserAgent|RemoteMatchBot)/.test(h.line.concat(' ', h.file.includes('robots-check') ? 'botUserAgent' : '')));
   assert(nonUa.length === 0, 'every remaining remotematch.com literal is a crawler User-Agent contact URL', JSON.stringify(nonUa.slice(0, 3)));
   assert(hits.length > 0 && hits.every((h) => h.line.includes('+https://remotematch.com')), `the ${hits.length} remaining literals are all "+https://remotematch.com" contact URLs (deliberately unchanged)`);
-  const seoFiles = ['src/app/layout.tsx', 'src/app/guide/page.tsx', 'src/app/guide/[slug]/page.tsx', 'src/app/remote-jobs/page.tsx', 'src/app/remote-jobs/[slug]/page.tsx', 'src/app/remote-jobs/view/[id]/page.tsx', 'src/lib/seo/data.ts', 'src/app/sitemap.ts', 'src/app/robots.ts', 'src/lib/seo/indexnow.ts'];
+  const seoFiles = ['src/app/layout.tsx', 'src/app/guide/page.tsx', 'src/app/guide/[slug]/page.tsx', 'src/app/remote-jobs/page.tsx', 'src/app/remote-jobs/[slug]/page.tsx', 'src/app/remote-jobs/view/[id]/page.tsx', 'src/lib/seo/sitemap-data.ts', 'src/lib/seo/sitemap-chunks.ts', 'src/app/robots.ts', 'src/lib/seo/indexnow.ts'];
   assert(seoFiles.every((f) => /from '@\/lib\/site'/.test(read(f))), 'all 10 SEO files import from @/lib/site');
   assert(seoFiles.every((f) => !/https:\/\/remotematch\.(com|online)/.test(strip(read(f)))), 'none of them contains a hard-coded origin literal (com or online)');
   const online = hits.length; void online;
@@ -67,7 +67,7 @@ console.log('\n3. Pinned usage counts and exact forms');
 {
   const expected: Record<string, number> = {
     'src/app/layout.tsx': 9, 'src/app/guide/page.tsx': 6, 'src/app/guide/[slug]/page.tsx': 7, 'src/app/remote-jobs/page.tsx': 4,
-    'src/app/remote-jobs/[slug]/page.tsx': 5, 'src/app/remote-jobs/view/[id]/page.tsx': 6, 'src/lib/seo/data.ts': 1, 'src/app/sitemap.ts': 1, 'src/app/robots.ts': 1,
+    'src/app/remote-jobs/[slug]/page.tsx': 5, 'src/app/remote-jobs/view/[id]/page.tsx': 3, 'src/lib/seo/sitemap-data.ts': 1, 'src/lib/seo/sitemap-chunks.ts': 1, 'src/app/robots.ts': 1,
   };
   for (const [f, n] of Object.entries(expected)) {
     const uses = count(strip(read(f)), 'SITE_URL') - 1; // minus the import
@@ -76,9 +76,9 @@ console.log('\n3. Pinned usage counts and exact forms');
   const layout = strip(read('src/app/layout.tsx'));
   assert(layout.includes('metadataBase: new URL(SITE_URL)') && /canonical: SITE_URL,/.test(layout) && layout.includes('logo: `${SITE_URL}/logo.png`') && layout.includes('urlTemplate: `${SITE_URL}/remote-jobs?q={search_term_string}`'), 'layout: metadataBase, canonical, Organization logo and the WebSite SearchAction template use SITE_URL');
   const view = strip(read('src/app/remote-jobs/view/[id]/page.tsx'));
-  assert(view.includes('canonical: `${SITE_URL}/remote-jobs/view/${job.sourceId}`') && view.includes('url: `${SITE_URL}/remote-jobs/view/${job.sourceId}`'), 'job page: canonical and og:url/JSON-LD url use SITE_URL (the id part is unchanged here)');
-  assert(strip(read('src/lib/seo/data.ts')).includes('url: `${SITE_URL}/remote-jobs/view/${job.sourceId}`'), 'JobPosting JSON-LD url uses SITE_URL');
-  assert(/const baseUrl = SITE_URL;/.test(strip(read('src/app/sitemap.ts'))), 'sitemap.ts: baseUrl = SITE_URL');
+  assert(view.includes('canonical: jobUrl(job.sourceId)') && view.includes('url: jobUrl(job.sourceId)'), 'job page: canonical and og:url/JSON-LD url go through jobUrl(), which builds on SITE_URL');
+  assert(strip(read('src/lib/seo/data.ts')).includes('url: jobUrl(job.sourceId),') && /export function jobUrl\(sourceId: string, base: string = SITE_URL\)/.test(strip(read('src/lib/seo/job-href.ts'))), 'JobPosting JSON-LD url goes through jobUrl(), whose default base is SITE_URL');
+  assert(/buildSitemap\(SITE_URL, activeJobs\)/.test(strip(read('src/lib/seo/sitemap-data.ts'))) && /opts\.siteUrl \?\? SITE_URL/.test(strip(read('src/lib/seo/sitemap-chunks.ts'))), 'sitemap-data builds the URL list with SITE_URL and sitemap-chunks writes the index locs with it');
   assert(strip(read('src/app/robots.ts')).includes('sitemap: `${SITE_URL}/sitemap.xml`'), 'robots.ts: Sitemap line uses SITE_URL');
 }
 

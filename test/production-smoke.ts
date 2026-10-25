@@ -59,6 +59,7 @@
  */
 import type { PersonProfile } from '../src/types/byn';
 import { hasRequiredEnv, adminClient, anonKeyClient, newVerifiedSession } from './helpers/verified-session';
+import { jobHref } from '../src/lib/seo/job-href';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 const INGESTION_SYNC_SECRET = process.env.INGESTION_SYNC_SECRET;
@@ -387,7 +388,7 @@ async function run() {
     assert(catRes.status === 200, `GET /remote-jobs/software-engineering returns 200 (got ${catRes.status})`);
 
     if (sampleSourceId) {
-      const detailRes = await fetch(`${BASE_URL}/remote-jobs/view/${sampleSourceId}`);
+      const detailRes = await fetch(`${BASE_URL}${jobHref(sampleSourceId)}`);
       assert(detailRes.status === 200, `GET /remote-jobs/view/${sampleSourceId} (a real active job) returns 200 (got ${detailRes.status})`);
     } else {
       skip('No active job source_id available to test the detail page');
@@ -398,7 +399,7 @@ async function run() {
     assert(sitemapRes.status === 200, `GET /sitemap.xml returns 200 (got ${sitemapRes.status})`);
     assert(sitemapBody.includes('<urlset'), 'Sitemap response is a valid urlset');
     if (sampleSourceId) {
-      assert(sitemapBody.includes(`/remote-jobs/view/${sampleSourceId}`), 'Sitemap includes the same real active job');
+      assert(sitemapBody.includes(jobHref(sampleSourceId)), 'Sitemap includes the same real active job');
     }
   }
 
@@ -456,7 +457,7 @@ async function run() {
         .limit(1)
         .maybeSingle();
       if (!data?.source_id) { skip(`No active job with salary_period='${period}' to spot-check`); continue; }
-      const html = await (await fetch(`${BASE_URL}/remote-jobs/view/${data.source_id}`)).text();
+      const html = await (await fetch(`${BASE_URL}${jobHref(data.source_id)}`)).text();
       const jp = extractJsonLd(html, 'JobPosting');
       assert(jp?.baseSalary?.value?.unitText === expectUnit[period],
         `A ${period} job's JobPosting JSON-LD carries unitText='${expectUnit[period]}' (got ${jp?.baseSalary?.value?.unitText})`);
@@ -473,7 +474,7 @@ async function run() {
     if (!unk?.source_id) {
       skip('No active job with an unknown period + a salary to spot-check');
     } else {
-      const html = await (await fetch(`${BASE_URL}/remote-jobs/view/${unk.source_id}`)).text();
+      const html = await (await fetch(`${BASE_URL}${jobHref(unk.source_id)}`)).text();
       const jp = extractJsonLd(html, 'JobPosting');
       assert(jp?.baseSalary?.value && jp.baseSalary.value.unitText === undefined,
         'An unknown-period job emits baseSalary WITHOUT unitText (never a defaulted YEAR)');
@@ -511,7 +512,7 @@ async function run() {
     const { data: oneActive } = await admin
       .from('opportunities').select('source_id').eq('status', 'active').limit(1).maybeSingle();
     if (oneActive?.source_id) {
-      const r = await fetch(`${BASE_URL}/remote-jobs/view/${oneActive.source_id}`);
+      const r = await fetch(`${BASE_URL}${jobHref(oneActive.source_id)}`);
       const h = await r.text();
       assert(r.status === 200 && !/name="robots"[^>]*content="[^"]*noindex/i.test(h),
         `A DB-active job resolves through /remote-jobs/view/${oneActive.source_id} as an indexable page`);

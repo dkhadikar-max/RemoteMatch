@@ -132,8 +132,8 @@ async function main() {
   assert(/\.range\(/.test(fnBody) && /while \(true\)/.test(fnBody), 'it pages past the 1,000-row PostgREST cap');
   assert(!/OPPORTUNITY_COLUMNS/.test(fnBody), 'it does not use the full column list');
 
-  const sitemapSrc = noComments(read('src/app/sitemap.ts'));
-  assert(/export const dynamic = 'force-dynamic'/.test(sitemapSrc), 'sitemap stays force-dynamic (no build-time DB read)');
+  const sitemapSrc = noComments(read('src/lib/seo/sitemap-data.ts'));
+  assert(/export const dynamic = 'force-dynamic'/.test(noComments(read('src/app/sitemap.xml/route.ts'))) && /export const dynamic = 'force-dynamic'/.test(noComments(read('src/app/sitemaps/[chunk]/route.ts'))), 'both sitemap routes stay force-dynamic (no build-time DB read)');
   assert(!/getActiveJobs|getActiveOpportunities/.test(sitemapSrc), 'sitemap no longer reads the full catalog');
   assert(/getSitemapJobEntries/.test(sitemapSrc) && /createAsyncTtlCache/.test(sitemapSrc), 'sitemap uses the slim read behind the TTL cache');
   const ttl = Number(/SITEMAP_TTL_MS = (\d+) \* (\d+) \* (\d+) \* (\d+)/.exec(sitemapSrc)?.slice(1).reduce((a, b) => a * Number(b), 1));
@@ -305,7 +305,7 @@ async function main() {
     assert(tr.title === `Egress Test ${PREFIX}t-de-ok` && tr.description.length > 1000, 'a translated row still returns its (translated) title and description');
 
     // 3c. sitemap(): hits the DB once per TTL
-    const { default: sitemap } = await import('../src/app/sitemap');
+    const { getSitemapEntries: sitemap } = await import('../src/lib/seo/sitemap-data');
     restOpportunityCalls = 0;
     const s1 = await sitemap();
     const firstCalls = restOpportunityCalls;

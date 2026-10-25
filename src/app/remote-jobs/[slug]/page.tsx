@@ -12,6 +12,7 @@ import {
 import { loadHubPage, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
 import { SITE_URL } from '@/lib/site';
+import { jobHref } from '@/lib/seo/job-href';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -203,7 +204,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
                     <div>
                       <span className="text-sm font-medium text-[var(--muted)]">{job.company}</span>
                       <h3 className="text-base sm:text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
-                        <Link href={`/remote-jobs/view/${job.sourceId}`}>
+                        <Link href={jobHref(job.sourceId)}>
                           {job.title}
                         </Link>
                       </h3>
@@ -233,7 +234,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
 
                 <div className="mt-5 pt-4 border-t border-[var(--line)] flex items-center justify-between gap-3">
                   <Link
-                    href={`/remote-jobs/view/${job.sourceId}`}
+                    href={jobHref(job.sourceId)}
                     className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
                   >
                     <span>View job details</span>

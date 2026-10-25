@@ -35,7 +35,7 @@ import ws from 'ws';
 (globalThis as any).WebSocket = ws;
 
 import http from 'http';
-import sitemap from '../src/app/sitemap';
+import { getSitemapEntries as sitemap } from '../src/lib/seo/sitemap-data';
 import robots from '../src/app/robots';
 import {
   SEO_CATEGORIES,
@@ -56,6 +56,7 @@ import {
 import { syncOpportunitiesToCatalog } from '../src/lib/ingestion/catalog-sync';
 import { hasRequiredEnv, anonKeyClient, adminClient } from './helpers/verified-session';
 import { SITE_URL } from '../src/lib/site';
+import { jobUrl } from '../src/lib/seo/job-href';
 
 let passed = 0;
 let failed = 0;
@@ -125,7 +126,7 @@ async function runAudit() {
   const activeJobs = await getActiveJobs(anon);
   assert(activeJobs.length > 0, `At least one active job exists after sync (got ${activeJobs.length})`);
   const sampleJob = activeJobs[0];
-  const expectedJobCanonical = `${SITE_URL}/remote-jobs/view/${sampleJob.sourceId}`;
+  const expectedJobCanonical = jobUrl(sampleJob.sourceId);
   assert(
     expectedJobCanonical.startsWith(`${SITE_URL}/remote-jobs/view/`),
     'Job canonical URL follows exact canonical structure without query params'
@@ -169,7 +170,7 @@ async function runAudit() {
   assert(expiredJobsInSitemap.length === 0, 'Expired/closed jobs strictly absent from active sitemap');
 
   assert(
-    sitemapUrls.includes(`${SITE_URL}/remote-jobs/view/${activeJobs[0].sourceId}`),
+    sitemapUrls.includes(jobUrl(activeJobs[0].sourceId)),
     'Active jobs correctly included in sitemap'
   );
 
@@ -359,9 +360,9 @@ async function runAudit() {
 
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Link': `<${SITE_URL}/remote-jobs/view/${job.sourceId}>; rel="canonical"`,
+        'Link': `<${jobUrl(job.sourceId)}>; rel="canonical"`,
       });
-      res.end(`<html><head><link rel="canonical" href="${SITE_URL}/remote-jobs/view/${job.sourceId}"/></head><body>Active job</body></html>`);
+      res.end(`<html><head><link rel="canonical" href="${jobUrl(job.sourceId)}"/></head><body>Active job</body></html>`);
       return;
     }
 
