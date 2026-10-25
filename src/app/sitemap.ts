@@ -4,6 +4,7 @@ import { getSitemapJobEntries, type SitemapJobEntry } from '@/lib/ingestion/cata
 import { buildSitemap } from '@/lib/seo/sitemap-build';
 import { createAsyncTtlCache } from '@/lib/seo/ttl-cache';
 import { getOrCreateCatalogCache, catalogTtlMs } from '@/lib/ingestion/catalog-caches';
+import { SITE_URL } from '@/lib/site';
 
 // Sitemap content is identical for every visitor (RLS's active-only filter
 // is the only access control it needs) and must reflect the live catalog,
@@ -43,7 +44,7 @@ const jobEntries = getOrCreateCatalogCache('sitemap-entries', () => createAsyncT
 ));
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = 'https://remotematch.com';
+  const baseUrl = SITE_URL;
   let activeJobs: SitemapJobEntry[] = [];
   if (createSupabasePublicClient()) {
     activeJobs = await jobEntries.get();

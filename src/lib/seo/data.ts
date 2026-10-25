@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CanonicalOpportunity } from '@/types/byn';
 import { getActiveOpportunities, getOpportunityBySourceIdAnyStatus, getRelatedActiveOpportunities } from '../ingestion/catalog-read';
+import { SITE_URL } from '@/lib/site';
 
 export interface SeoFaqItem {
   q: string;
@@ -736,7 +737,7 @@ export function buildJobPostingSchema(job: CanonicalOpportunity) {
       logo: job.companyLogo,
     },
     jobLocationType: 'TELECOMMUTE',
-    url: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+    url: `${SITE_URL}/remote-jobs/view/${job.sourceId}`,
     directApply: true,
   };
 

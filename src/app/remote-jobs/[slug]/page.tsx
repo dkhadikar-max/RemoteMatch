@@ -11,6 +11,7 @@ import {
 } from '@/lib/seo/data';
 import { loadHubPage, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
+import { SITE_URL } from '@/lib/site';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -36,12 +37,12 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title: category.metaTitle,
     description: category.metaDescription,
     alternates: {
-      canonical: `https://remotematch.com/remote-jobs/${category.slug}`,
+      canonical: `${SITE_URL}/remote-jobs/${category.slug}`,
     },
     openGraph: {
       title: category.metaTitle,
       description: category.metaDescription,
-      url: `https://remotematch.com/remote-jobs/${category.slug}`,
+      url: `${SITE_URL}/remote-jobs/${category.slug}`,
       type: 'website',
     },
   };
@@ -65,9 +66,9 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
   const otherCategories = SEO_CATEGORIES.filter((c) => c.slug !== category.slug);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
-    { name: category.title, url: `https://remotematch.com/remote-jobs/${category.slug}` },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
+    { name: category.title, url: `${SITE_URL}/remote-jobs/${category.slug}` },
   ]);
 
   const jsonLdCategory = {

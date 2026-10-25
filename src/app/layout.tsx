@@ -3,6 +3,7 @@ import { Figtree } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/navigation/navbar';
 import { RecoveryRedirect } from '@/components/auth/RecoveryRedirect';
+import { SITE_URL } from '@/lib/site';
 
 // "Organic" design-system typography (imported design: RemoteMatch.dc.html) —
 // self-hosted via next/font so there's no external request or layout shift.
@@ -12,13 +13,13 @@ import { RecoveryRedirect } from '@/components/auth/RecoveryRedirect';
 const figtree = Figtree({ subsets: ['latin'], display: 'swap', variable: '--font-body' });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://remotematch.com'),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'RemoteMatch — Find Remote Jobs Worth Applying To | Know Your Chances',
     template: '%s | RemoteMatch',
   },
   alternates: {
-    canonical: 'https://remotematch.com',
+    canonical: SITE_URL,
   },
   description:
     'RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences, understand why a job fits, identify what may be missing, and track applications from application to offer.',
@@ -37,14 +38,14 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://remotematch.com',
+    url: SITE_URL,
     siteName: 'RemoteMatch',
     title: 'RemoteMatch — Find remote jobs worth applying to.',
     description:
       'See remote jobs that fit your experience, understand why they match, and apply with more confidence. Know your chances before you apply.',
     images: [
       {
-        url: 'https://remotematch.com/og-image.png',
+        url: `${SITE_URL}/og-image.png`,
         width: 1200,
         height: 630,
         alt: 'RemoteMatch — Know your chances before you apply.',
@@ -56,7 +57,7 @@ export const metadata: Metadata = {
     title: 'RemoteMatch — Find remote jobs worth applying to.',
     description:
       'See remote jobs that fit your experience, understand why they match, and apply with more confidence. Know your chances before you apply.',
-    images: ['https://remotematch.com/og-image.png'],
+    images: [`${SITE_URL}/og-image.png`],
     creator: '@remotematch',
   },
   robots: {
@@ -76,8 +77,8 @@ const jsonLdOrganization = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
   name: 'RemoteMatch',
-  url: 'https://remotematch.com',
-  logo: 'https://remotematch.com/logo.png',
+  url: SITE_URL,
+  logo: `${SITE_URL}/logo.png`,
   description:
     'RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences, understand why a job fits, identify what may be missing, and track applications from application to offer.',
 };
@@ -86,13 +87,13 @@ const jsonLdWebSite = {
   '@context': 'https://schema.org',
   '@type': 'WebSite',
   name: 'RemoteMatch',
-  url: 'https://remotematch.com',
+  url: SITE_URL,
   description: 'Find remote jobs worth applying to. Know your chances before you apply.',
   potentialAction: {
     '@type': 'SearchAction',
     target: {
       '@type': 'EntryPoint',
-      urlTemplate: 'https://remotematch.com/remote-jobs?q={search_term_string}',
+      urlTemplate: `${SITE_URL}/remote-jobs?q={search_term_string}`,
     },
     'query-input': 'required name=search_term_string',
   },

@@ -8,10 +8,11 @@
  */
 
 import { timingSafeEqual } from 'crypto';
+import { SITE_URL, SITE_HOST } from '@/lib/site';
 
 export const INDEXNOW_KEY = process.env.INDEXNOW_KEY || 'remotematch-key-849b8502';
-export const INDEXNOW_KEY_LOCATION = 'https://remotematch.com/remotematch-indexnow-key.txt';
-export const INDEXNOW_HOST = 'remotematch.com';
+export const INDEXNOW_KEY_LOCATION = `${SITE_URL}/remotematch-indexnow-key.txt`;
+export const INDEXNOW_HOST = SITE_HOST;
 
 const PRIVATE_PATH_PREFIXES = [
   '/feed',

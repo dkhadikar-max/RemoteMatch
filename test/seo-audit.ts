@@ -55,6 +55,7 @@ import {
 } from '../src/lib/seo/indexnow';
 import { syncOpportunitiesToCatalog } from '../src/lib/ingestion/catalog-sync';
 import { hasRequiredEnv, anonKeyClient, adminClient } from './helpers/verified-session';
+import { SITE_URL } from '../src/lib/site';
 
 let passed = 0;
 let failed = 0;
@@ -124,9 +125,9 @@ async function runAudit() {
   const activeJobs = await getActiveJobs(anon);
   assert(activeJobs.length > 0, `At least one active job exists after sync (got ${activeJobs.length})`);
   const sampleJob = activeJobs[0];
-  const expectedJobCanonical = `https://remotematch.com/remote-jobs/view/${sampleJob.sourceId}`;
+  const expectedJobCanonical = `${SITE_URL}/remote-jobs/view/${sampleJob.sourceId}`;
   assert(
-    expectedJobCanonical.startsWith('https://remotematch.com/remote-jobs/view/'),
+    expectedJobCanonical.startsWith(`${SITE_URL}/remote-jobs/view/`),
     'Job canonical URL follows exact canonical structure without query params'
   );
 
@@ -137,17 +138,17 @@ async function runAudit() {
   const sitemapEntries = await sitemap();
   const sitemapUrls = sitemapEntries.map((e) => e.url);
 
-  assert(sitemapUrls.includes('https://remotematch.com'), 'Homepage included in sitemap');
-  assert(sitemapUrls.includes('https://remotematch.com/remote-jobs'), 'Directory included in sitemap');
-  assert(sitemapUrls.includes('https://remotematch.com/guide'), 'Guide hub included in sitemap');
+  assert(sitemapUrls.includes(SITE_URL), 'Homepage included in sitemap');
+  assert(sitemapUrls.includes(`${SITE_URL}/remote-jobs`), 'Directory included in sitemap');
+  assert(sitemapUrls.includes(`${SITE_URL}/guide`), 'Guide hub included in sitemap');
 
   const allCategoriesPresent = SEO_CATEGORIES.every((c) =>
-    sitemapUrls.includes(`https://remotematch.com/remote-jobs/${c.slug}`)
+    sitemapUrls.includes(`${SITE_URL}/remote-jobs/${c.slug}`)
   );
   assert(allCategoriesPresent, 'All 10 useful category & location hubs present in sitemap');
 
   const allGuidesPresent = SEO_GUIDE_ARTICLES.every((g) =>
-    sitemapUrls.includes(`https://remotematch.com/guide/${g.slug}`)
+    sitemapUrls.includes(`${SITE_URL}/guide/${g.slug}`)
   );
   assert(allGuidesPresent, 'All 8 tactical guide articles present in sitemap');
 
@@ -168,7 +169,7 @@ async function runAudit() {
   assert(expiredJobsInSitemap.length === 0, 'Expired/closed jobs strictly absent from active sitemap');
 
   assert(
-    sitemapUrls.includes(`https://remotematch.com/remote-jobs/view/${activeJobs[0].sourceId}`),
+    sitemapUrls.includes(`${SITE_URL}/remote-jobs/view/${activeJobs[0].sourceId}`),
     'Active jobs correctly included in sitemap'
   );
 
@@ -231,9 +232,9 @@ async function runAudit() {
   console.log('\n--- TEST 6: Schema.org BreadcrumbList Validation ---');
 
   const breadcrumbs = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
-    { name: 'Software Engineering', url: 'https://remotematch.com/remote-jobs/software-engineering' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
+    { name: 'Software Engineering', url: `${SITE_URL}/remote-jobs/software-engineering` },
   ]);
 
   assert(breadcrumbs['@type'] === 'BreadcrumbList', 'BreadcrumbList schema has correct @type');
@@ -253,21 +254,21 @@ async function runAudit() {
   assert(allowList.includes('/') && allowList.includes('/remote-jobs'), 'Robots allows public pages');
   assert(allowList.includes('/remotematch-indexnow-key.txt'), 'Robots allows IndexNow key verification file');
   assert(disallowList.includes('/feed') && disallowList.includes('/onboarding') && disallowList.includes('/tracker'), 'Robots strictly disallows private application routes');
-  assert(robotsConfig.sitemap === 'https://remotematch.com/sitemap.xml', 'Robots points to canonical sitemap location');
+  assert(robotsConfig.sitemap === `${SITE_URL}/sitemap.xml`, 'Robots points to canonical sitemap location');
 
   // --------------------------------------------------------------------------
   // TEST 8: IndexNow Security, Guardrails & Key
   // --------------------------------------------------------------------------
   console.log('\n--- TEST 8: IndexNow Security & Guardrails ---');
 
-  assert(isPublicIndexableUrl('https://remotematch.com/remote-jobs'), 'IndexNow allows public directory URL');
-  assert(isPublicIndexableUrl('https://remotematch.com/remote-jobs/software-engineering'), 'IndexNow allows public category URL');
-  assert(isPublicIndexableUrl('https://remotematch.com/remote-jobs/view/curated-001'), 'IndexNow allows public job URL');
-  assert(!isPublicIndexableUrl('https://remotematch.com/feed'), 'IndexNow strictly REJECTS /feed');
-  assert(!isPublicIndexableUrl('https://remotematch.com/onboarding'), 'IndexNow strictly REJECTS /onboarding');
-  assert(!isPublicIndexableUrl('https://remotematch.com/tracker'), 'IndexNow strictly REJECTS /tracker');
-  assert(!isPublicIndexableUrl('https://remotematch.com/settings'), 'IndexNow strictly REJECTS /settings');
-  assert(!isPublicIndexableUrl('https://remotematch.com/api/stripe/checkout'), 'IndexNow strictly REJECTS internal API routes');
+  assert(isPublicIndexableUrl(`${SITE_URL}/remote-jobs`), 'IndexNow allows public directory URL');
+  assert(isPublicIndexableUrl(`${SITE_URL}/remote-jobs/software-engineering`), 'IndexNow allows public category URL');
+  assert(isPublicIndexableUrl(`${SITE_URL}/remote-jobs/view/curated-001`), 'IndexNow allows public job URL');
+  assert(!isPublicIndexableUrl(`${SITE_URL}/feed`), 'IndexNow strictly REJECTS /feed');
+  assert(!isPublicIndexableUrl(`${SITE_URL}/onboarding`), 'IndexNow strictly REJECTS /onboarding');
+  assert(!isPublicIndexableUrl(`${SITE_URL}/tracker`), 'IndexNow strictly REJECTS /tracker');
+  assert(!isPublicIndexableUrl(`${SITE_URL}/settings`), 'IndexNow strictly REJECTS /settings');
+  assert(!isPublicIndexableUrl(`${SITE_URL}/api/stripe/checkout`), 'IndexNow strictly REJECTS internal API routes');
   assert(!isPublicIndexableUrl('https://malicious-site.com/remote-jobs'), 'IndexNow strictly REJECTS external domains');
 
   const previousIndexNowSecret = process.env.INDEXNOW_SECRET;
@@ -301,7 +302,7 @@ async function runAudit() {
 
     if (pathname === '/robots.txt') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('User-agent: *\nAllow: /\nSitemap: https://remotematch.com/sitemap.xml');
+      res.end(`User-agent: *\nAllow: /\nSitemap: ${SITE_URL}/sitemap.xml`);
       return;
     }
 
@@ -322,9 +323,9 @@ async function runAudit() {
       const filtered = await searchJobs(q || undefined, undefined, anon);
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Link': '<https://remotematch.com/remote-jobs>; rel="canonical"',
+        'Link': `<${SITE_URL}/remote-jobs>; rel="canonical"`,
       });
-      res.end(`<html><head><link rel="canonical" href="https://remotematch.com/remote-jobs"/></head><body>Found ${filtered.length} jobs</body></html>`);
+      res.end(`<html><head><link rel="canonical" href="${SITE_URL}/remote-jobs"/></head><body>Found ${filtered.length} jobs</body></html>`);
       return;
     }
 
@@ -358,9 +359,9 @@ async function runAudit() {
 
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Link': `<https://remotematch.com/remote-jobs/view/${job.sourceId}>; rel="canonical"`,
+        'Link': `<${SITE_URL}/remote-jobs/view/${job.sourceId}>; rel="canonical"`,
       });
-      res.end(`<html><head><link rel="canonical" href="https://remotematch.com/remote-jobs/view/${job.sourceId}"/></head><body>Active job</body></html>`);
+      res.end(`<html><head><link rel="canonical" href="${SITE_URL}/remote-jobs/view/${job.sourceId}"/></head><body>Active job</body></html>`);
       return;
     }
 
