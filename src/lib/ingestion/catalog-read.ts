@@ -426,6 +426,20 @@ export async function getOpportunitiesBySourceIds(supabase: SupabaseClient, sour
  *
  * Never loads the catalog: cost is one page of rows however large it grows.
  */
+export class SearchTimeoutError extends Error {
+  constructor() {
+    super('Search took too long and was canceled by the database.');
+    this.name = 'SearchTimeoutError';
+  }
+}
+
+/** Postgres SQLSTATE 57014 = query_canceled (statement_timeout). Checked by code first, same
+ *  convention as isMissingRelation() in src/lib/supabase/query-helpers.ts; the message-text
+ *  fallback is defensive only, in case a future PostgREST/Postgres version omits code. */
+function isStatementTimeout(error: { code?: string | null; message?: string } | null | undefined): boolean {
+  return !!error && (error.code === '57014' || /statement timeout/i.test(error.message ?? ''));
+}
+
 export async function searchActiveOpportunitiesPage(
   supabase: SupabaseClient,
   terms: string[],
@@ -453,7 +467,10 @@ export async function searchActiveOpportunitiesPage(
     .order('posted_at', { ascending: false, nullsFirst: false })
     .order('source_id', { ascending: true })
     .range(range.from, range.to);
-  if (error) throw new Error(`Could not search opportunities: ${error.message}`);
+  if (error) {
+    if (isStatementTimeout(error)) throw new SearchTimeoutError();
+    throw new Error(`Could not search opportunities: ${error.message}`);
+  }
   return { rows: ((data ?? []) as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity), total: count ?? 0 };
 }
 

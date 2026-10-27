@@ -33,6 +33,7 @@ import {
   getCatalogIndexEntries,
   getOpportunitiesBySourceIds,
   searchActiveOpportunitiesPage,
+  SearchTimeoutError,
   type CatalogIndexEntry,
 } from '../ingestion/catalog-read';
 import { SEO_CATEGORIES, matchesCategory, type SeoCategory } from './data';
@@ -60,6 +61,9 @@ export interface DirectoryPage {
   pageSize: number;
   /** The requested page is beyond the last page of a non-empty result. */
   outOfRange: boolean;
+  /** True only when the search could not complete (DB statement timeout) — jobs/total are
+   *  empty/zero but this is NOT a genuine "no results" answer. Never set on the hub/browse path. */
+  searchTimedOut?: boolean;
 }
 
 /** `?page=` → a safe positive integer (default 1). */
@@ -71,7 +75,11 @@ export function parsePageParam(raw: unknown): number {
 
 // ---- search terms ---------------------------------------------------------------
 
-const MAX_TERMS = 6;
+// Lowered from 6: each term adds a fully-ANDed, unindexed ILIKE OR-clause (see
+// searchActiveOpportunitiesPage's header) — fewer terms bounds the worst-case query cost.
+// 5 (not 4) so a realistic technical-skills search ("c++ c# .net ci/cd node.js") still survives
+// in full — dropping a term a visitor actually typed would be its own user-facing regression.
+const MAX_TERMS = 5;
 const MAX_TERM_LENGTH = 40;
 
 /** Free text → safe, lowercase search terms. Anything outside [a-z0-9+#./-] is
@@ -142,10 +150,17 @@ export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, r
 export async function getSearchPage(supabase: SupabaseClient, q: string, requestedPage: number): Promise<DirectoryPage> {
   const terms = buildSearchTerms(q);
   const from = (Math.max(requestedPage, 1) - 1) * DIRECTORY_PAGE_SIZE;
-  const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });
-  const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
-  const outOfRange = total > 0 && requestedPage > totalPages;
-  return { jobs: rows, total, page: Math.min(Math.max(requestedPage, 1), totalPages), totalPages, pageSize: DIRECTORY_PAGE_SIZE, outOfRange };
+  try {
+    const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });
+    const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
+    const outOfRange = total > 0 && requestedPage > totalPages;
+    return { jobs: rows, total, page: Math.min(Math.max(requestedPage, 1), totalPages), totalPages, pageSize: DIRECTORY_PAGE_SIZE, outOfRange };
+  } catch (err) {
+    if (err instanceof SearchTimeoutError) {
+      return { jobs: [], total: 0, page: 1, totalPages: 1, pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false, searchTimedOut: true };
+    }
+    throw err; // a genuine, unexpected error still propagates — never silently hidden
+  }
 }
 
 // ---- production wiring ------------------------------------------------------------
