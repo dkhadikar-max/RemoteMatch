@@ -255,7 +255,21 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
           </Link>
         </div>
 
-        {jobs.length === 0 ? (
+        {hub?.searchTimedOut ? (
+          <div className="soft-card p-8 text-center space-y-3">
+            <p className="text-sm font-semibold text-[var(--ink)]">
+              Your search took too long to complete.
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              Try fewer or more specific words — broad searches across a large catalog can time out.
+            </p>
+            <div className="pt-2">
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
+                View all active jobs
+              </Link>
+            </div>
+          </div>
+        ) : jobs.length === 0 ? (
           <div className="soft-card p-8 text-center space-y-3">
             <p className="text-sm font-semibold text-[var(--ink)]">
               No remote jobs found matching &ldquo;{searchQuery}&rdquo;.

@@ -42,7 +42,7 @@ import {
   resetDirectoryCachesForTests,
   type DirectoryDeps,
 } from '../src/lib/seo/directory';
-import { getActiveOpportunities, getCatalogIndexEntries, type CatalogIndexEntry } from '../src/lib/ingestion/catalog-read';
+import { getActiveOpportunities, getCatalogIndexEntries, searchActiveOpportunitiesPage, SearchTimeoutError, type CatalogIndexEntry } from '../src/lib/ingestion/catalog-read';
 import { createLruTtlMap } from '../src/lib/seo/ttl-cache';
 import { pageWindow } from '../src/components/seo/Pagination';
 import type { CanonicalOpportunity } from '../src/types/byn';
@@ -54,6 +54,22 @@ const assert = (ok: boolean, msg: string, detail?: string) => {
 const skip = (m: string) => { skipped++; console.log(`  – SKIP: ${m}`); };
 const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8').replace(/\r\n/g, '\n');
 const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/** Stub of the chainable Supabase query builder surface. Covers exactly the five methods
+ *  searchActiveOpportunitiesPage calls, verified against its current source (src/lib/ingestion/
+ *  catalog-read.ts): .from() once, then .select()/.or()/.order() each called multiple times
+ *  (always the same method, chainable), terminating in the one awaited call, .range(), which
+ *  resolves to { data, count, error }. If that function ever adds a method this stub lacks, the
+ *  call throws "query.X is not a function" — the test fails loudly on the mock, not silently. */
+function fakeSearchClient(error: { code: string | null; message: string }): any {
+  const builder: any = {
+    select: () => builder,
+    or: () => builder,
+    order: () => builder,
+    range: async () => ({ data: null, count: null, error }),
+  };
+  return { from: () => builder };
+}
 
 // ---- the OLD category rules, copied verbatim from the pre-change getJobsForCategory ----
 function oldMembers<T extends { title: string; requiredSkills: string[]; remoteType?: string; eligibleCountries?: string[]; experienceRequirement?: string }>(cat: SeoCategory, activeJobs: T[]): T[] {
@@ -120,7 +136,7 @@ async function main() {
   assert(buildSearchTerms('  React   TypeScript ').join('|') === 'react|typescript', 'buildSearchTerms: lowercases and splits on whitespace');
   assert(buildSearchTerms('c++ c# .net ci/cd node.js').join('|') === 'c++|c#|.net|ci/cd|node.js', 'buildSearchTerms: keeps the characters real skills use');
   assert(buildSearchTerms('a,b)(c "x" 100% a_b *').join('|') === 'abc|x|100|ab', 'buildSearchTerms: strips filter-grammar and LIKE-wildcard characters (, ( ) " % _ *)');
-  assert(buildSearchTerms('a b c d e f g h').length === 6, 'buildSearchTerms: at most 6 terms');
+  assert(buildSearchTerms('a b c d e f g h').length === 5, 'buildSearchTerms: at most 5 terms (lowered from 6 to bound worst-case search cost)');
   assert(buildSearchTerms('x'.repeat(200))[0].length === 40, 'buildSearchTerms: terms are capped at 40 characters');
   assert(buildSearchTerms(undefined).length === 0 && buildSearchTerms('   ').length === 0 && buildSearchTerms('%%%').length === 0, 'buildSearchTerms: empty / whitespace / all-stripped -> no terms');
   assert(pageWindow(1, 1).join() === '1' && pageWindow(1, 5).join() === '1,2,3,gap,5' && pageWindow(50, 100).join() === '1,gap,48,49,50,51,52,gap,100', 'pageWindow: first/last plus a window, with gaps');
@@ -189,6 +205,62 @@ async function main() {
     const empty = await getHubPage({ ...deps, getIndex: async () => [], sliceCache: createLruTtlMap({ max: 5, ttlMs: 1000 }) }, null, 3);
     assert(empty.total === 0 && empty.totalPages === 1 && empty.page === 1 && !empty.outOfRange && empty.jobs.length === 0, 'an empty catalog: 0 jobs, 1 page, not "out of range"');
   }
+
+  // 2d. getSearchPage: a statement-timeout is caught and reported, never silently "0 results";
+  // any OTHER error still propagates (not swallowed). The error shape used here is NOT invented —
+  // it's the same { message, code: '57014' } this codebase already uses for this exact Postgres
+  // error in test/catalog-sync-lifecycle-suite.ts and test/swipe-real-profile-suite.ts, and the
+  // message text matches a real production occurrence captured during the preceding investigation.
+  // This proves shape fidelity against established precedent, not a live-reproduced timeout —
+  // actually triggering one would require an expensive production query, out of scope.
+  {
+    const lowLevelClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
+    let lowLevelThrew: unknown = null;
+    try { await searchActiveOpportunitiesPage(lowLevelClient, ['engineer'], { from: 0, to: 23 }); } catch (e) { lowLevelThrew = e; }
+    assert(lowLevelThrew instanceof SearchTimeoutError, 'searchActiveOpportunitiesPage itself throws SearchTimeoutError (not a generic Error) on SQLSTATE 57014');
+
+    const timeoutClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
+    const r = await getSearchPage(timeoutClient, 'engineer', 1);
+    assert(
+      r.searchTimedOut === true && r.jobs.length === 0 && r.total === 0 && r.page === 1 && r.totalPages === 1 && !r.outOfRange,
+      'a statement-timeout is reported as searchTimedOut, not a genuine empty-results page'
+    );
+
+    const otherErrorClient = fakeSearchClient({ message: 'syntax error', code: '42601' });
+    let threw = false;
+    try { await getSearchPage(otherErrorClient, 'engineer', 1); } catch (e) { threw = (e as Error).message.includes('syntax error'); }
+    assert(threw, 'a non-timeout DB error still throws (never silently hidden as searchTimedOut or empty results)');
+
+    const msgOnlyClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: null });
+    const r2 = await getSearchPage(msgOnlyClient, 'engineer', 1);
+    assert(r2.searchTimedOut === true, 'the message-text fallback also catches a timeout when `code` is absent');
+
+    // Cross-check against the codebase's OWN precedent for this exact error, not a value I chose —
+    // same literal object shape test/catalog-sync-lifecycle-suite.ts:386 already uses for 57014.
+    const precedentShapedError = { message: 'canceling statement due to statement timeout', code: '57014' };
+    const precedentClient = fakeSearchClient(precedentShapedError);
+    const r3 = await getSearchPage(precedentClient, 'engineer', 1);
+    assert(r3.searchTimedOut === true, 'matches the exact error shape already used elsewhere in this codebase for SQLSTATE 57014 (catalog-sync-lifecycle-suite.ts, swipe-real-profile-suite.ts)');
+  }
+
+  // 2e. (reserved — see §2f below for the static checks)
+
+  // 2f. static: the route has a defense-in-depth error boundary, a timed-out search renders
+  // branded copy distinct from a genuine "no results" message, and the error boundary's escape
+  // hatch does not retry the failing search (no ?q= carried into its "view all jobs" link).
+  console.log('\n2f. STATIC — graceful search-timeout handling');
+  assert(fs.existsSync(path.resolve(__dirname, '..', 'src/app/remote-jobs/error.tsx')), 'src/app/remote-jobs/error.tsx exists (route-level error boundary)');
+  const errSrc = noComments(read('src/app/remote-jobs/error.tsx'));
+  assert(/'use client'/.test(errSrc) && /reset\s*\(\s*\)/.test(errSrc), 'the error boundary is a client component that offers reset()');
+  assert(!/<html|<body|<Navbar/.test(errSrc), 'the error boundary renders only fallback content — it relies on the root layout (src/app/layout.tsx) for <html>/<body>/<Navbar>, never duplicating them');
+  assert(/href="\/remote-jobs"/.test(errSrc) && !/href="\/remote-jobs\?/.test(errSrc), 'the "view all jobs" escape hatch carries no ?q= — it cannot retry the failing search');
+  assert(!fs.existsSync(path.resolve(__dirname, '..', 'src/app/remote-jobs/layout.tsx')), 'no route-specific layout overrides the root layout for /remote-jobs, confirming Navbar/globals.css stay in effect around the error fallback');
+  const dirPageSrc = noComments(read('src/app/remote-jobs/page.tsx'));
+  assert(/searchTimedOut/.test(dirPageSrc) && /took too long/i.test(dirPageSrc), 'a timed-out search renders branded "took too long" copy, checked BEFORE the generic empty-results branch');
+  assert(
+    dirPageSrc.indexOf('hub?.searchTimedOut') < dirPageSrc.indexOf('No remote jobs found matching'),
+    'the timeout branch is checked before the generic "no results" branch, so a timeout can never render as 0 results'
+  );
 
   // ===========================================================================
   console.log('\n3. REAL INFRA — live Supabase, isolated synthetic rows');
