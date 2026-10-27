@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { localStore } from '@/lib/db/mock-seed';
 import { extractPdfText, PdfTextExtractionError } from '@/lib/resume/extract-pdf-text';
-import { checkResumeAgainstSkills, type ResumeCheck } from '@/lib/resume/resume-check';
+import { checkResumeAgainstSkills, suggestSkillsFromResume, type ResumeCheck } from '@/lib/resume/resume-check';
 import { ResumeCheckSummary } from '@/components/onboarding/resume-check-summary';
 import { EmploymentType } from '@/types/byn';
 import {
@@ -74,6 +74,10 @@ export default function OnboardingPage() {
 
   // Result of the plain-text resume check shown on the review step (facts only — see resume-check.ts).
   const [resumeCheck, setResumeCheck] = useState<ResumeCheck | null>(null);
+
+  // Skills the resume mentions (from the known, fixed `popularSkills` list below) that the candidate has not
+  // declared — offered on the review step as explicit Add/Dismiss suggestions, never auto-added. See resume-check.ts.
+  const [suggestedSkills, setSuggestedSkills] = useState<string[]>([]);
 
   // AFC: onboarding is persisted to the DB (complete_onboarding RPC) before the
   // feed is reachable. These track that final submit.
@@ -146,6 +150,7 @@ export default function OnboardingPage() {
   // see resume-check.ts), so there is no analysis service to wait on and nothing that can leave this button stuck.
   const handleReviewProfile = () => {
     setResumeCheck(checkResumeAgainstSkills(skills, resumeText));
+    setSuggestedSkills(suggestSkillsFromResume(skills, resumeText, popularSkills));
     setStep(7);
   };
 
@@ -179,6 +184,14 @@ export default function OnboardingPage() {
     localStore.updateProfile({
       skills: localStore.getProfile().skills.filter((s) => s.skillName.toLowerCase() !== skill.toLowerCase()),
     });
+  };
+
+  // Adds a skill the resume mentioned but the candidate had not declared. Case-insensitive de-dupe — never adds the
+  // same skill twice, and never touches any other already-declared skill. No localStore echo is needed here (unlike
+  // handleFinalFinish's write): the final submit below already rebuilds the localStore skills list from `skills`
+  // in full, so an added suggestion is captured there automatically once the candidate continues.
+  const handleAddSuggestedSkill = (skill: string) => {
+    setSkills((prev) => (prev.some((s) => s.toLowerCase() === skill.toLowerCase()) ? prev : [...prev, skill]));
   };
 
   // Persist onboarding to the DB (server-authoritative), then redirect to Feed
@@ -357,6 +370,8 @@ export default function OnboardingPage() {
               targetRoles={targetRoles}
               skills={skills}
               onRemoveSkill={handleRemoveSkill}
+              suggestedSkills={suggestedSkills}
+              onAddSkill={handleAddSuggestedSkill}
               onBack={() => setStep(6)}
               onContinue={handleFinalFinish}
               isSubmitting={isSubmitting}

@@ -17,6 +17,9 @@ interface ResumeCheckSummaryProps {
   /** The user's CURRENT declared skills (shrinks when they remove one here). */
   skills: string[];
   onRemoveSkill: (skill: string) => void;
+  /** Skills the resume mentions that aren't in `skills` yet — Add/Dismiss only, never pre-applied. */
+  suggestedSkills?: string[];
+  onAddSkill?: (skill: string) => void;
   onBack: () => void;
   onContinue: () => void | Promise<void>;
   /** The "Enter feed" step persists onboarding to the DB first. */
@@ -29,6 +32,8 @@ export function ResumeCheckSummary({
   targetRoles,
   skills,
   onRemoveSkill,
+  suggestedSkills = [],
+  onAddSkill = () => {},
   onBack,
   onContinue,
   isSubmitting = false,
@@ -40,6 +45,14 @@ export function ResumeCheckSummary({
   const found = check.found.filter((s) => current.has(s.toLowerCase()));
   const notFound = check.notFound.filter((s) => current.has(s.toLowerCase()));
   const undecided = notFound.filter((s) => !kept.has(s.toLowerCase()));
+
+  // Dismissed only in local UI state, same as "Keep" above — never persisted. A suggestion drops out on its own
+  // once added, because `current` (derived from the live `skills` prop) already contains it — no separate
+  // "already added" bookkeeping needed, and no path to a duplicate.
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
+  const pendingSuggestions = suggestedSkills.filter(
+    (s) => !current.has(s.toLowerCase()) && !dismissedSuggestions.has(s.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -156,6 +169,48 @@ export function ResumeCheckSummary({
                 {undecided.length === 0 && (
                   <p className="text-xs text-[var(--muted)]">Nothing left to review.</p>
                 )}
+              </div>
+            )}
+
+            {pendingSuggestions.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Mentioned in your resume, not on your profile yet ({pendingSuggestions.length})
+                </p>
+                <p className="text-xs leading-relaxed text-[var(--muted)]">
+                  We searched your resume text for some common skill names — the same plain text search as above,
+                  not an analysis of your experience. Add only the ones you actually have.
+                </p>
+                <ul className="space-y-2">
+                  {pendingSuggestions.map((s) => (
+                    <li
+                      key={s}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[var(--line)] bg-[var(--surface-soft)] p-3"
+                    >
+                      <span className="text-sm font-medium text-[var(--ink)]">{s}</span>
+                      <span className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onAddSkill(s)}
+                          aria-label={`Add ${s} to my profile`}
+                          className="soft-button secondary text-xs min-h-[40px] flex items-center gap-1"
+                        >
+                          <Check size={12} aria-hidden="true" />
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDismissedSuggestions((prev) => new Set(prev).add(s.toLowerCase()))}
+                          aria-label={`Dismiss ${s} suggestion`}
+                          className="soft-button secondary text-xs min-h-[40px] flex items-center gap-1"
+                        >
+                          <X size={12} aria-hidden="true" />
+                          Dismiss
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </>
