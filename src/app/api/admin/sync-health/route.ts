@@ -4,7 +4,7 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { fetchAllRows, isMissingRelation, must, mustCount, QueryError } from '@/lib/supabase/query-helpers';
 import { runSections, partialFailureResponse } from '@/lib/admin/sections';
-import { classifyFeedPipeline, EXPECTED_INTERVAL_HOURS } from '@/lib/admin/sync-status';
+import { classifyFeedPipeline, observeFeedRuns, previousRunCutoffIso, EXPECTED_INTERVAL_HOURS } from '@/lib/admin/sync-status';
 
 const HOUR_MS = 3600 * 1000;
 // The C1/C3 cadence thresholds and the status rules live in src/lib/admin/sync-status.ts (pure, tested). The
@@ -87,9 +87,9 @@ export async function GET(req: NextRequest) {
     feedRuns: async () => {
       const latest = await newestTimestamp(admin, null);
       if (!latest) return { latest: null, previous: null };
-      // The previous run: newest activity that predates the latest run by
-      // more than 90 minutes (a single run touches rows over a few minutes).
-      const previous = await newestTimestamp(admin, new Date(new Date(latest).getTime() - 90 * 60 * 1000).toISOString());
+      // The previous run: newest activity that predates the latest run by more than RUN_SEPARATION_MINUTES
+      // (a single run touches rows over a few minutes) — see previousRunCutoffIso().
+      const previous = await newestTimestamp(admin, previousRunCutoffIso(latest));
       return { latest, previous };
     },
 
@@ -165,8 +165,7 @@ export async function GET(req: NextRequest) {
     };
   } else {
     const { latest, previous } = values.feedRuns;
-    const ageHours = latest ? (now - new Date(latest).getTime()) / HOUR_MS : null;
-    const observedInterval = latest && previous ? round1((new Date(latest).getTime() - new Date(previous).getTime()) / HOUR_MS) : null;
+    const { ageHours, observedIntervalHours: observedInterval } = observeFeedRuns({ latest, previous, nowMs: now });
 
     // A recent run is NOT a schedule: "healthy" requires an observed ~6h cadence (see classifyFeedPipeline).
     const { status, enabled, cadence } = classifyFeedPipeline({ ageHours, observedIntervalHours: observedInterval });
