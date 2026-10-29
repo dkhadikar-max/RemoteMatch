@@ -157,9 +157,24 @@ export async function getSearchPage(supabase: SupabaseClient, q: string, request
     return { jobs: rows, total, page: Math.min(Math.max(requestedPage, 1), totalPages), totalPages, pageSize: DIRECTORY_PAGE_SIZE, outOfRange };
   } catch (err) {
     if (err instanceof SearchTimeoutError) {
+      logSearchTimeout(terms.length, requestedPage);
       return { jobs: [], total: 0, page: 1, totalPages: 1, pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false, searchTimedOut: true };
     }
     throw err; // a genuine, unexpected error still propagates — never silently hidden
+  }
+}
+
+/** Fires once per caught timeout, after the fix in fix/remote-jobs-search-timeout
+ *  stopped it from throwing an uncaught error (and with it, the only log line that
+ *  previously made a timeout visible in Railway's logs). Stable `event` name so a
+ *  log search can count occurrences; no search terms or request/user identifiers —
+ *  only a term count and the requested page. Never allowed to affect the response:
+ *  a logging failure here must not turn a handled timeout back into a thrown error. */
+function logSearchTimeout(termCount: number, page: number): void {
+  try {
+    console.error(JSON.stringify({ event: 'search_timeout', at: new Date().toISOString(), termCount, page }));
+  } catch {
+    // logging is best-effort only
   }
 }
 

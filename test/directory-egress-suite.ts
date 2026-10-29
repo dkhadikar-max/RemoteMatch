@@ -243,6 +243,36 @@ async function main() {
     assert(r3.searchTimedOut === true, 'matches the exact error shape already used elsewhere in this codebase for SQLSTATE 57014 (catalog-sync-lifecycle-suite.ts, swipe-real-profile-suite.ts)');
   }
 
+  // 2d-1. A caught timeout now also emits a structured, countable log event — added so the
+  // search-timeout rate can be measured post-fix (the fix itself removed the only prior signal,
+  // since a caught SearchTimeoutError no longer throws/logs as an uncaught error). Must not log
+  // the search terms, and must not affect the returned response either way.
+  {
+    const originalError = console.error;
+    const logged: string[] = [];
+    console.error = (...args: unknown[]) => { logged.push(String(args[0])); };
+    let r: Awaited<ReturnType<typeof getSearchPage>>;
+    try {
+      const timeoutClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
+      r = await getSearchPage(timeoutClient, 'node.js react typescript', 2);
+    } finally {
+      console.error = originalError;
+    }
+    assert(
+      r.searchTimedOut === true && r.jobs.length === 0 && r.total === 0 && r.page === 1 && r.totalPages === 1 && !r.outOfRange,
+      'the logged response is unchanged from the non-logging case: still a handled searchTimedOut page, not an error'
+    );
+    const eventLine = logged.find((l) => l.includes('search_timeout'));
+    assert(!!eventLine, 'a caught timeout emits a line containing the stable event name "search_timeout"');
+    let parsed: any = null;
+    try { parsed = JSON.parse(eventLine ?? ''); } catch { /* assert below reports the failure */ }
+    assert(!!parsed && parsed.event === 'search_timeout', 'the event line is structured JSON with event: "search_timeout"');
+    assert(typeof parsed?.at === 'string' && !Number.isNaN(Date.parse(parsed.at)), 'the event carries a parseable timestamp');
+    assert(parsed?.termCount === 3, 'the event carries the sanitized term count (3), not the raw query text');
+    assert(parsed?.page === 2, 'the event carries the requested page number');
+    assert(!eventLine?.includes('node.js') && !eventLine?.includes('react') && !eventLine?.includes('typescript'), 'the event never includes the actual search terms');
+  }
+
   // 2e. (reserved — see §2f below for the static checks)
 
   // 2f. static: the route has a defense-in-depth error boundary, a timed-out search renders
