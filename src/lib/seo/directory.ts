@@ -148,6 +148,7 @@ export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, r
 
 /** One page of search results, answered by the database (never the catalog). */
 export async function getSearchPage(supabase: SupabaseClient, q: string, requestedPage: number): Promise<DirectoryPage> {
+  logSearchPageEntry(requestedPage, Boolean(q)); // TEMPORARY diagnostic — see logSearchPageEntry; remove after the Railway capture question is resolved
   const terms = buildSearchTerms(q);
   const from = (Math.max(requestedPage, 1) - 1) * DIRECTORY_PAGE_SIZE;
   try {
@@ -161,6 +162,20 @@ export async function getSearchPage(supabase: SupabaseClient, q: string, request
       return { jobs: [], total: 0, page: 1, totalPages: 1, pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false, searchTimedOut: true };
     }
     throw err; // a genuine, unexpected error still propagates — never silently hidden
+  }
+}
+
+/** TEMPORARY diagnostic, unconditional on every call (not just timeouts) — isolates whether
+ *  request-level console output from this exact code path reaches Railway's log stream at all,
+ *  before trusting the absence of the `search_timeout` event below as meaningful. No search
+ *  terms or request/user identifiers — only requestedPage and whether a query string was
+ *  supplied. Remove once the Railway capture question is resolved; never allowed to affect the
+ *  response, same discipline as logSearchTimeout. */
+function logSearchPageEntry(requestedPage: number, hasQuery: boolean): void {
+  try {
+    console.log(JSON.stringify({ event: 'search_page_entry', at: new Date().toISOString(), requestedPage, hasQuery }));
+  } catch {
+    // logging is best-effort only
   }
 }
 
