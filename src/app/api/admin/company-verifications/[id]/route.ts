@@ -120,7 +120,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  const { error: updateErr } = await db
+  // Compare-and-swap (2026-11-05 review finding fix): the `.eq('verification_status', ...)`
+  // below makes the write conditional on the EXACT value just read above, not just the id.
+  // Without it, two concurrent requests could both pass the `transition.from.includes(...)`
+  // guard against the same stale read, both unconditionally overwrite the row, and both
+  // report success with contradictory audit_log rows. `.select()` on the update returns the
+  // updated row(s) — zero rows means the condition didn't match (someone else changed
+  // verification_status between our read and this write), which is reported as a 409 and
+  // deliberately never reaches recordAdminAction(): a lost race never gets logged as if its
+  // transition actually happened.
+  const { data: updatedRows, error: updateErr } = await db
     .from('companies')
     .update({
       verification_status: transition.to,
@@ -129,7 +138,30 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       verification_reason: reason,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', params.id);
+    .eq('id', params.id)
+    .eq('verification_status', before.verification_status)
+    .select('verification_status');
+
+  if (updateErr) {
+    await recordAdminAction({
+      adminId: adminAuth.user.id,
+      adminEmail: adminAuth.adminEmail,
+      action: AUDIT_ACTION[action],
+      targetType: 'company',
+      targetId: params.id,
+      beforeState: before,
+      afterState: { error: updateErr.message },
+      reason,
+    });
+    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+  }
+
+  if ((updatedRows ?? []).length === 0) {
+    return NextResponse.json(
+      { error: `Company verification status changed since it was read (was '${before.verification_status}'); please retry.` },
+      { status: 409 }
+    );
+  }
 
   await recordAdminAction({
     adminId: adminAuth.user.id,
@@ -138,11 +170,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     targetType: 'company',
     targetId: params.id,
     beforeState: before,
-    afterState: updateErr ? { error: updateErr.message } : { verification_status: transition.to },
+    afterState: { verification_status: transition.to },
     reason,
   });
-
-  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, verificationStatus: transition.to });
 }

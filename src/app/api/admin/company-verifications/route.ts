@@ -5,6 +5,14 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
 const PAGE_SIZE = 30;
 
+/** Escapes `\`, `%`, and `_` so a caller-supplied search term is matched
+ *  literally by Postgres ILIKE rather than having `%`/`_` read as its
+ *  wildcard characters (`\` must be escaped first, or escaping `%`/`_`
+ *  into `\%`/`\_` would itself introduce new unescaped backslashes). */
+export function escapeLikeWildcards(raw: string): string {
+  return raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 /**
  * GET /api/admin/company-verifications — Direct Employer Supply, Phase 1
  * admin review queue. Deliberately not named "/api/admin/employers" — that
@@ -43,8 +51,11 @@ export async function GET(req: NextRequest) {
     .order('created_at', { ascending: false });
 
   if (verificationStatus) query = query.eq('verification_status', verificationStatus);
-  if (q) query = query.ilike('legal_name', `%${q}%`);
-  if (domain) query = query.ilike('official_domain', `%${domain}%`);
+  // escapeLikeWildcards (2026-11-05 review finding fix): a literal `%` or
+  // `_` the admin typed is matched as a literal character, not a SQL LIKE
+  // wildcard — the surrounding `%...%` added here are the only wildcards.
+  if (q) query = query.ilike('legal_name', `%${escapeLikeWildcards(q)}%`);
+  if (domain) query = query.ilike('official_domain', `%${escapeLikeWildcards(domain)}%`);
 
   const from = (page - 1) * PAGE_SIZE;
   const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1);

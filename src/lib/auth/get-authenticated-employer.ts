@@ -7,6 +7,7 @@ import {
   ServiceUnavailableError,
 } from './get-authenticated-user';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { must } from '@/lib/supabase/query-helpers';
 
 export { UnauthenticatedError, UnverifiedAccountError, ServiceUnavailableError };
 
@@ -58,6 +59,14 @@ export interface AuthenticatedEmployer {
  *     membership row for this company (no row, wrong company, or
  *     `status = 'revoked'`).
  *   - ServiceUnavailableError if the admin client itself isn't configured.
+ *   - Whatever QueryError must() throws for a genuine database/query
+ *     failure on the membership lookup itself (e.g. an invalid `companyId`
+ *     that isn't a well-formed uuid) — this is deliberately NOT folded into
+ *     EmployerForbiddenError (2026-11-05 review finding fix): a real
+ *     caller sees a 404 identical to a non-member, but a DB failure is a
+ *     distinct, controlled 500 via authErrorResponse()'s default fallthrough
+ *     in every route that calls this function, never silently reported as
+ *     "not found".
  */
 export async function getAuthenticatedEmployer(
   req: NextRequest | undefined,
@@ -70,13 +79,16 @@ export async function getAuthenticatedEmployer(
     throw new ServiceUnavailableError();
   }
 
-  const { data: member } = await admin
-    .from('company_members')
-    .select('role')
-    .eq('company_id', companyId)
-    .eq('profile_id', user.id)
-    .eq('status', 'active')
-    .maybeSingle();
+  const { data: member } = must(
+    await admin
+      .from('company_members')
+      .select('role')
+      .eq('company_id', companyId)
+      .eq('profile_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle(),
+    'company_members'
+  );
 
   if (!member) {
     throw new EmployerForbiddenError();

@@ -53,23 +53,55 @@ function isValidBody(body: unknown): body is RegisterBody {
   );
 }
 
+// RFC 2606 / commonly-reserved non-public TLDs and host suffixes — rejected
+// outright rather than accepted as a "company domain". Not a public-suffix
+// list (no such dependency exists in this project, and adding one is more
+// than this validation needs — see the 2026-11-05 review finding this
+// fixes): this is a denylist of the obvious non-public cases, matched to
+// the same strictness level as this codebase's existing hostname check in
+// src/lib/profile-links/validate.ts (`!hostname.includes('.')`), not a
+// claim that every remaining accepted hostname is a real, resolvable domain.
+const NON_PUBLIC_TLDS = new Set(['local', 'localhost', 'internal', 'test', 'example', 'invalid']);
+
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+
 /**
  * Normalizes an employer-supplied website into a bare lowercase host,
  * stripping a leading "www." — the value `uq_companies_official_domain`
  * (migration 044) de-duplicates on. Never trusts a client-supplied domain
  * directly; always re-derived here from the URL the employer actually gave.
- * Returns null for anything that doesn't parse as an http(s) URL.
+ *
+ * Returns null for anything that doesn't parse as an http(s) URL, OR that
+ * parses but isn't a plausible public company domain: a bare single-label
+ * host ("acme", "localhost" itself), an IPv4/IPv6 literal, or a host whose
+ * last label is a reserved non-public TLD (`NON_PUBLIC_TLDS`). This does
+ * NOT verify the employer actually owns/controls the domain — that remains
+ * a separate, not-yet-built future requirement (Phase 1 plan Q2's business-
+ * email verification is the closest thing today, and it's deferred too).
  */
-function normalizeDomain(rawWebsite: string): string | null {
+export function normalizeDomain(rawWebsite: string): string | null {
   let candidate = rawWebsite.trim();
   if (!/^https?:\/\//i.test(candidate)) candidate = `https://${candidate}`;
+
+  let url: URL;
   try {
-    const url = new URL(candidate);
-    const host = url.hostname.toLowerCase();
-    return host.startsWith('www.') ? host.slice(4) : host;
+    url = new URL(candidate);
   } catch {
     return null;
   }
+
+  let host = url.hostname.toLowerCase();
+  if (host.startsWith('www.')) host = host.slice(4);
+
+  if (IPV4_RE.test(host) || host.includes(':')) return null; // IPv4 or IPv6 literal
+
+  const labels = host.split('.');
+  if (labels.length < 2) return null; // bare single-label host, e.g. "acme" or "localhost"
+
+  const tld = labels[labels.length - 1];
+  if (!/^[a-z]{2,}$/.test(tld) || NON_PUBLIC_TLDS.has(tld)) return null;
+
+  return host;
 }
 
 /**
@@ -149,10 +181,20 @@ export async function POST(req: NextRequest) {
 
   if (memberError) {
     // Roll back the orphaned company row rather than leaving a companies
-    // row with no owning member — best-effort; a failure here is logged by
-    // the delete's own error, not swallowed, but the original memberError
-    // is still what's reported to the caller.
-    await admin.from('companies').delete().eq('id', company.id);
+    // row with no owning member — best-effort, not atomic with the two
+    // inserts above. The delete's own result IS checked (2026-11-05 review
+    // finding: an earlier version of this code discarded it entirely while
+    // claiming otherwise in this comment) — if the rollback itself fails,
+    // that is logged with both errors and the company's domain/id, since the
+    // caller only ever sees `memberError` and would otherwise have no way to
+    // know the orphaned row is still there.
+    const { error: rollbackError } = await admin.from('companies').delete().eq('id', company.id);
+    if (rollbackError) {
+      console.error(
+        '[employer/register] rollback delete failed after company_members insert failed — orphaned company row remains',
+        { companyId: company.id, officialDomain, memberError: memberError.message, rollbackError: rollbackError.message }
+      );
+    }
     return NextResponse.json({ error: memberError.message }, { status: 500 });
   }
 
