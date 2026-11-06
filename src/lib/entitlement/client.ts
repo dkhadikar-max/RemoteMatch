@@ -2,11 +2,15 @@ import type { CareerDirection } from '@/types/byn';
 
 export interface ServerEntitlement {
   planTier: 'free' | 'pro';
+  /** Rolling-24h count, not calendar-day — same source as the swipe route's own gating (migration 045). */
   dailyRightSwipesCount: number;
   dailyProposalsCount: number;
   usageDate: string;
   rightSwipeLimit: number;
   proposalLimit: number;
+  /** Rolling-24h total (right + left) swipe count. No independent left cap — only right and total gate anything. */
+  totalSwipesCount: number;
+  totalSwipeLimit: number;
   email: string | null;
   isAnonymous: boolean;
   linkedinUrl: string | null;

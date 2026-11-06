@@ -19,7 +19,9 @@ interface SwipeDeckProps {
   canRewind: boolean;
   planTier?: 'free' | 'pro';
   dailyRightSwipesCount?: number;
-  onRequireUpgrade?: (reason: 'rewind' | 'swipes') => void;
+  /** Rolling-24h total (right + left) swipe count — no independent left cap, only right (15) and total (50) gate anything. */
+  totalSwipesCount?: number;
+  onRequireUpgrade?: (reason: 'rewind' | 'rightSwipeLimit' | 'totalSwipeLimit') => void;
   /** True while a modal rendered over the feed (filter, upgrade, …) is open: the keyboard shortcuts must not act. */
   paused?: boolean;
 }
@@ -31,6 +33,7 @@ export function SwipeDeck({
   canRewind,
   planTier = 'free',
   dailyRightSwipesCount = 0,
+  totalSwipesCount = 0,
   onRequireUpgrade,
   paused = false,
 }: SwipeDeckProps) {
@@ -69,12 +72,25 @@ export function SwipeDeck({
       if (!currentOpp) return;
       const swiped = currentOpp;
 
-      if (action === 'interested') {
-        if (planTier === 'free' && dailyRightSwipesCount >= 15) {
+      // Client-side pre-check only — purely to avoid a pointless round trip;
+      // the server is the sole authority on the actual limit (migration
+      // 045 / src/app/api/opportunities/swipe/route.ts). Right-specific cap
+      // takes precedence over the total cap when both would apply, matching
+      // the server's own check ordering.
+      if (planTier === 'free') {
+        if (action === 'interested' && dailyRightSwipesCount >= 15) {
           x.set(0);
-          onRequireUpgrade?.('swipes');
+          onRequireUpgrade?.('rightSwipeLimit');
           return;
         }
+        if (totalSwipesCount >= 50) {
+          x.set(0);
+          onRequireUpgrade?.('totalSwipeLimit');
+          return;
+        }
+      }
+
+      if (action === 'interested') {
         setLastInterestedOpp(swiped);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 6000);
@@ -84,7 +100,7 @@ export function SwipeDeck({
       setDeck((prev) => prev.slice(1));
       x.set(0);
     },
-    [currentOpp, onSwipe, x, planTier, dailyRightSwipesCount, onRequireUpgrade]
+    [currentOpp, onSwipe, x, planTier, dailyRightSwipesCount, totalSwipesCount, onRequireUpgrade]
   );
 
   const handleRewind = useCallback(async () => {

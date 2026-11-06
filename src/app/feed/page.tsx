@@ -33,6 +33,9 @@ export default function FeedPage() {
   // Gating & Filter state
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [upgradeReason, setUpgradeReason] = useState<UpgradeReason>('rewind');
+  // Server-calculated reset timestamp for the two swipe-limit reasons — never
+  // computed client-side; the right and total caps can reset at different times.
+  const [upgradeResetAt, setUpgradeResetAt] = useState<string | null>(null);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [activeFilters, setActiveFilters] = useState<OpportunityFilters>({});
 
@@ -50,6 +53,7 @@ export default function FeedPage() {
           ...localProfile,
           planTier: entitlement.planTier,
           dailyRightSwipesCount: entitlement.dailyRightSwipesCount,
+          totalSwipesCount: entitlement.totalSwipesCount,
           dailyProposalsCount: entitlement.dailyProposalsCount,
           usageDate: entitlement.usageDate,
           // Career Transition Matching — server-authoritative, from /api/profile.
@@ -147,8 +151,9 @@ export default function FeedPage() {
     return applyFilters(opportunities, activeFilters);
   }, [opportunities, activeFilters]);
 
-  const handleRequireUpgrade = (reason: UpgradeReason) => {
+  const handleRequireUpgrade = (reason: UpgradeReason, resetAt: string | null = null) => {
     setUpgradeReason(reason);
+    setUpgradeResetAt(resetAt);
     setIsUpgradeModalOpen(true);
   };
 
@@ -173,8 +178,15 @@ export default function FeedPage() {
 
     if (!res.ok) {
       if (data.error === 'limit_reached') {
-        handleRequireUpgrade('swipes');
+        // RIGHT_LIMIT_REACHED / TOTAL_LIMIT_REACHED — the server's code IS
+        // the reason; two distinct popups, never a shared generic one.
+        handleRequireUpgrade(
+          data.code === 'RIGHT_LIMIT_REACHED' ? 'rightSwipeLimit' : 'totalSwipeLimit',
+          data.resetAt ?? null
+        );
       }
+      // 'duplicate_interaction' (409) is a defensive/stale-client case, not
+      // a limit — deliberately no modal, no error surfaced to the user.
       return;
     }
 
@@ -182,25 +194,25 @@ export default function FeedPage() {
     // reload and drives the opportunity pool's local match-score display.
     // It is never consulted for quota/entitlement decisions. The
     // "interested" application row itself is already created server-side by
-    // finalize_interested_swipe(); the tracker now reads it back from
+    // reserve_and_record_right_swipe(); the tracker now reads it back from
     // GET /api/applications, so no local mirror of it is written here.
     localStore.recordSwipe(opportunityId, action);
 
     setSwipedCount((prev) => prev + 1);
-    if (action === 'interested') {
-      setProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              planTier: data.planTier ?? prev.planTier,
-              dailyRightSwipesCount:
-                typeof data.remaining === 'number' ? data.limit - data.remaining : prev.dailyRightSwipesCount,
-            }
-          : prev
-      );
-      // An interested swipe consumed a daily save — refresh the navbar pill.
-      notifyEntitlementChanged();
-    }
+    setProfile((prev) =>
+      prev
+        ? {
+            ...prev,
+            planTier: data.planTier ?? prev.planTier,
+            dailyRightSwipesCount: typeof data.rightCount === 'number' ? data.rightCount : prev.dailyRightSwipesCount,
+            totalSwipesCount: typeof data.totalCount === 'number' ? data.totalCount : prev.totalSwipesCount,
+          }
+        : prev
+    );
+    // Either action consumes a unit of the total rolling-24h allowance now
+    // (no independent left cap, but total is shared across both) — refresh
+    // the navbar pill regardless of which action this was.
+    notifyEntitlementChanged();
   };
 
   const handleRewind = async (): Promise<string | null> => {
@@ -345,6 +357,7 @@ export default function FeedPage() {
           canRewind={swipedCount > 0}
           planTier={profile.planTier}
           dailyRightSwipesCount={profile.dailyRightSwipesCount || 0}
+          totalSwipesCount={profile.totalSwipesCount || 0}
           onRequireUpgrade={handleRequireUpgrade}
           // Keyboard shortcuts must not swipe/save a job behind an open modal.
           paused={isFilterModalOpen || isUpgradeModalOpen}
@@ -385,6 +398,7 @@ export default function FeedPage() {
         isOpen={isUpgradeModalOpen}
         onClose={() => setIsUpgradeModalOpen(false)}
         reason={upgradeReason}
+        resetAt={upgradeResetAt}
         onUpgraded={() => {
           // Re-fetch from the server rather than trusting whatever the
           // client thinks just happened — Stripe verification is what
