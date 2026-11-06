@@ -16,33 +16,49 @@
 --
 -- Today (migration 032) there is NO record of individual charges anywhere —
 -- only the subscription's current id/status on profiles. This table adds
--- that missing ledger: one row per Razorpay payment event (checkout success,
--- webhook charge, refund), independent of entitlement logic, which keeps
--- reading profiles.plan_tier exactly as it does today. Never the source of
--- truth for entitlement — razorpay.ts's planTierForSubscription stays that.
+-- that missing ledger: one row per Razorpay WEBHOOK EVENT that carries a
+-- payment (checkout success, webhook charge, failure, refund), independent
+-- of entitlement logic, which keeps reading profiles.plan_tier exactly as it
+-- does today. Never the source of truth for entitlement —
+-- razorpay.ts's planTierForSubscription stays that.
 --
 -- amount_minor is the integer minor-unit amount Razorpay itself reports
 -- (paise/cents/fils), never a value computed or trusted from the browser.
--- country is best-effort (from Razorpay's payment object, when present) and
--- is informational only — never used to re-derive a price after the fact.
+--
+-- 2026-11-06 review fixes:
+-- - Uniqueness moved from razorpay_payment_id to razorpay_event_id
+--   (requirement #5): a payment now gets ONE row per webhook event it
+--   appears on — a capture, then later a separate refund, are two rows —
+--   instead of one row that a later event overwrote in place, which lost
+--   the original capture from history. Redelivery of the SAME event (same
+--   X-Razorpay-Event-Id) still upserts idempotently onto the same row.
+--   razorpay_payment_id is now indexed rather than unique, so a payment's
+--   full event history can still be queried by payment id.
+-- - razorpay_order_id and country columns were dropped (requirement #7,
+--   explicit decision): nothing in this PR extracts either from the webhook
+--   payload — RazorpayPaymentEntity (src/lib/razorpay.ts) only carries
+--   id/amount/currency/status, and Razorpay's Subscriptions API payments
+--   don't carry a conventional order_id the way one-off Orders do. A
+--   defined-but-always-NULL column is worse than no column; add either back
+--   in a future migration alongside the parsing code that would actually
+--   populate it.
 -- ==============================================================================
 
 CREATE TABLE IF NOT EXISTS billing_transactions (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id             UUID REFERENCES profiles(id) ON DELETE SET NULL,
-  razorpay_payment_id    TEXT UNIQUE,
-  razorpay_order_id      TEXT,
+  razorpay_payment_id    TEXT NOT NULL,
   razorpay_subscription_id TEXT,
   amount_minor           BIGINT NOT NULL CHECK (amount_minor >= 0),
   currency               TEXT NOT NULL,
-  country                TEXT,
   status                 TEXT NOT NULL CHECK (status IN ('created', 'authorized', 'captured', 'failed', 'refunded')),
-  razorpay_event_id      TEXT,
+  razorpay_event_id      TEXT NOT NULL UNIQUE,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_billing_transactions_profile_id ON billing_transactions(profile_id);
 CREATE INDEX IF NOT EXISTS idx_billing_transactions_subscription_id ON billing_transactions(razorpay_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_billing_transactions_payment_id ON billing_transactions(razorpay_payment_id);
 
 ALTER TABLE billing_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE billing_transactions FORCE ROW LEVEL SECURITY;

@@ -54,29 +54,74 @@ export interface PlanResolution {
   fellBack: boolean;
 }
 
-/** True only when this currency has a real, non-empty Plan id configured —
- *  never when it merely appears in CURRENCY_BY_COUNTRY. */
+/** A configured plan id must look like a real Razorpay Plan id — the same
+ *  `plan_` prefix check `isRazorpayConfigured` (razorpay.ts) already applies
+ *  to the base INR plan. 2026-11-06 review fix (requirement #8): applied
+ *  consistently to EVERY currency now — previously only INR got this check,
+ *  so a malformed non-INR value (placeholder text, a key id pasted into the
+ *  wrong var) passed `isCurrencyActive` and only failed later at the live
+ *  Razorpay API call instead of being treated as "not configured" up front. */
+function validPlanId(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  return trimmed && trimmed.startsWith('plan_') ? trimmed : null;
+}
+
+/** True only when this currency has a real, validly-formatted Plan id
+ *  configured RIGHT NOW — never when it merely appears in CURRENCY_BY_COUNTRY,
+ *  and never influenced by history (see `activePlanIds`/`currencyForPlanId`
+ *  below for the historical counterpart). This is the one check that decides
+ *  whether a currency may be used for a NEW subscription, so it must always
+ *  reflect the current environment, nothing cached. */
 export function isCurrencyActive(currency: string): boolean {
   const envVar = PLAN_ENV_VAR_BY_CURRENCY[currency.toUpperCase()];
-  if (!envVar) return false;
-  return Boolean(process.env[envVar] && process.env[envVar]!.trim().length > 0);
+  return envVar !== undefined && validPlanId(process.env[envVar]) !== null;
 }
 
 export function activeCurrencies(): string[] {
   return Object.keys(PLAN_ENV_VAR_BY_CURRENCY).filter(isCurrencyActive);
 }
 
-/** Every real Plan id currently configured (any active currency), as a set —
- *  so "is this subscription on one of OUR Pro plans" can check membership
- *  instead of equality against the single INR plan id. */
-export function activePlanIds(): ReadonlySet<string> {
-  const ids = new Set<string>();
-  for (const currency of activeCurrencies()) {
-    const envVar = PLAN_ENV_VAR_BY_CURRENCY[currency];
-    const id = process.env[envVar]?.trim();
-    if (id) ids.add(id);
+/**
+ * Append-only record of every (planId → currency) pair this process has ever
+ * observed as validly configured. Reset only by restarting the process —
+ * never by an env var being changed or removed afterward. This is the single
+ * source of truth for "is this plan id one of ours" (`activePlanIds`,
+ * `isProPlanSubscription` in razorpay.ts) and "what currency was THIS plan id
+ * actually denominated in" (`currencyForPlanId`).
+ *
+ * 2026-11-06 review fix (requirement #3): before this, both functions
+ * re-derived their answer from a LIVE `process.env` read on every call, so
+ * rotating/unsetting a currency's plan id env var after go-live could flip a
+ * still-paying subscription's `isProPlanSubscription` result to false
+ * mid-process — risking a duplicate live mandate (the reuse-check in
+ * /api/razorpay/subscription silently bypassed) or a legitimately-paid
+ * orphan subscription being silently dropped with no profile bound and no
+ * log line. A plan id recognized once now stays recognized for the rest of
+ * this process's life, exactly like the base INR plan id already behaves in
+ * razorpay.ts (computed once at import time, never re-read).
+ *
+ * Deliberately NOT used by `isCurrencyActive`/`activeCurrencies`/`resolvePlan`
+ * — whether a currency may be offered for a NEW subscription is a live
+ * question; whether an EXISTING subscription's plan id is still recognized
+ * as ours is a historical one. Conflating the two is what caused the bug.
+ */
+const knownPlanIdToCurrency = new Map<string, string>();
+
+function observeCurrentConfig(): void {
+  for (const [currency, envVar] of Object.entries(PLAN_ENV_VAR_BY_CURRENCY)) {
+    const planId = validPlanId(process.env[envVar]);
+    if (planId && !knownPlanIdToCurrency.has(planId)) {
+      knownPlanIdToCurrency.set(planId, currency);
+    }
   }
-  return ids;
+}
+
+/** Every real Plan id this process has EVER seen configured (any currency,
+ *  past or present) — so "is this subscription on one of OUR Pro plans" can
+ *  check membership against a historical record, not just today's env. */
+export function activePlanIds(): ReadonlySet<string> {
+  observeCurrentConfig();
+  return new Set(knownPlanIdToCurrency.keys());
 }
 
 /**
@@ -84,23 +129,32 @@ export function activePlanIds(): ReadonlySet<string> {
  * on, returns which currency that is — the only correct source for "what
  * currency is this subscription in", never a request's currency hint. Added
  * for F1 (2026-11-05 audit): reusing a stored subscription must report ITS
- * currency, not whatever the latest request asked for. Returns null if the
+ * currency, not whatever the latest request asked for. Historical (see
+ * `knownPlanIdToCurrency` above) so a subscription's currency keeps resolving
+ * correctly even if that currency's env var is later rotated — otherwise F1's
+ * own fallback (`?? DEFAULT_CURRENCY`) could show an INR price/description
+ * for a real non-INR charge (2026-11-06 review finding). Returns null if the
  * plan id isn't one of ours (caller should treat that as "unknown" rather
  * than guessing — in practice this is only ever called on a plan id that
  * already passed isProPlanSubscription, so it should always resolve).
  */
 export function currencyForPlanId(planId: string): string | null {
-  for (const currency of activeCurrencies()) {
-    const envVar = PLAN_ENV_VAR_BY_CURRENCY[currency];
-    if (process.env[envVar]?.trim() === planId) return currency;
-  }
-  return null;
+  observeCurrentConfig();
+  return knownPlanIdToCurrency.get(planId) ?? null;
 }
 
 /** Country code (any case, ISO-2) → currency this config WOULD use for it,
  *  ignoring whether that currency is actually active. Never trust this alone
  *  for billing — always resolve through `resolvePlan`, which applies the
- *  fallback. Unknown/missing country → DEFAULT_CURRENCY. */
+ *  fallback. Unknown/missing country → DEFAULT_CURRENCY.
+ *
+ *  Has NO caller in application code today (2026-11-06 review finding): the
+ *  only wired currency-selection path is `/api/razorpay/subscription` reading
+ *  a raw `currency` string off the request body straight into `resolvePlan`.
+ *  Kept, not deleted — this is the function a real country/currency picker
+ *  will call once one exists (see docs/international-payments-audit-plan-
+ *  2026-10-31.md) — but it is deliberately NOT wired into any route yet;
+ *  wiring it in is a product decision outside this fix's scope. */
 export function currencyForCountry(countryCode: string | null | undefined): string {
   if (!countryCode) return DEFAULT_CURRENCY;
   return CURRENCY_BY_COUNTRY[countryCode.trim().toUpperCase()] ?? DEFAULT_CURRENCY;
@@ -113,18 +167,21 @@ export function currencyForCountry(countryCode: string | null | undefined): stri
  * and returns which Plan to actually use, falling back to INR whenever the
  * requested currency isn't active. Throws only if even INR is unconfigured
  * (mirrors `isRazorpayConfigured`'s existing behavior for the base case).
+ * Live, not historical — same reasoning as `isCurrencyActive` above.
  */
 export function resolvePlan(requestedCurrency: string): PlanResolution {
   const wanted = requestedCurrency.toUpperCase();
-  if (isCurrencyActive(wanted)) {
-    const envVar = PLAN_ENV_VAR_BY_CURRENCY[wanted];
-    return { currency: wanted, planId: process.env[envVar]!.trim(), fellBack: false };
+  const envVar = PLAN_ENV_VAR_BY_CURRENCY[wanted];
+  const planId = envVar ? validPlanId(process.env[envVar]) : null;
+  if (planId) {
+    observeCurrentConfig();
+    return { currency: wanted, planId, fellBack: false };
   }
-  const fallbackEnvVar = PLAN_ENV_VAR_BY_CURRENCY[DEFAULT_CURRENCY];
-  const fallbackPlanId = process.env[fallbackEnvVar]?.trim();
+  const fallbackPlanId = validPlanId(process.env[PLAN_ENV_VAR_BY_CURRENCY[DEFAULT_CURRENCY]]);
   if (!fallbackPlanId) {
     throw new Error(`resolvePlan: neither ${wanted} nor the default currency ${DEFAULT_CURRENCY} has a configured plan`);
   }
+  observeCurrentConfig();
   return { currency: DEFAULT_CURRENCY, planId: fallbackPlanId, fellBack: wanted !== DEFAULT_CURRENCY };
 }
 
@@ -142,15 +199,28 @@ const DISPLAY_AMOUNT_BY_CURRENCY: Record<string, number> = {
   USD: 9,
 };
 
+/** Thrown by `planDescription` when a currency has no display amount on
+ *  file. 2026-11-06 review fix (requirement #6): this used to fall back to a
+ *  price-less generic string, which meant activating a new currency (just
+ *  setting its Plan id env var — `isCurrencyActive`/`resolvePlan` pick that
+ *  up immediately, no code change needed) could silently ship a Checkout
+ *  modal with no price shown at all, with no signal anywhere. An
+ *  incompletely-configured currency must fail explicitly instead — callers
+ *  (route.ts) catch this and refuse the checkout with a clear 503, the same
+ *  "unavailable" shape already used for every other config gate in that
+ *  route, rather than completing a checkout with a blank price. */
+export class MissingDisplayPriceError extends Error {}
+
 /** The description string Checkout should show, for whatever currency a
  *  subscription actually resolved to or is already on — always computed
  *  server-side so it can never drift from the real currency being charged.
- *  Falls back to a currency-agnostic string if a currency has no display
- *  amount on file (shouldn't happen for an active currency, but fails safe
- *  rather than showing a wrong number). */
+ *  Throws `MissingDisplayPriceError` rather than silently showing a
+ *  price-less description — see that class's doc comment. */
 export function planDescription(currency: string): string {
   const upper = currency.toUpperCase();
   const amount = DISPLAY_AMOUNT_BY_CURRENCY[upper];
-  if (amount === undefined) return 'RemoteMatch Pro — monthly subscription';
+  if (amount === undefined) {
+    throw new MissingDisplayPriceError(`planDescription: no display price configured for ${upper}`);
+  }
   return `RemoteMatch Pro — ${formatCurrency(amount, upper)}/month`;
 }

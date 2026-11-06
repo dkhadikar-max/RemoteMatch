@@ -38,6 +38,14 @@ export type ApplyOutcome =
   | { kind: 'error' };
 
 type LedgerRow = { event_id: string; event_type: string };
+/** razorpay_event_id is the row's idempotency key (migration 043 — 2026-11-06
+ *  review fix, requirement #5): a payment gets ONE row per webhook event it
+ *  appears on (a capture, then later a separate refund, are different rows),
+ *  not one row per payment that later events overwrite in place. It is typed
+ *  nullable here only because the field is technically optional on the wire;
+ *  in practice Razorpay always sends X-Razorpay-Event-Id, and a delivery
+ *  that somehow lacks one simply fails this best-effort write (logged, never
+ *  fatal — same as any other ledger-write failure). */
 type BillingTransactionRow = {
   profile_id: string;
   razorpay_payment_id: string;
@@ -73,9 +81,14 @@ function defaultLedgerWriter(admin: SupabaseClient) {
 
 function defaultBillingTransactionWriter(admin: SupabaseClient) {
   return async (row: BillingTransactionRow) => {
+    // onConflict is razorpay_event_id, not razorpay_payment_id (2026-11-06
+    // review fix, requirement #5) — see BillingTransactionRow's doc comment
+    // above. Keying on the payment id alone meant a refund event for an
+    // already-captured payment overwrote the capture row in place instead of
+    // adding a new one, losing the original capture from history.
     const { error } = await admin
       .from('billing_transactions')
-      .upsert(row, { onConflict: 'razorpay_payment_id' });
+      .upsert(row, { onConflict: 'razorpay_event_id' });
     return { error };
   };
 }
@@ -208,7 +221,18 @@ export async function processWebhookEvent(
   const recordBillingTransaction = deps.recordBillingTransaction ?? defaultBillingTransactionWriter(admin);
   let reconcile = false;
 
-  if (event.subscription) {
+  // Only subscription LIFECYCLE events (subscription.*) drive the entitlement
+  // apply/reconcile state machine. 2026-11-06 review fix (requirement #2):
+  // the G1 fix resolves a subscription id for payment.*/refund.* events too
+  // (needed below, for ledger attribution), but those events are NOT
+  // subscription state changes — every renewal already fires BOTH
+  // subscription.charged (which must apply) and payment.captured (which must
+  // not re-apply the same thing a second time). Re-running the full apply
+  // pipeline for the payment-level event as well doubled DB writes per cycle
+  // and turned a transient fetch failure on an otherwise-inconsequential
+  // payment.failed/refund.created into a 502 that forces Razorpay into a
+  // redelivery loop for what should be a trivial acknowledgement.
+  if (event.subscription && event.eventType.startsWith('subscription.')) {
     const outcome = await applySubscriptionToProfiles(admin, event.subscription, deps);
     if (outcome.kind === 'error') return { status: 500, body: { error: 'Could not apply event' } };
     if (outcome.kind === 'retry_later') return { status: outcome.status, body: { error: outcome.reason } };

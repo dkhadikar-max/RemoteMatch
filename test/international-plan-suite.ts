@@ -49,7 +49,7 @@ import {
   isProPlanSubscription,
   type RazorpaySubscription,
 } from '../src/lib/razorpay';
-import { activePlanIds } from '../src/lib/billing/currency-config';
+import { activePlanIds, isCurrencyActive } from '../src/lib/billing/currency-config';
 import { processWebhookEvent } from '../src/lib/razorpay-webhook-apply';
 import { parseWebhookEvent } from '../src/lib/razorpay-webhook-parse';
 import { adminClient, hasRequiredEnv, newVerifiedSession } from './helpers/verified-session';
@@ -131,24 +131,41 @@ async function run() {
     'a plan id that is neither the INR plan nor any active currency plan is rejected'
   );
 
-  console.log('\nF4.4: missing environment configuration');
+  console.log('\nF4.4: historical plan recognition survives environment-variable rotation (2026-11-06 remediation, requirement #3)');
+  // Pre-2026-11-06 this test asserted the OPPOSITE: that unsetting the env
+  // var made isProPlanSubscription flip to false. That was the bug the review
+  // found — a still-paying subscription could lose recognition mid-process,
+  // risking a duplicate live mandate (the reuse-check in /api/razorpay/
+  // subscription silently bypassed) or a paid orphan being silently dropped.
+  // The fix: `isCurrencyActive` (live) still correctly reports the currency
+  // as unavailable for NEW business, but `isProPlanSubscription`/
+  // `activePlanIds` (historical) keep recognizing a plan id once observed.
   if (!USD_PLAN_ID) {
     skip('RAZORPAY_PRO_PLAN_ID_USD not set — this case is already exercised by default in this env');
   } else {
+    // F4.2 above already observed USD_PLAN_ID into history; make it explicit
+    // and order-independent by observing it again here.
+    assert(
+      isProPlanSubscription(stubSub({ id: 'sub_d0', plan_id: USD_PLAN_ID })),
+      'USD plan id is recognized while its env var is live (baseline, also warms the historical record)'
+    );
     const saved = process.env.RAZORPAY_PRO_PLAN_ID_USD;
     delete process.env.RAZORPAY_PRO_PLAN_ID_USD;
     try {
       assert(
-        isProPlanSubscription(stubSub({ id: 'sub_d', plan_id: USD_PLAN_ID })) === false,
-        'a USD-plan subscription is NOT recognized once RAZORPAY_PRO_PLAN_ID_USD is unset — proves activePlanIds() reads live, never caches a stale "active" currency'
+        isCurrencyActive('USD') === false,
+        'USD is correctly INACTIVE for new business once its env var is unset — the live check is unaffected by history'
+      );
+      assert(
+        isProPlanSubscription(stubSub({ id: 'sub_d', plan_id: USD_PLAN_ID })) === true,
+        'a subscription already on the USD plan is STILL recognized as ours after the env var is unset — historical identity survives rotation (2026-11-06 fix)'
       );
     } finally {
       process.env.RAZORPAY_PRO_PLAN_ID_USD = saved;
     }
-    // Restored — confirm recognition comes back immediately (live read, no caching either direction).
     assert(
       isProPlanSubscription(stubSub({ id: 'sub_d2', plan_id: USD_PLAN_ID })),
-      'USD recognition returns immediately once the env var is restored (no stale negative caching)'
+      'USD recognition still holds once the env var is restored'
     );
   }
 
@@ -380,8 +397,64 @@ async function run() {
         await processWebhookEvent(admin, { eventId: `evt_d3_redelivery_${Date.now()}`, eventType, subscription, payment }, seam);
         assert(
           captured.length === 2 && captured[0] === paymentId && captured[1] === paymentId,
-          'a redelivered payment.failed event upserts on the SAME razorpay_payment_id both times — the table\'s UNIQUE constraint is what makes this idempotent once applied, not a duplicate row',
+          // 2026-11-06 fix (requirement #5): the table's idempotency key
+          // moved from razorpay_payment_id to razorpay_event_id — these two
+          // calls use DIFFERENT event ids (first vs redelivery), so once
+          // migration 043 is applied they would land as two SEPARATE rows,
+          // both correctly carrying the same payment id. True delivery-level
+          // idempotency (the literal SAME Razorpay webhook delivery arriving
+          // twice) is enforced one layer up, by the X-Razorpay-Event-Id
+          // short-circuit in webhook/route.ts before processWebhookEvent is
+          // even reached — not by this table. This assertion only confirms
+          // both calls correctly carry the same payment id, which D6 below
+          // extends to prove a capture and a later refund stay as two
+          // distinct, correctly-attributed rows rather than one overwriting
+          // the other.
+          'a redelivered payment.failed event (two different event ids, same payment) passes the same razorpay_payment_id to the writer both times',
           captured
+        );
+      }
+
+      console.log('\nD6: a capture followed later by a refund on the SAME payment are preserved as two distinct ledger rows (2026-11-06 fix, requirement #5)');
+      {
+        const paymentId = `pay_d6_capture_then_refund_${Date.now()}`;
+        const capturedRows: Array<{ razorpay_payment_id: string; razorpay_event_id: string | null; status: string }> = [];
+        const seam = {
+          recordBillingTransaction: async (row: { razorpay_payment_id: string; razorpay_event_id: string | null; status: string }) => {
+            capturedRows.push(row);
+            return { error: null };
+          },
+        };
+
+        const capturedBody = JSON.stringify({
+          event: 'payment.captured',
+          payload: { payment: { entity: { id: paymentId, amount: 900, currency: 'USD', status: 'captured', subscription_id: subId } } },
+        });
+        const captureParsed = parseWebhookEvent(capturedBody);
+        const subAfterCapture = await fetchSubscription(captureParsed.subscriptionId!);
+        const captureEventId = `evt_d6_captured_${Date.now()}`;
+        await processWebhookEvent(admin, { eventId: captureEventId, eventType: captureParsed.eventType, subscription: subAfterCapture, payment: captureParsed.payment }, seam);
+
+        const refundBody = JSON.stringify({
+          event: 'refund.created',
+          payload: { payment: { entity: { id: paymentId, amount: 900, currency: 'USD', status: 'refunded', subscription_id: subId } } },
+        });
+        const refundParsed = parseWebhookEvent(refundBody);
+        const subAfterRefund = await fetchSubscription(refundParsed.subscriptionId!);
+        const refundEventId = `evt_d6_refunded_${Date.now()}`;
+        await processWebhookEvent(admin, { eventId: refundEventId, eventType: refundParsed.eventType, subscription: subAfterRefund, payment: refundParsed.payment }, seam);
+
+        assert(
+          capturedRows.length === 2 &&
+            capturedRows[0].razorpay_payment_id === paymentId &&
+            capturedRows[1].razorpay_payment_id === paymentId &&
+            capturedRows[0].status === 'captured' &&
+            capturedRows[1].status === 'refunded' &&
+            capturedRows[0].razorpay_event_id === captureEventId &&
+            capturedRows[1].razorpay_event_id === refundEventId &&
+            capturedRows[0].razorpay_event_id !== capturedRows[1].razorpay_event_id,
+          'capture and refund on the same payment produce TWO rows with the same payment id but DIFFERENT (non-null) event ids and distinct statuses — once migration 043 (razorpay_event_id NOT NULL UNIQUE) is applied, the refund can never overwrite the capture row in place',
+          capturedRows
         );
       }
 
@@ -420,6 +493,76 @@ async function run() {
       }
     } finally {
       if (subId) await cancelSubscriptionAtCycleEnd(subId).catch(() => {});
+      await admin.auth.admin.deleteUser(user.userId).catch(() => {});
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  console.log('\nPART E — non-subscription webhook event filtering (2026-11-06 remediation, requirement #2)');
+  // Before this fix, processWebhookEvent ran the full entitlement apply/
+  // reconcile pipeline for ANY event carrying a resolvable subscription,
+  // including payment.*/refund.* events — doubling work every renewal cycle
+  // (subscription.charged AND payment.captured both applying) and widening
+  // the blast radius of a transient fetch failure. The fix: only
+  // subscription.* events drive applySubscriptionToProfiles; payment.*/
+  // refund.* events still resolve a subscription (for ledger attribution,
+  // proven in Parts C/D) but must NOT mutate entitlement. Proven here by an
+  // orphan subscription that WOULD be bound if the apply pipeline ran: a
+  // payment.captured event must leave the profile untouched, and the same
+  // stub must still bind correctly once relabeled as a genuine subscription.*
+  // event — proving the gate is event-type-specific, not a regression.
+  if (!USD_PLAN_ID) {
+    skip('RAZORPAY_PRO_PLAN_ID_USD not set — cannot run the event-filtering test');
+  } else {
+    const admin = adminClient();
+    const user = await newVerifiedSession();
+    try {
+      const orphanSub = stubSub({
+        id: `sub_test_filter_${Date.now()}`,
+        plan_id: USD_PLAN_ID,
+        status: 'active',
+        paid_count: 1,
+        notes: { userId: user.userId },
+      });
+      const payment = { id: `pay_filter_${Date.now()}`, amount: 900, currency: 'USD', status: 'captured' };
+
+      console.log('\nE1: a payment.captured event never enters the entitlement apply pipeline');
+      const before = await processWebhookEvent(admin, {
+        eventId: `evt_filter_payment_${Date.now()}`,
+        eventType: 'payment.captured',
+        subscription: orphanSub,
+        payment,
+      });
+      assert(before.status === 200, 'a payment.captured event for a bindable orphan still returns 200 (ledger-only path)', before);
+      const { data: afterPaymentEvent } = await admin
+        .from('profiles')
+        .select('plan_tier, razorpay_subscription_id')
+        .eq('id', user.userId)
+        .single();
+      assert(
+        afterPaymentEvent?.plan_tier !== 'pro' && afterPaymentEvent?.razorpay_subscription_id !== orphanSub.id,
+        'the profile is NOT bound/upgraded by a payment.captured event, even though the orphan subscription would qualify for binding — entitlement apply is scoped to subscription.* events only',
+        afterPaymentEvent
+      );
+
+      console.log('\nE2: the SAME orphan subscription IS bound once it arrives as a genuine subscription.* event');
+      const after = await processWebhookEvent(admin, {
+        eventId: `evt_filter_subscription_${Date.now()}`,
+        eventType: 'subscription.activated',
+        subscription: orphanSub,
+      });
+      assert(after.status === 200, 'the subscription.activated event returns 200', after);
+      const { data: afterSubscriptionEvent } = await admin
+        .from('profiles')
+        .select('plan_tier, razorpay_subscription_id')
+        .eq('id', user.userId)
+        .single();
+      assert(
+        afterSubscriptionEvent?.plan_tier === 'pro' && afterSubscriptionEvent?.razorpay_subscription_id === orphanSub.id,
+        'the profile IS bound/upgraded once the same subscription arrives on a subscription.* event — proving the gate filters by event type, not a wholesale removal of orphan-binding',
+        afterSubscriptionEvent
+      );
+    } finally {
       await admin.auth.admin.deleteUser(user.userId).catch(() => {});
     }
   }

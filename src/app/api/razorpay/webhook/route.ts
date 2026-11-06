@@ -86,13 +86,31 @@ export async function POST(req: NextRequest) {
     if (seen) return NextResponse.json({ received: true, duplicate: true });
   }
 
+  // 2026-11-06 review fix (requirement #2): only subscription.* events are
+  // entitlement-critical — a failed fetch for one of those must force a
+  // retry, since applying the wrong/stale state would be worse than being
+  // slow. A payment.*/refund.* event only needs the fetch for billing_
+  // transactions ledger attribution (itself best-effort — see
+  // razorpay-webhook-apply.ts), so a transient failure there must not force
+  // Razorpay into a redelivery loop for what is, for entitlement purposes, a
+  // no-op event; this delivery's ledger row is simply not written (self-heals
+  // on the next related delivery).
+  const isSubscriptionLifecycleEvent = eventType.startsWith('subscription.');
   let subscription = null;
   if (typeof subscriptionId === 'string') {
     try {
       subscription = await fetchSubscription(subscriptionId);
-    } catch {
-      // Let Razorpay retry rather than recording an event we couldn't apply.
-      return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
+    } catch (err) {
+      if (isSubscriptionLifecycleEvent) {
+        // Let Razorpay retry rather than recording an event we couldn't apply.
+        return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
+      }
+      console.error(
+        '[razorpay][webhook] could not fetch subscription for ledger context (non-fatal, non-lifecycle event)',
+        eventType,
+        subscriptionId,
+        err
+      );
     }
   }
   // An event with no subscription id from either source carries no

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   createSubscription,
+  decideSubscriptionReuse,
   fetchSubscription,
-  hasLiveMandate,
   isProPlanSubscription,
   isPurchaseAllowed,
   isRazorpayConfigured,
@@ -21,7 +21,13 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { hasActivePurchaseGrant } from '@/lib/billing/purchase-access';
-import { currencyForPlanId, DEFAULT_CURRENCY, planDescription, resolvePlan } from '@/lib/billing/currency-config';
+import {
+  currencyForPlanId,
+  DEFAULT_CURRENCY,
+  MissingDisplayPriceError,
+  planDescription,
+  resolvePlan,
+} from '@/lib/billing/currency-config';
 
 /** How long a request waits for a concurrent request's claim to finish before giving up. */
 const CLAIM_WAIT_MS = 6_000;
@@ -112,15 +118,31 @@ export async function POST(req: NextRequest) {
   // under a different currency selection on an earlier, abandoned attempt);
   // callers reusing one must pass ITS real currency, derived from its own
   // plan_id via currencyForPlanId, not `resolvedCurrency`.
-  const checkoutFor = (subscriptionId: string, currency: string) =>
-    NextResponse.json({
+  // Requirement #6 (2026-11-06 review): an active-but-incompletely-configured
+  // currency (a Plan id is set, but its display price is not) must fail
+  // explicitly rather than complete a checkout with no price shown — see
+  // MissingDisplayPriceError. Same 503 shape as every other config gate above.
+  const checkoutFor = (subscriptionId: string, currency: string) => {
+    let description: string;
+    try {
+      description = planDescription(currency);
+    } catch (err) {
+      if (!(err instanceof MissingDisplayPriceError)) throw err;
+      console.error('[razorpay] currency is active but has no display price configured', currency);
+      return NextResponse.json(
+        { error: "Pro upgrades aren't available right now. Please check back soon." },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({
       success: true,
       subscriptionId,
       keyId: razorpayKeyId,
       email: user.email ?? null,
       currency,
-      description: planDescription(currency),
+      description,
     });
+  };
   const alreadyStarting = () =>
     NextResponse.json({ error: 'Checkout is already starting. Please try again in a moment.' }, { status: 409 });
 
@@ -176,19 +198,24 @@ export async function POST(req: NextRequest) {
         }
       }
       if (existing && isProPlanSubscription(existing) && subscriptionUserId(existing) === user.id) {
-        if (existing.status === 'created') {
+        const decision = decideSubscriptionReuse(existing, resolvedPlanId);
+        if (decision === 'reuse_unpaid') {
           // F1 fix: report THIS subscription's real currency, derived from
-          // its own plan_id — never the current request's currency hint,
-          // which may differ from what it was originally created under.
+          // its own plan_id — never the current request's currency hint
+          // (which is guaranteed to match here anyway, since decision ===
+          // 'reuse_unpaid' only when existing.plan_id === resolvedPlanId).
           return checkoutFor(existing.id, currencyForPlanId(existing.plan_id) ?? DEFAULT_CURRENCY);
         }
-        if (hasLiveMandate(existing.status)) {
+        if (decision === 'blocked_live_mandate') {
           return NextResponse.json(
             { error: 'Your payment is being confirmed. Please refresh in a minute.' },
             { status: 409 }
           );
         }
-        // halted / cancelled / completed / expired / paused: replace below.
+        // 'replace': either a halted/cancelled/completed/expired/paused
+        // subscription, OR an unpaid ('created') one in a DIFFERENT currency
+        // than this request asked for (requirement #1) — either way, fall
+        // through and create a fresh one in the currency just resolved.
       }
     }
 

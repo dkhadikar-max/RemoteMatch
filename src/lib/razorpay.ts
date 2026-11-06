@@ -138,6 +138,35 @@ export function hasLiveMandate(status: string): boolean {
   return status === 'authenticated' || status === 'active' || status === 'pending';
 }
 
+export type SubscriptionReuseAction = 'reuse_unpaid' | 'blocked_live_mandate' | 'replace';
+
+/**
+ * What /api/razorpay/subscription should do with a profile's existing stored
+ * subscription when a NEW checkout request resolves to `resolvedPlanId`.
+ * Pure decision logic — no I/O — so it is unit-testable without real
+ * Razorpay/Supabase infra (test/razorpay-subscription-reuse-suite.ts).
+ *
+ * 2026-11-06 review fix (requirement #1): an unpaid ('created') subscription
+ * is reused only when it is ALREADY on the plan this request resolved to —
+ * `isProPlanSubscription`'s multi-currency recognition means "existing is one
+ * of OUR plans" is no longer the same question as "existing is on the
+ * currency THIS request asked for", and conflating them let a stale
+ * subscription in one currency silently override an explicit request for a
+ * different one. A LIVE mandate (authenticated/active/pending) always blocks
+ * creating a second subscription, regardless of currency — two live mandates
+ * for one customer risk a double charge no matter what currency either is in.
+ */
+export function decideSubscriptionReuse(
+  existing: Pick<RazorpaySubscription, 'status' | 'plan_id'>,
+  resolvedPlanId: string
+): SubscriptionReuseAction {
+  if (existing.status === 'created') {
+    return existing.plan_id === resolvedPlanId ? 'reuse_unpaid' : 'replace';
+  }
+  if (hasLiveMandate(existing.status)) return 'blocked_live_mandate';
+  return 'replace';
+}
+
 /**
  * What /verify should tell the browser after Checkout's handler fires.
  * 'awaiting_first_charge' is a mandate that is authorised but not yet charged:
@@ -229,10 +258,19 @@ export function cancelSubscriptionAtCycleEnd(subscriptionId: string): Promise<Ra
 }
 
 /** True when the subscription is on one of OUR configured Pro plans (the base
- *  INR plan, or any currently-active currency's plan — never some unrelated
- *  plan on the same Razorpay account). */
+ *  INR plan, or any currency's plan this process has ever seen configured —
+ *  never some unrelated plan on the same Razorpay account).
+ *
+ *  2026-11-06 review fix (Altitude finding): this used to ALSO compare
+ *  against the module-level `planId` constant directly, a second,
+ *  independently-read source of "is this the INR plan" that could disagree
+ *  with `activePlanIds()` (e.g. on untrimmed whitespace) and that masked
+ *  rather than fixed the real issue. `activePlanIds()` is now the single
+ *  source of truth — it already includes the INR plan id (it scans every
+ *  currency in PLAN_ENV_VAR_BY_CURRENCY, INR included) and is historical, so
+ *  there is nothing left for a second equality check to add. */
 export function isProPlanSubscription(sub: RazorpaySubscription): boolean {
-  return isRazorpayConfigured && (sub.plan_id === planId || activePlanIds().has(sub.plan_id));
+  return isRazorpayConfigured && activePlanIds().has(sub.plan_id);
 }
 
 /** The user id we bound at creation time, or null if absent/malformed. */
