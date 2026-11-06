@@ -84,16 +84,10 @@ export default function CompanyVerificationDetailPage() {
       setActionError(resBody.error || 'Action failed.');
       return;
     }
+    // The transition and its audit-log row now commit atomically
+    // (migration 047) — a 200 here means both succeeded, so there is no
+    // separate "audit write failed" case left to surface.
     setPendingAction(null);
-    // The status transition itself always succeeded here (that's what
-    // `res.ok` means) — `auditLogged === false` is the rarer case where the
-    // audit-log write failed afterward. Surfaced as a warning, not an
-    // error: the action is NOT retried (it already happened), but the admin
-    // is told the audit trail may be missing an entry, since the server
-    // has no other way to tell them.
-    if (resBody.auditLogged === false) {
-      setActionError('Action succeeded, but the audit log entry failed to write. This has been logged server-side for reconciliation.');
-    }
     load();
   };
 

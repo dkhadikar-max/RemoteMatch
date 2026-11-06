@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import { recordAdminAction, type AdminAuditAction } from '@/lib/admin/audit-log';
+import type { AdminAuditAction } from '@/lib/admin/audit-log';
 import { must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
 
@@ -77,11 +77,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
-  let body: { action?: string; reason?: string };
+  let rawBody: unknown;
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  // Defensive body-shape validation (2026-11-06 review finding #6 fix): a
+  // body of `null`, a non-object, or a non-string `reason` previously
+  // reached `.trim()` below and would have thrown a TypeError (unhandled
+  // -> 500) rather than a controlled 400. `typeof null === 'object'`, so
+  // the null check is required separately from the typeof check.
+  if (rawBody === null || typeof rawBody !== 'object') {
+    return NextResponse.json({ error: 'Request body must be a JSON object.' }, { status: 400 });
+  }
+  const body = rawBody as { action?: unknown; reason?: unknown };
+  if (body.reason !== undefined && typeof body.reason !== 'string') {
+    return NextResponse.json({ error: 'reason must be a string.' }, { status: 400 });
   }
 
   // Object.hasOwn(), not `action in TRANSITIONS` (2026-11-06 review finding
@@ -91,14 +104,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // inherited function/object rather than undefined — `transition.from`
   // would throw a TypeError (unhandled -> 500) instead of being rejected
   // here with a clean 400.
-  const action = body.action as VerificationAction | undefined;
-  if (!action || typeof action !== 'string' || !Object.hasOwn(TRANSITIONS, action)) {
+  const rawAction = body.action;
+  if (!rawAction || typeof rawAction !== 'string' || !Object.hasOwn(TRANSITIONS, rawAction)) {
     return NextResponse.json(
       { error: `action must be one of: ${Object.keys(TRANSITIONS).join(', ')}` },
       { status: 400 }
     );
   }
-  const reason = (body.reason ?? '').trim();
+  const action = rawAction as VerificationAction;
+  const reason = ((body.reason as string | undefined) ?? '').trim();
   if (!reason) {
     return NextResponse.json({ error: 'A reason is required for this action.' }, { status: 400 });
   }
@@ -127,77 +141,43 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  // Compare-and-swap (2026-11-05 review finding fix): the `.eq('verification_status', ...)`
-  // below makes the write conditional on the EXACT value just read above, not just the id.
-  // Without it, two concurrent requests could both pass the `transition.from.includes(...)`
-  // guard against the same stale read, both unconditionally overwrite the row, and both
-  // report success with contradictory audit_log rows. `.select()` on the update returns the
-  // updated row(s) — zero rows means the condition didn't match (someone else changed
-  // verification_status between our read and this write), which is reported as a 409 and
-  // deliberately never reaches recordAdminAction(): a lost race never gets logged as if its
-  // transition actually happened.
-  const { data: updatedRows, error: updateErr } = await db
-    .from('companies')
-    .update({
-      verification_status: transition.to,
-      verification_reviewed_at: new Date().toISOString(),
-      verification_reviewed_by: adminAuth.adminEmail,
-      verification_reason: reason,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', params.id)
-    .eq('verification_status', before.verification_status)
-    .select('verification_status');
+  // Atomic compare-and-swap + audit write (2026-11-06 review finding fix,
+  // round 2): raised twice on PR #49 — checking recordAdminAction()'s
+  // result (the round-1 fix) made a failed audit write VISIBLE but did not
+  // make it ATOMIC with the status transition. `transition_company_
+  // verification_with_audit()` (migration 047) does both writes in one
+  // Postgres transaction: either both the `companies` UPDATE and the
+  // `admin_audit_log` INSERT commit, or neither does. `transitioned: false`
+  // means the compare-and-swap lost the race (someone else changed
+  // verification_status between our read and this call) — reported as a
+  // 409, with no partial write of any kind, exactly like the old code's
+  // zero-row case, just without a window where the status could change but
+  // the audit row could independently fail.
+  const { data: rpcRows, error: rpcError } = await db.rpc('transition_company_verification_with_audit', {
+    p_company_id: params.id,
+    p_expected_status: before.verification_status,
+    p_new_status: transition.to,
+    p_reviewed_by: adminAuth.adminEmail,
+    p_reason: reason,
+    p_admin_id: adminAuth.user.id,
+    p_admin_email: adminAuth.adminEmail,
+    p_audit_action: AUDIT_ACTION[action],
+  });
 
-  if (updateErr) {
-    const audit = await recordAdminAction({
-      adminId: adminAuth.user.id,
-      adminEmail: adminAuth.adminEmail,
-      action: AUDIT_ACTION[action],
-      targetType: 'company',
-      targetId: params.id,
-      beforeState: before,
-      afterState: { error: updateErr.message },
-      reason,
+  if (rpcError) {
+    console.error('[admin/company-verifications] transition_company_verification_with_audit RPC failed', {
+      companyId: params.id, action, error: rpcError.message,
     });
-    if (!audit.ok) {
-      console.error('[admin/company-verifications] audit log write failed for a FAILED update', {
-        companyId: params.id, action, updateError: updateErr.message, auditError: audit.error,
-      });
-    }
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
 
-  if ((updatedRows ?? []).length === 0) {
+  const result = (rpcRows ?? [])[0] as { transitioned: boolean; verification_status: string | null } | undefined;
+  if (!result?.transitioned) {
     return NextResponse.json(
       { error: `Company verification status changed since it was read (was '${before.verification_status}'); please retry.` },
       { status: 409 }
     );
   }
 
-  // Check recordAdminAction()'s own result rather than ignoring it
-  // (2026-11-06 review finding fix): the status transition above has
-  // already committed, so there is nothing left to roll back here, but the
-  // caller must not be told this was a clean, fully-audited success when
-  // the audit row never actually got written — `auditLogged: false` is
-  // surfaced explicitly, and the failure (with full context for manual
-  // reconciliation) is logged, since this is the one place that failure
-  // would otherwise be completely invisible.
-  const audit = await recordAdminAction({
-    adminId: adminAuth.user.id,
-    adminEmail: adminAuth.adminEmail,
-    action: AUDIT_ACTION[action],
-    targetType: 'company',
-    targetId: params.id,
-    beforeState: before,
-    afterState: { verification_status: transition.to },
-    reason,
-  });
-  if (!audit.ok) {
-    console.error('[admin/company-verifications] audit log write failed AFTER a successful status transition', {
-      companyId: params.id, action, newStatus: transition.to, reviewedBy: adminAuth.adminEmail, auditError: audit.error,
-    });
-  }
-
-  return NextResponse.json({ ok: true, verificationStatus: transition.to, auditLogged: audit.ok });
+  return NextResponse.json({ ok: true, verificationStatus: result.verification_status });
 }

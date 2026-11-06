@@ -98,46 +98,41 @@ async function main() {
     'utf8'
   );
   assert(/if \(!reason\)/.test(adminDetailSrc), 'admin verification-status PATCH requires a non-empty reason');
-  assert(/recordAdminAction/.test(adminDetailSrc), 'admin verification-status PATCH is audit-logged');
 
-  // 2026-11-05 review finding #3: the status-transition UPDATE must be
-  // conditioned on the previously-read status (compare-and-swap), and a
-  // zero-row result (lost race) must be reported as a conflict WITHOUT
-  // reaching recordAdminAction() for that request.
-  assert(
-    /\.eq\('verification_status', before\.verification_status\)/.test(adminDetailSrc),
-    'the verification-status UPDATE is conditioned on the previously-read status (compare-and-swap), not just the id'
+  // 2026-11-06 review finding #1 (raised twice — round 1's `audit.ok`
+  // check only made a failed audit write VISIBLE, not ATOMIC with the
+  // status transition): both writes now happen inside ONE Postgres
+  // function call (migration 047), not two separate client-side writes.
+  const transitionMigrationSrc = fs.readFileSync(
+    path.resolve(__dirname, '../supabase/migrations/047_company_verification_transition_audit.sql'),
+    'utf8'
   );
-  const zeroRowCheckIdx = adminDetailSrc.indexOf('(updatedRows ?? []).length === 0');
-  assert(zeroRowCheckIdx !== -1, 'a zero-row update result (lost race) is detected explicitly');
-  const lostRaceBlockRaw = adminDetailSrc.slice(zeroRowCheckIdx, adminDetailSrc.indexOf('await recordAdminAction', zeroRowCheckIdx));
-  // Strip `//` comment lines first — a prose comment mentioning
-  // "recordAdminAction()'s own result" (added for the 2026-11-06 fix)
-  // would otherwise false-positive this check, same class of bug as the
-  // SQL-comment false positive found in the 2026-11-05 audit.
-  const lostRaceBlock = lostRaceBlockRaw.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
-  assert(/status: 409/.test(lostRaceBlock) && !/recordAdminAction/.test(lostRaceBlock), 'the lost-race branch returns a 409 and the NEXT real recordAdminAction() call comes strictly after it (a lost race is never logged as a successful transition)');
+  assert(/CREATE OR REPLACE FUNCTION public\.transition_company_verification_with_audit/.test(transitionMigrationSrc), 'migration 047 defines transition_company_verification_with_audit() as a single Postgres function');
+  assert(/REVOKE ALL ON FUNCTION public\.transition_company_verification_with_audit FROM PUBLIC, anon, authenticated/.test(transitionMigrationSrc), 'transition_company_verification_with_audit() is service-role only');
+  assert(/INSERT INTO admin_audit_log/.test(transitionMigrationSrc), 'the function inserts the admin_audit_log row itself, in the same transaction as the companies UPDATE');
+  assert(/IF NOT FOUND THEN/.test(transitionMigrationSrc) && /RETURN QUERY SELECT false, NULL::text/.test(transitionMigrationSrc), 'a lost compare-and-swap race returns transitioned=false and never reaches the INSERT INTO admin_audit_log below it');
+  assert(/db\.rpc\('transition_company_verification_with_audit'/.test(adminDetailSrc), 'the route calls the atomic RPC, not two separate client-side writes');
+  assert(!/\.from\('companies'\)\s*\n?\s*\.update\(/.test(adminDetailSrc), 'no direct .from(\'companies\').update() call remains in the route (the RPC does the write now)');
+  assert(
+    !/import\s*\{[^}]*recordAdminAction/.test(adminDetailSrc) && !/await recordAdminAction\(/.test(adminDetailSrc),
+    'recordAdminAction() is no longer imported or called from this route (the RPC writes admin_audit_log directly, atomically) — mentioned only in comments explaining the history'
+  );
 
   // 2026-11-05 review finding #4: a genuine DB/query error on the
   // membership lookup must not be folded into "not a member".
   assert(/must\(/.test(gateSrc) && /from\('company_members'\)/.test(gateSrc), 'the membership lookup is wrapped in must() so a real query error throws instead of being treated as "no member"');
 
-  // 2026-11-06 review finding #1: recordAdminAction()'s own {ok, error}
-  // result must be checked — a failed audit write must never be reported
-  // as an unqualified success. Unit-tested via a real TRANSITIONS/action
-  // flow is impossible without a live DB, so this is a precise static
-  // check that both call sites inspect `audit.ok`, not just invoke it.
-  const auditCallSites = adminDetailSrc.split('await recordAdminAction(').length - 1;
-  assert(auditCallSites === 2, `recordAdminAction() is called at exactly 2 sites (update-error path + success path), found ${auditCallSites}`);
-  assert(/const audit = await recordAdminAction/.test(adminDetailSrc), "recordAdminAction()'s result is captured, not discarded");
-  assert(/if \(!audit\.ok\)/.test(adminDetailSrc) && /console\.error/.test(adminDetailSrc), 'an audit-write failure is detected and logged with full context for manual reconciliation');
-  assert(/auditLogged: audit\.ok/.test(adminDetailSrc), 'the success response explicitly surfaces whether the audit log write succeeded, rather than always claiming a clean success');
+  // 2026-11-06 review finding #6: a `null` body, a non-object body, or a
+  // non-string `reason` must be rejected with a controlled 400 before
+  // reaching `.trim()` — not an unhandled TypeError -> 500.
+  assert(/rawBody === null \|\| typeof rawBody !== 'object'/.test(adminDetailSrc), 'rejects a null or non-object request body with a controlled 400');
+  assert(/typeof body\.reason !== 'string'/.test(adminDetailSrc), 'rejects a non-string reason with a controlled 400, before .trim() is ever called on it');
 
   // 2026-11-06 review finding #3: Object.hasOwn(), not the `in` operator,
   // so an inherited Object.prototype property (toString, constructor,
   // __proto__) cannot pass action validation and reach TRANSITIONS[action]
   // as an unintended inherited value.
-  assert(/Object\.hasOwn\(TRANSITIONS, action\)/.test(adminDetailSrc), 'action validation uses Object.hasOwn(), not the `in` operator (which also matches inherited Object.prototype properties)');
+  assert(/Object\.hasOwn\(TRANSITIONS, rawAction\)/.test(adminDetailSrc), 'action validation uses Object.hasOwn(), not the `in` operator (which also matches inherited Object.prototype properties)');
   console.log('\n0d. UNIT — TRANSITIONS rejects inherited Object.prototype property names');
   for (const inherited of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
     assert(!Object.hasOwn(TRANSITIONS, inherited), `Object.hasOwn(TRANSITIONS, '${inherited}') is false (the \`in\` operator this replaces would have returned true)`);
@@ -354,11 +349,6 @@ async function main() {
       });
       const verifyBody = await verifyRes.json();
       assert(verifyRes.status === 200 && verifyBody.verificationStatus === 'verified', `admin verify transitions pending -> verified (got ${verifyRes.status})`);
-      // 2026-11-06 review finding #1: the success response must explicitly
-      // surface audit-log health. Can't inject a real audit-write failure
-      // against a live DB without breaking something else, so this proves
-      // the field exists and is true on the ordinary happy path.
-      assert(verifyBody.auditLogged === true, `the success response includes auditLogged: true on the happy path (got ${verifyBody.auditLogged})`);
       adminAuditRowCreated = true;
 
       const { data: auditRows } = await admin
