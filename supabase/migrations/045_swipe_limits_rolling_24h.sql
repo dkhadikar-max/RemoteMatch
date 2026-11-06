@@ -38,10 +38,32 @@ DROP FUNCTION IF EXISTS public.reserve_right_swipe();
 DROP FUNCTION IF EXISTS public.finalize_interested_swipe(TEXT, JSONB);
 
 -- ------------------------------------------------------------------------------
--- 3. SHARED ROLLING-WINDOW COUNTER — the one piece of SQL both the swipe
+-- 3. SHARED "ACTIVE SWIPE" PREDICATE — a view, not a convention three call
+--    sites happen to follow. "active" = not itself a rewind, and not the
+--    target of a later rewind. Independent review (pre-PR) found the
+--    original revision inlined this exact WHERE clause separately in
+--    get_rolling_swipe_counts, reserve_and_record_right_swipe's duplicate
+--    check, record_pass's duplicate check, AND reserve_and_record_right_
+--    swipe's own window-count query — four textually-identical copies with
+--    nothing actually enforcing they stay identical. This view is the one
+--    place that definition now lives; every function below reads through
+--    it instead of repeating the clause.
+-- ------------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW public.active_swipes AS
+SELECT s.*
+FROM swipes s
+WHERE s.action <> 'rewind'
+  AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id);
+
+-- ------------------------------------------------------------------------------
+-- 4. SHARED ROLLING-WINDOW COUNTER — the one piece of SQL both the swipe
 --    RPCs below and GET /api/profile call, so the two can never disagree on
 --    what "active" or "now" means. No parameter: always the caller's own
---    auth.uid(), same as every other function in this file.
+--    auth.uid(), same as every other function in this file. Also returns
+--    the oldest active row's timestamp per cap, so reserve_and_record_
+--    right_swipe / record_pass can compute a cap-specific `resetAt` without
+--    running their own separate window query.
 -- ------------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.get_rolling_swipe_counts()
@@ -54,26 +76,27 @@ DECLARE
   v_uid UUID := auth.uid();
   v_right_count INT;
   v_total_count INT;
+  v_oldest_right TIMESTAMPTZ;
+  v_oldest_total TIMESTAMPTZ;
 BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'unauthenticated' USING ERRCODE = '28000';
   END IF;
 
-  -- "active" = not itself a rewind, and not the target of a later rewind.
-  -- Identical predicate used by reserve_and_record_right_swipe, record_pass,
-  -- and the duplicate-check branch inside reserve_and_record_right_swipe —
-  -- one definition, not several that could drift apart.
   SELECT
     count(*) FILTER (WHERE action = 'interested'),
-    count(*)
-  INTO v_right_count, v_total_count
-  FROM swipes s
+    count(*),
+    min(created_at) FILTER (WHERE action = 'interested'),
+    min(created_at)
+  INTO v_right_count, v_total_count, v_oldest_right, v_oldest_total
+  FROM active_swipes s
   WHERE s.profile_id = v_uid
-    AND s.created_at > now() - interval '24 hours'
-    AND s.action <> 'rewind'
-    AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id);
+    AND s.created_at > now() - interval '24 hours';
 
-  RETURN jsonb_build_object('rightCount', v_right_count, 'totalCount', v_total_count);
+  RETURN jsonb_build_object(
+    'rightCount', v_right_count, 'totalCount', v_total_count,
+    'oldestRightAt', v_oldest_right, 'oldestTotalAt', v_oldest_total
+  );
 END;
 $$;
 
@@ -94,9 +117,10 @@ AS $$
 DECLARE
   v_uid UUID := auth.uid();
   v_plan TEXT;
-  v_existing swipes%ROWTYPE;
+  v_existing active_swipes%ROWTYPE;
   v_claim_id UUID;
   v_has_decision BOOLEAN;
+  v_counts JSONB;
   v_right_count INT;
   v_total_count INT;
   v_oldest_right TIMESTAMPTZ;
@@ -123,15 +147,14 @@ BEGIN
 
   -- Duplicate check — every tier including Pro, and BEFORE the Pro branch
   -- below, so a Pro re-swipe is still recognized as a duplicate/resume case,
-  -- never a second success. "Active" = identical predicate to
-  -- get_rolling_swipe_counts() — a rewound row is excluded from both
-  -- counting AND duplicate detection by the same clause, which is what
-  -- makes rewind-then-reswipe work with no special-case code.
-  SELECT * INTO v_existing FROM swipes s
+  -- never a second success. Reads through the active_swipes view (§3) — the
+  -- same "active" definition get_rolling_swipe_counts() uses — so a rewound
+  -- row is excluded from both counting AND duplicate detection by
+  -- construction, which is what makes rewind-then-reswipe work with no
+  -- special-case code.
+  SELECT * INTO v_existing FROM active_swipes s
     WHERE s.profile_id = v_uid
       AND s.opportunity_id = p_opportunity_id
-      AND s.action <> 'rewind'
-      AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id)
     ORDER BY s.created_at DESC
     LIMIT 1;
 
@@ -190,19 +213,14 @@ BEGIN
     );
   END IF;
 
-  -- Free tier: rolling 24h window. Only right (15) and total (50) gate
-  -- anything — no independent left cap (confirmed product decision).
-  SELECT
-    count(*) FILTER (WHERE action = 'interested'),
-    count(*),
-    min(created_at) FILTER (WHERE action = 'interested'),
-    min(created_at)
-  INTO v_right_count, v_total_count, v_oldest_right, v_oldest_total
-  FROM swipes s
-  WHERE s.profile_id = v_uid
-    AND s.created_at > now() - interval '24 hours'
-    AND s.action <> 'rewind'
-    AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id);
+  -- Free tier: rolling 24h window, via the one shared counting function —
+  -- not a fourth inline copy of the window query. Only right (15) and
+  -- total (50) gate anything — no independent left cap.
+  v_counts := get_rolling_swipe_counts();
+  v_right_count := (v_counts->>'rightCount')::INT;
+  v_total_count := (v_counts->>'totalCount')::INT;
+  v_oldest_right := (v_counts->>'oldestRightAt')::TIMESTAMPTZ;
+  v_oldest_total := (v_counts->>'oldestTotalAt')::TIMESTAMPTZ;
 
   IF v_right_count >= 15 THEN
     RETURN jsonb_build_object(
@@ -311,7 +329,8 @@ AS $$
 DECLARE
   v_uid UUID := auth.uid();
   v_plan TEXT;
-  v_existing swipes%ROWTYPE;
+  v_existing active_swipes%ROWTYPE;
+  v_counts JSONB;
   v_right_count INT;
   v_total_count INT;
   v_oldest_total TIMESTAMPTZ;
@@ -328,15 +347,14 @@ BEGIN
     RAISE EXCEPTION 'profile_not_found';
   END IF;
 
-  -- Duplicate check — identical "active" predicate as
-  -- reserve_and_record_right_swipe / get_rolling_swipe_counts. A pass has
-  -- no deferred/claim concept, so any existing active interaction for this
-  -- opportunity is always a true duplicate, never a resume case.
-  SELECT * INTO v_existing FROM swipes s
+  -- Duplicate check — via the shared active_swipes view (§3), the identical
+  -- predicate reserve_and_record_right_swipe and get_rolling_swipe_counts
+  -- use. A pass has no deferred/claim concept, so any existing active
+  -- interaction for this opportunity is always a true duplicate, never a
+  -- resume case.
+  SELECT * INTO v_existing FROM active_swipes s
     WHERE s.profile_id = v_uid
       AND s.opportunity_id = p_opportunity_id
-      AND s.action <> 'rewind'
-      AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id)
     ORDER BY s.created_at DESC
     LIMIT 1;
 
@@ -352,16 +370,10 @@ BEGIN
     RETURN jsonb_build_object('allowed', true, 'planTier', 'pro');
   END IF;
 
-  SELECT
-    count(*) FILTER (WHERE action = 'interested'),
-    count(*),
-    min(created_at)
-  INTO v_right_count, v_total_count, v_oldest_total
-  FROM swipes s
-  WHERE s.profile_id = v_uid
-    AND s.created_at > now() - interval '24 hours'
-    AND s.action <> 'rewind'
-    AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id);
+  v_counts := get_rolling_swipe_counts();
+  v_right_count := (v_counts->>'rightCount')::INT;
+  v_total_count := (v_counts->>'totalCount')::INT;
+  v_oldest_total := (v_counts->>'oldestTotalAt')::TIMESTAMPTZ;
 
   IF v_total_count >= 50 THEN
     RETURN jsonb_build_object(

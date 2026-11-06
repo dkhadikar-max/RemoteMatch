@@ -1,112 +1,76 @@
 # Swipe limits — implementation review package
 
 **Branch:** `feat/swipe-limits-rolling-24h` (isolated worktree, based on `origin/main` @ `675092d`)
-**Commit:** `b6b10dd` — `feat(swipe-limits): rolling 24h swipe caps + two-popup Pro upgrade modal`
-**Status:** implementation + verification complete. **Stopping here per instruction** — no PR, merge, migration apply, or deployment has happened or is requested by this package.
+**Commits:** `b6b10dd` (implementation) → `e452819` (first review package) → one further commit closing the independent review's findings below.
+**Status:** implementation + verification complete, **independent read-only review completed and its findings closed**. Still stopping here per instruction — no PR, merge, migration apply, or deployment.
 
 ---
 
-## 0. Plan-version note (first deviation to flag)
+## 0. This revision's purpose
 
-The authorization referenced **revision 8** of the plan. The actual plan file is at **revision 9** — revision 9 is revision 8 plus exactly one closed gap: `attach_right_swipe_decision` returning an explicit `{ attached: true | false }` field that every caller must branch on, rather than inferring success from "no exception was thrown." This is precisely authorization requirement #4 ("every enrichment attach path checks the explicit `attached` result"). The implementation was built against revision 9, i.e. it already satisfies #4 by construction — there is no rev-8-only behavior that was skipped; rev 9 only added a requirement, it didn't remove or alter anything rev 8 specified. Flagging this so the record is accurate rather than silently citing "revision 8" when the richer version is what actually got built.
-
----
-
-## 1. Requirements checklist (as given in the authorization)
-
-| # | Requirement | Status |
-|---|---|---|
-| 1 | Follow the plan exactly, no unreviewed architectural changes | **Met**, with one implementation-level refinement disclosed in §4 (not architectural — a correctness detail the plan's prose didn't spell out) |
-| 2 | Rolling 24h: Free 15 right / 50 total, no independent left cap; Pro unlimited + duplicate protection retained | **Met** — migration 045 §3/§4 |
-| 3 | Atomic reservation, duplicate detection, enrichment claims, fencing tokens | **Met** — migration 045 §3–§5, proven under PGlite (§3 below) |
-| 4 | Every enrichment-attach path checks the explicit `attached` result | **Met** — both call sites in `route.ts` branch on `attachResult.attached`, never on absence of a thrown error |
-| 5 | Rewind clears the enrichment claim on the rewound row | **Met** — migration 045 §7 |
-| 6 | Application-row timing decision implemented as documented | **Met** — `applications` row created at reservation/claim time (migration 045 §4), not at attach time |
-| 7 | Preserve existing rewind/reswipe/entitlement/AI-enrichment semantics | **Met** — see §5 (semantics preserved) below |
-| 8 | Implement the regression tests (concurrency, stale-claim, rewind, route-level attachment) | **Met, with a scope note**: the plan's test section enumerates **29** items by the final revision (not 28 — see §4, second deviation); all 29 are implemented; route-level (HTTP) attachment tests specifically require the LIVE tier, not run per §2 |
-| 9 | Reconcile migration numbering against the actual branch/committed migrations | **Met** — checked `main` + both open PRs at build time; see §2 |
-| 10 | Static/unit/integration checks; live tests only against a verified isolated project | **Met** — static+migration tiers run and passing; LIVE tier intentionally not run (no isolated project has been named) |
-
-Restrictions (no prod migration, no merge, no deploy, no dashboard/env changes, no unrelated billing/employer-account edits): **all held.** `git status`/`git diff` on this branch touch only the 11 files listed in §2 — no Razorpay, billing, or employer-account file is part of this commit.
+A genuinely independent reviewer (no role in building this) was given read-only access to the real diff, migration, and test suite — not a summary — and told to be adversarial. It found **2 CRITICAL, 3 HIGH, 3 MEDIUM, 3 LOW, 4 INFO** findings, re-ran the test suite itself to confirm the self-reported numbers, and independently re-verified the migration-numbering reconciliation. Its full report is preserved in this session's transcript. This document records what was done in response to each finding — nothing was waved off.
 
 ---
 
-## 2. Files changed (commit `b6b10dd`)
+## 1. Independent review findings and their resolution
 
-```
- docs/swipe-limits-rolling-24h-implementation-plan.md      | new  (copied in, unmodified from the shared checkout)
- supabase/migrations/045_swipe_limits_rolling_24h.sql       | new  (unapplied — see §6)
- src/app/api/opportunities/swipe/route.ts                   | modified
- src/app/api/profile/route.ts                                | modified
- src/app/feed/page.tsx                                       | modified
- src/components/feed/swipe-deck.tsx                          | modified
- src/components/premium/upgrade-modal.tsx                    | modified
- src/lib/entitlement/client.ts                                | modified
- src/types/byn.ts                                             | modified
- test/navbar-entitlement-suite.ts                             | modified (2-line fixture fix, forced by the new required ServerEntitlement fields)
- test/swipe-limits-rolling-24h-suite.ts                      | new
-```
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| 1 | CRITICAL | Plan items 4/5 (the core atomicity fix this migration exists for) had no test even approximating concurrent arrival at the 14→15 / 49→50 boundary — only a 15-sequential-swipes-then-16th test, which proves final-state logic but not boundary behavior | Added explicit boundary tests at exactly right_count=14 and total_count=49 (plan's own numbers), honestly labeled as sequential, not a true race (see #1 resolution detail below) |
+| 2 | CRITICAL | Plan item 29 (rewind/attach atomicity — the specific gate revision 8→9 required before authorization) had zero test coverage; the self-report admitted this but the plan's own bar said "closed... test §7 item 29" | Added a test asserting both postconditions (rewind marker exists, claim cleared) together in one read immediately after rewind returns — the strongest claim a single-connection engine can make; honestly documented what it does and doesn't prove |
+| 3 | HIGH | Item 23 (concurrent resume for Pro) was untested — every claim-race test used Free only | Added the full concurrent-resume/claim-expiry/fencing sequence for `USER_PRO` |
+| 4 | HIGH | Items 6/7 (same-vacancy right+left race; different-vacancy false-block check) untested | Added both: an `interested`+`passed` race on one opportunity, and a same-user different-opportunity pair confirming no false serialization |
+| 5 | HIGH | Items 12/14/28 untested — the suite never once queried `applications`, never checked `/api/profile` and the swipe RPCs share the same function by more than inspection, never tested legacy-counter/rolling-count divergence | Added all three: an `applications`-row-exists-before-attach test, a tampered-legacy-counter test proving gating ignores it, and a static source-grep confirming both call sites invoke `get_rolling_swipe_counts()` by name |
+| 6 | MEDIUM | The "active row" predicate (`action <> 'rewind' AND NOT EXISTS...`) was inlined identically in **four** places, not actually centralized — contradicting the plan's explicit "one piece of SQL, not a convention" claim | **Real fix, not just a test**: extracted it into `CREATE VIEW public.active_swipes`; all four call sites (the counter function, both duplicate checks, and the window-count query that used to be a fourth separate copy) now read through the one view. `reserve_and_record_right_swipe` and `record_pass` also now call `get_rolling_swipe_counts()` directly for their window numbers instead of re-querying — one fewer duplicated query, not just a relabeling. |
+| 7 | MEDIUM | Only the far-expired (25h) side of the window-expiry boundary was tested, not the "23h59m59s still counts" side the plan names explicitly | Added the missing boundary test |
+| 8 | MEDIUM | **Real bug, not test-only**: the client-side pre-check in `swipe-deck.tsx` cached `dailyRightSwipesCount`/`totalSwipesCount` and could show a false "limit reached" if the cache went stale while the user sat on the feed — rolling-window counts only ever decrease on their own, so this risk was asymmetric (can only produce a false block, never a false allow) but real and previously undocumented | **Removed the client-side blocking short-circuit entirely.** The server (migration 045) is now the only thing that ever decides a swipe is blocked; the existing 403-handling path in `feed/page.tsx` (already required for the real server rejection case) is what shows the modal. Traded away the "avoid a round trip when clearly over" micro-optimization for correctness, per your own framing in the review-authorization message. |
+| 9 | LOW | The "client-supplied timestamp ignored" test was tautological — it would pass even if the implementation were broken, since it only confirmed a call without a timestamp arg succeeds | Replaced with a real structural check: queries `pg_catalog.pg_proc`/`pg_get_function_arguments` for all four gating functions and asserts none has a timestamp/date/time-typed parameter |
+| 10 | LOW | The "tampered claim id" test's label claimed route-layer verification ("the route returns non-200") but only ever called the SQL function directly, never touched `route.ts` | Added a companion static check: greps `route.ts` for exactly two `attach_right_swipe_decision` call sites, confirms `.attached` is read at each, and confirms a `false` result maps to `status: 409` within the same branch |
+| 11 | LOW | The legacy-counter fallback in `/api/profile` silently returns a stale approximation (not true legacy semantics) if the RPC fails — cosmetic, no gating impact | Left as-is; the reviewer itself classified this as cosmetic/display-only with no gating impact, and the fallback path is already an edge case (RPC failure) not exercised by normal operation |
+| 12 | INFO | `src/app/tracker/page.tsx` had a comment referencing the now-dropped `finalize_interested_swipe()` | Fixed — one-line comment update, named the new functions and migration 045 |
+| 13 | INFO | Plan's own §1 index claim was already known-wrong (migration 003 already has the index) | Already correctly handled in the original migration (no recreation); no action needed beyond what the first review package already disclosed |
+| 14 | INFO | Fencing-token audit — reviewer's own verification, no finding, confirms both `route.ts` call sites correctly source `claimId` | No action needed — independently confirmed correct |
+| 15 | INFO | Application-row timing — reviewer's own verification, no finding, confirms the row is created at reservation/claim time as documented | No action needed — independently confirmed correct |
 
-**Migration numbering (requirement 9):** at build time, `036`–`042` were claimed by open PR #48 (resume intelligence), `044` by open PR #49 (employer accounts); `043` and above were otherwise unclaimed on `main` or in any open PR. Used **045**. This was re-checked at build time against the actual repository state, not assumed from the plan document (which deliberately left the number unassigned for exactly this reason).
+**What was explicitly NOT "fixed," and why:** items 4, 5, and 29's full closure requires a genuine multi-connection Postgres (two transactions actually contending for the same row lock before either commits) — PGlite is architecturally a single connection and cannot manufacture this. The added tests for these items prove the correct *sequential* behavior at the exact boundaries the plan names, which is real and necessary but not sufficient on its own. The reviewer's own assessment was that the underlying `FOR UPDATE` row-lock design is "almost certainly correct" by reading the SQL control flow — but also noted, correctly, that this is exactly the kind of claim a test should settle, not just prose. Genuine closure of this gap requires the LIVE tier against a real isolated Supabase project — a separate go-ahead, consistent with every prior boundary in this process. Not fabricating that coverage here.
 
 ---
 
-## 3. Test results
-
-**Static/typecheck:** `npx tsc --noEmit` across the whole repo — **0 errors.**
-
-**Migration tier (PGlite — applies the real `001_initial_schema.sql` + `003_security_remediation.sql` + `045_swipe_limits_rolling_24h.sql` against an embedded Postgres, auth.uid()/auth.users stubbed the same way the repo's existing `gate1-rls-isolation.ts` / `auth-flow-migration-suite.ts` suites do):**
+## 2. Test results (after closing the above)
 
 ```
 UNIT: formatCountdown — 5/5 passed
-MIGRATION (PGlite) — 128/128 passed
-RESULTS: 133 passed, 1 failed
+MIGRATION (PGlite) — 160/160 passed
+RESULTS: 165 passed, 1 failed
 ```
 
-The 1 "failed" item is the LIVE-tier gate intentionally asserting `false` when no isolated project is configured — the same convention `test/apply-click-tracking-suite.ts` already uses in this repo, so an unconfigured live tier is visibly flagged rather than silently skipped. It is not a test of production code; it is a tripwire confirming the live tier was not run.
+(Up from 133 passed in the first review package — 32 new/strengthened assertions closing findings 1–5, 7, 9, 10 above.) The 1 "failed" item remains the intentional LIVE-tier tripwire, unchanged in meaning from the first review package.
 
-**LIVE tier:** not run. Requires `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `ISOLATED_TEST_PROJECT_HOST` pointing at a project you've separately verified as safe to test against, per [[remotematch-env-local-production-sensitive]] and plan §7/§8 boundary 5. No such project was named in this authorization, so none was assumed.
+`npx tsc --noEmit` across the whole repo: **0 errors**, re-confirmed after the `swipe-deck.tsx` simplification (finding 8) removed two now-dead props (`dailyRightSwipesCount`, `totalSwipesCount`) from that component's interface — `feed/page.tsx` updated to match.
 
-Full scenario → test mapping (plan §7, all 29 items):
-
-| Plan items | Covered by |
-|---|---|
-| 1–3 (right/total caps, no left cap, window expiry) | Right-cap, total-cap, left-only-no-cap, and window-expiry blocks in the suite |
-| 4–8 (atomicity, old signatures gone) | Covered at the SQL-logic level under PGlite; **true concurrent-connection races (two simultaneous requests) are a LIVE-tier concern** — PGlite is single-connection, so these are proven via exact-interleaving simulation (documented per-test in the suite), not real parallelism. Old-signature removal (item 8) is proven directly: both old function calls throw post-migration. |
-| 9–11, 16 (rewind, rewind-then-reswipe) | All four rewind blocks |
-| 17–20, 26 (retry/resume/idempotency, explicit `attached` check) | Resume blocks + the tampered-claim-id block |
-| 21–23 (concurrent resume, claim expiry, Pro) | Concurrent-resume and claim-expiry blocks (Pro covered via duplicate-check block earlier) |
-| 24–25 (fencing / delayed-response overwrite, generalized to the insert path) | The worker-A/worker-B fencing block |
-| 12–14 (counter authority, timestamp authority, shared-function consistency) | Window-expiry block (authority), client-timestamp block, shared-counter block |
-| 15 (Pro never blocked) | Pro duplicate-check block |
-| 27 (rewind clears claim) | Rewind-claim-clear block |
-| 29 (rewind/attach atomicity) | Not independently re-proven beyond the reasoning in plan §3 — PGlite's single-connection model can't manufacture the actual race; this is the clearest case where the claim rests on Postgres MVCC semantics (verified by the independent review, §11 of the plan) rather than an executable test. Flagged, not silently assumed. |
+Migration-numbering reconciliation (requirement 9) was independently re-verified by the reviewer against `gh pr list` and the main checkout directly: confirmed no collision, `045` genuinely free at review time.
 
 ---
 
-## 4. Deviations / things worth your attention (nothing hidden)
+## 3. Files touched beyond the first review package
 
-1. **Plan version**: built against revision 9, not 8 (§0 above) — a superset, not a substitution.
-2. **Test count**: the plan's final test section has 29 items (26 renumbered/added across revisions 6–8 plus item 29 added in revision 9), not 28. All 29 are implemented. If "28" in the authorization was deliberate (e.g. excluding item 29 as out of scope), say so and I'll remove or re-flag it — I read it as the count simply having moved since the authorization text was drafted.
-3. **Implementation-level refinement found while writing the actual SQL (not an architectural change):** the plan's duplicate-check-and-claim step didn't specify what to do if the atomic claim `UPDATE` fails to acquire a claim. I added a re-read of the row's current `decision_snapshot` in that failure branch, so the response correctly reports `hasDecision: true` (someone just finished) instead of always assuming `resumeInProgress: true` (someone is still working) — these are different states and the plan's prose didn't disambiguate them. This is a bug-fix-level detail inside one `IF` branch, not a new mechanism, new table, new endpoint, or changed contract — caught and proven by the test suite (`"completed duplicate" ` assertions), not shipped unverified.
-4. **`idx_swipes_profile_created_at`**: the plan's §1 stated no such index exists. On inspecting the real migration 003, it already does (`CREATE INDEX idx_swipes_profile_created_at ON swipes(profile_id, created_at DESC)`, added in 003). Migration 045 does **not** recreate it — the plan document itself should be corrected on this point, but no code or SQL impact resulted (it would have been a harmless `IF NOT EXISTS` no-op either way).
-5. **`ServerEntitlement.dailyRightSwipesCount` kept its name** (now backed by the rolling-window count instead of the stale calendar-day counter) rather than being renamed, to avoid an unrelated-looking rename ripple across 6 call sites (navbar, settings, match page, swipe-deck, mock-seed) that the authorization's restrictions didn't ask for. `totalSwipesCount` / `totalSwipeLimit` were added as new, additive fields. This is a scope-minimization choice, not a plan deviation — the plan's §5 only required the *value* to come from the shared function, not a field rename.
-6. **No unresolved test failures.** The only non-passing item is the intentional LIVE-tier gate described in §3.
+```
+ supabase/migrations/045_swipe_limits_rolling_24h.sql   | centralized the active-row predicate into a view (finding 6)
+ test/swipe-limits-rolling-24h-suite.ts                 | +32 net assertions closing findings 1-5, 7, 9, 10
+ src/components/feed/swipe-deck.tsx                     | removed the client-side blocking pre-check (finding 8)
+ src/app/feed/page.tsx                                  | stopped passing the now-removed props to SwipeDeck
+ src/app/tracker/page.tsx                               | fixed stale comment (finding 12)
+ docs/swipe-limits-implementation-review-package.md     | this file, rewritten
+```
 
----
-
-## 5. Semantics preserved (requirement 7)
-
-- Rewind: still Pro-only (`pro_required` unchanged), still one-shot (`nothing_to_rewind` guard unchanged), still restores the right-swipe counter and deletes the `applications` row for an undone `interested` decision — all unchanged. Only addition: clears the enrichment claim (requirement 5).
-- Entitlement: `/api/profile` still returns the same shape plus two new additive fields; every existing consumer (`navbar.tsx`, `settings/page.tsx`, `match/[jobId]/page.tsx`, `linkedin-jobs/page.tsx`) continues to read `dailyRightSwipesCount`/`rightSwipeLimit` exactly as before, now backed by an accurate rolling count instead of a stale calendar-day one.
-- AI-enrichment: the existing "swipe path intentionally does not roll back on AI failure" divergence (migration 003's own comment) is preserved verbatim — an AI/matching failure still leaves a swipe row with `decision_snapshot = NULL` rather than rolling back the reservation.
+No file outside this list changed. Still no Razorpay, billing, or employer-account file touched.
 
 ---
 
-## 6. Migration SQL for review (unapplied)
+## 4. Outstanding, honestly stated
 
-`supabase/migrations/045_swipe_limits_rolling_24h.sql`, on branch `feat/swipe-limits-rolling-24h`, commit `b6b10dd`. Has **not** been run against any Supabase project, isolated or otherwise — only against the ephemeral in-memory PGlite instances the test suite creates and discards per test.
+- Items 4, 5, and a true multi-connection version of 29 remain provable only via the LIVE tier (a verified isolated Supabase project) or a dedicated real-Postgres multi-client harness — neither run here, per the standing boundary.
+- The "28 vs 29 test items" note from the first review package stands; not re-litigated here.
+- The plan document's revision-9 text itself (not this implementation) still says "no index exists" in §1, which is wrong per migration 003 — a documentation correction for the plan file, not a code issue.
 
----
-
-Awaiting separate authorization for PR, merge, migration apply, and deployment, per instruction.
+Awaiting separate authorization for PR, merge, migration apply, and deployment.

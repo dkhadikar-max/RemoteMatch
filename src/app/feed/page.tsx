@@ -356,8 +356,6 @@ export default function FeedPage() {
           onRewind={handleRewind}
           canRewind={swipedCount > 0}
           planTier={profile.planTier}
-          dailyRightSwipesCount={profile.dailyRightSwipesCount || 0}
-          totalSwipesCount={profile.totalSwipesCount || 0}
           onRequireUpgrade={handleRequireUpgrade}
           // Keyboard shortcuts must not swipe/save a job behind an open modal.
           paused={isFilterModalOpen || isUpgradeModalOpen}

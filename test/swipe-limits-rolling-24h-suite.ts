@@ -4,25 +4,38 @@
  * Plan: docs/swipe-limits-rolling-24h-implementation-plan.md (revision 9,
  * implementation authorized). Migration: 045_swipe_limits_rolling_24h.sql.
  *
- * Covers the 29 scenarios enumerated in the plan's §7 test plan:
+ * Covers the plan's §7 test list:
  *   - UNIT: the pure countdown formatter used by the upgrade modal.
  *   - MIGRATION (PGlite): applies 001 + 003 + 045 against an embedded
  *     Postgres and drives the real SQL functions — right/total caps, no
  *     independent left cap, duplicate detection, the enrichment-claim +
  *     fencing-token mechanism (including the delayed-response overwrite
  *     scenario), rewind (incl. clearing an in-flight claim, and
- *     rewind-then-reswipe), and the shared rolling-window counter. This is
- *     a single-connection engine, so true simultaneous-transaction races
- *     (e.g. "two concurrent requests at count 49") are proven by driving
- *     both statements' SQL in the exact interleaving a race would produce —
- *     see each test's comment for which interleaving it checks — not by
- *     actually opening two connections. Genuine concurrent-connection races
- *     are a LIVE-tier concern (below).
+ *     rewind-then-reswipe), and the shared rolling-window counter/view.
+ *
+ *     HONEST LIMITATION (raised by independent pre-PR review, not glossed
+ *     over): PGlite is a single-connection engine. It can faithfully prove
+ *     sequential-serialization correctness — "once request B's transaction
+ *     starts after request A's committed, does B see the right state?" —
+ *     which is most of what's below. It CANNOT prove the thing items 4/5/29
+ *     are actually about: that two transactions beginning before either
+ *     commits, contending for the SAME row lock, resolve to exactly one
+ *     winner with no corrupted intermediate state. That specific guarantee
+ *     rests on Postgres's standard `SELECT ... FOR UPDATE` / row-level-lock
+ *     semantics (the independent review confirmed the SQL control flow is
+ *     consistent with that guarantee) and is proven for real only against
+ *     a genuine multi-connection Postgres — the LIVE tier below, or a
+ *     dedicated multi-client harness against a real local Postgres, neither
+ *     of which is run by this suite. Tests below that are labeled
+ *     "(sequential, not a true race)" are deliberately honest about this;
+ *     do not read them as closing items 4/5/29 on their own.
  *   - LIVE (isolated project, local server; skipped with a FAIL unless an
  *     isolated project is configured and migration 045 is applied there —
  *     same gate shape as test/apply-click-tracking-suite.ts): not run by
  *     this change — plan §7/§8 requires a verified isolated Supabase
- *     project before any live run, which is a separate go-ahead.
+ *     project before any live run, which is a separate go-ahead. This is
+ *     where items 4, 5, and a true two-connection version of 29 actually
+ *     belong.
  *
  * Server: ONE local dev server started with the same env file as this
  * runner; TEST_BASE_URL is a NON-admin host of it (default
@@ -197,6 +210,41 @@ async function migrationSuite() {
     // No independent left cap: 35+ passes alone (no rights) must be allowed as long as total <= 50.
   }
   {
+    // Items 4/5, exact plan wording, boundary-framed (sequential, not a true
+    // race — see the file-header limitation note). At right_count=14, the
+    // 15th call must succeed and the 16th must be blocked; at
+    // total_count=49, the 50th must succeed and the 51st must be blocked.
+    // This proves the final-state logic at the EXACT boundary the plan
+    // names, which the earlier block only approximated. It does not prove
+    // two transactions beginning concurrently resolve correctly — that is
+    // the real content of items 4/5 and is NOT closed by this block; it
+    // requires the LIVE tier (two genuinely simultaneous connections).
+    const db = await buildDb();
+    const oppIds = Array.from({ length: 60 }, (_, i) => `opp-b4-${i}`);
+    await insertOpportunities(db, oppIds);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    for (let i = 0; i < 14; i++) await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: oppIds[i] });
+    const at14 = await rpc(db, 'get_rolling_swipe_counts');
+    assert(at14.rightCount === 14, 'precondition: right_count is exactly 14 before the boundary calls', at14);
+    const the15th = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: oppIds[14] });
+    assert(the15th.allowed === true, 'item 4: the 15th right swipe (right_count was 14) succeeds', the15th);
+    const the16th = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: oppIds[15] });
+    assert(the16th.allowed === false && the16th.code === 'RIGHT_LIMIT_REACHED', 'item 4: the very next one is blocked, final count never exceeds 15', the16th);
+
+    const db2 = await buildDb();
+    const oppIds2 = Array.from({ length: 60 }, (_, i) => `opp-b5-${i}`);
+    await insertOpportunities(db2, oppIds2);
+    await setAuthContext(db2, USER_FREE, 'authenticated');
+    for (let i = 0; i < 14; i++) await rpc(db2, 'reserve_and_record_right_swipe', { p_opportunity_id: oppIds2[i] });
+    for (let i = 14; i < 49; i++) await rpc(db2, 'record_pass', { p_opportunity_id: oppIds2[i] });
+    const at49 = await rpc(db2, 'get_rolling_swipe_counts');
+    assert(at49.totalCount === 49, 'precondition: total_count is exactly 49 before the boundary calls', at49);
+    const the50th = await rpc(db2, 'record_pass', { p_opportunity_id: oppIds2[49] });
+    assert(the50th.allowed === true, 'item 5: the 50th swipe (total_count was 49) succeeds', the50th);
+    const the51st = await rpc(db2, 'record_pass', { p_opportunity_id: oppIds2[50] });
+    assert(the51st.allowed === false && the51st.code === 'TOTAL_LIMIT_REACHED', 'item 5: the very next one is blocked, final count never exceeds 50 — THIS BLOCK IS SEQUENTIAL ONLY, see header note', the51st);
+  }
+  {
     const db = await buildDb();
     const oppIds = Array.from({ length: 40 }, (_, i) => `opp-left-${i}`);
     await insertOpportunities(db, oppIds);
@@ -218,6 +266,18 @@ async function migrationSuite() {
     await setAuthContext(db, USER_FREE, 'authenticated');
     const counts = await rpc(db, 'get_rolling_swipe_counts');
     assert(counts.rightCount === 0, 'a 25h-old right swipe is excluded from the rolling count (window expiry)', counts);
+  }
+  {
+    // The other boundary direction (plan item 3 names both): a swipe at
+    // 23h59m59s old is still INSIDE the window and must still count.
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-expiry-3']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const r1 = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-expiry-3' });
+    await backdate(db, r1.swipeId, { createdAt: new Date(Date.now() - (24 * 60 * 60 * 1000 - 1000)).toISOString() });
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const counts = await rpc(db, 'get_rolling_swipe_counts');
+    assert(counts.rightCount === 1, 'a 23h59m59s-old right swipe is still inside the window and still counts', counts);
   }
 
   // ---- 4: duplicate detection, every tier, before Pro branch ----
@@ -335,13 +395,31 @@ async function migrationSuite() {
     assert((row.rows[0] as any).enrichment_claim_id === null, 'claim is cleared after a successful attach');
   }
   {
-    // attached:false must be checked by field, not inferred from "no error".
+    // Item 26, SQL half: attached:false must be a returned field, not an
+    // exception — proven directly.
     const db = await buildDb();
     await insertOpportunities(db, ['opp-attached-field']);
     await setAuthContext(db, USER_FREE, 'authenticated');
     const r1 = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-attached-field' });
     const bogus = await rpc(db, 'attach_right_swipe_decision', { p_swipe_id: r1.swipeId, p_decision_snapshot: { x: 1 }, p_claim_id: '99999999-9999-4999-8999-999999999999' });
     assert(bogus.attached === false && bogus.reason === 'stale_claim', 'a tampered/wrong claim id -> attached:false, no exception thrown', bogus);
+  }
+  {
+    // Item 26, route half (STATIC, per independent review LOW finding —
+    // the SQL-level test above doesn't touch route.ts at all, and this repo
+    // doesn't run route.ts against a live server in this tier). Confirms by
+    // source inspection that both call sites branch on `.attached` before
+    // returning success, and that a false value maps to a non-200 — not
+    // just that the SQL function's return value is well-formed.
+    const routeSrc = read('src/app/api/opportunities/swipe/route.ts');
+    const attachCallSites = routeSrc.split("supabase.rpc('attach_right_swipe_decision'").length - 1;
+    assert(attachCallSites === 2, 'route.ts calls attach_right_swipe_decision from exactly two places (fresh success + resume)', attachCallSites);
+    const attachedChecks = routeSrc.split('attachResult.attached').length - 1;
+    assert(attachedChecks >= 2, 'route.ts reads attachResult.attached at least once per call site, not just checking for a thrown error', attachedChecks);
+    assert(
+      /if \(!attachResult\.attached\)[\s\S]{0,400}status: 409/.test(routeSrc),
+      'an unattached result maps to a non-200 (409) response within a short distance of the check, not silently treated as success'
+    );
   }
 
   // ---- Rewind: allowance restoration, one-shot, Pro-only, claim-clear, rewind-then-reswipe ----
@@ -357,7 +435,6 @@ async function migrationSuite() {
     assert(rewindAgain.success === false && rewindAgain.error === 'nothing_to_rewind', 'second consecutive rewind is a no-op (one-shot guard)', rewindAgain);
   }
   {
-    await setAuthContext.length; // no-op reference to keep tree-shaking honest in isolated runs
     const db = await buildDb();
     await insertOpportunities(db, ['opp-rewind-free']);
     await setAuthContext(db, USER_FREE, 'authenticated');
@@ -379,6 +456,31 @@ async function migrationSuite() {
     await setAuthContext(db, null, 'service_role');
     const row = await db.query(`SELECT decision_snapshot FROM swipes WHERE id = $1`, [r1.swipeId]);
     assert((row.rows[0] as any).decision_snapshot === null, 'no AI content ever lands on a row the user already undid');
+  }
+  {
+    // Item 29: rewind's marker INSERT and its claim-clear UPDATE must never
+    // be observable in a split state (one without the other). PGlite can't
+    // manufacture a real concurrent reader mid-transaction (see file-header
+    // limitation note) — what IS checked here is that both postconditions
+    // hold TOGETHER in the one read immediately after rewind returns, which
+    // is the strongest assertion a single-connection engine can make. The
+    // actual atomicity guarantee rests on both statements running inside
+    // one PL/pgSQL function call (= one Postgres transaction = one commit),
+    // per the plan §3 reasoning the independent review checked and accepted.
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-rewind-atomic']);
+    await setAuthContext(db, USER_PRO, 'authenticated');
+    const r1 = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-rewind-atomic' });
+    const rewind = await rpc(db, 'rewind_last_decision');
+    assert(rewind.success, 'rewind call itself succeeds');
+    await setAuthContext(db, null, 'service_role');
+    const markerExists = await db.query(`SELECT 1 FROM swipes WHERE action = 'rewind' AND rewound_decision_id = $1`, [r1.swipeId]);
+    const claimRow = await db.query(`SELECT enrichment_claim_id, enrichment_claimed_at FROM swipes WHERE id = $1`, [r1.swipeId]);
+    const claimCleared = (claimRow.rows[0] as any).enrichment_claim_id === null && (claimRow.rows[0] as any).enrichment_claimed_at === null;
+    assert(markerExists.rows.length === 1 && claimCleared, 'item 29: rewind marker exists AND claim is cleared together — never observed as one without the other', {
+      markerExists: markerExists.rows.length,
+      claimCleared,
+    });
   }
   {
     // Rewind-then-reswipe: not a false duplicate.
@@ -404,6 +506,99 @@ async function migrationSuite() {
     assert(counts.rightCount === 1 && counts.totalCount === 2, 'shared counter reports right=1, total=2 after one of each', counts);
   }
 
+  // ---- Items 6/7: same-vacancy right+left race, different-vacancy no false block ----
+  {
+    // Item 6 (sequential simulation, see header note): an 'interested' and a
+    // 'passed' call both target the SAME opportunity. Whichever commits
+    // first wins; the other must see it as a duplicate, not a second,
+    // independent decision.
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-mix-race']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const interested = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-mix-race' });
+    assert(interested.allowed === true, 'first of the pair (interested) succeeds');
+    const passed = await rpc(db, 'record_pass', { p_opportunity_id: 'opp-mix-race' });
+    assert(passed.allowed === false && passed.code === 'DUPLICATE_INTERACTION', 'the pass arriving right after sees the interested decision as a duplicate, not a second action', passed);
+    const rowCount = await countRows(db, `SELECT 1 FROM swipes WHERE opportunity_id = 'opp-mix-race'`);
+    assert(rowCount === 1, 'exactly one row exists for the opportunity, not two competing decisions');
+  }
+  {
+    // Item 7: a concurrent pair on DIFFERENT opportunities for the same user
+    // must not falsely serialize into a block — the profile-row lock is
+    // per-user, not per-opportunity, but it must not make swipes on
+    // unrelated opportunities contend with each other's final outcome.
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-diff-a', 'opp-diff-b']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const a = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-diff-a' });
+    const b = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-diff-b' });
+    assert(a.allowed === true && b.allowed === true, 'two swipes on different opportunities for the same user both succeed, no false-blocking', { a, b });
+    assert(a.swipeId !== b.swipeId, 'they are recorded as two distinct rows');
+  }
+
+  // ---- Item 23: concurrent resume / claim-expiry / fencing for Pro, not only Free ----
+  {
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-pro-resume']);
+    await setAuthContext(db, USER_PRO, 'authenticated');
+    const r1 = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-pro-resume' });
+    assert(r1.allowed && r1.planTier === 'pro', 'Pro reservation seeds an incomplete swipe');
+    await backdate(db, r1.swipeId, { claimedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString() });
+    await setAuthContext(db, USER_PRO, 'authenticated');
+    const retryA = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-pro-resume' }); // wins the claim
+    const retryB = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-pro-resume' }); // arrives right after
+    assert(retryA.resumeInProgress === false && typeof retryA.claimId === 'string', 'Pro: first concurrent resumer wins the claim (unlimited swipes does not exempt the claim mechanism)', retryA);
+    assert(retryB.resumeInProgress === true && retryB.claimId === undefined, 'Pro: second concurrent resumer told to stand down', retryB);
+    const bAttach = await rpc(db, 'attach_right_swipe_decision', { p_swipe_id: retryA.swipeId, p_decision_snapshot: { from: 'A' }, p_claim_id: retryA.claimId });
+    assert(bAttach.attached === true, 'Pro: claim winner attaches successfully');
+    const staleAttach = await rpc(db, 'attach_right_swipe_decision', { p_swipe_id: r1.swipeId, p_decision_snapshot: { from: 'original (stale)' }, p_claim_id: r1.claimId });
+    assert(staleAttach.attached === false && staleAttach.reason === 'stale_claim', 'Pro: the original, now-superseded claim holder cannot overwrite the winner (fencing applies to Pro too)', staleAttach);
+  }
+
+  // ---- Item 12: legacy counter and rolling count may diverge; gating follows rolling only ----
+  {
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-authority-1']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-authority-1' });
+    // Tamper with the legacy display-only counter directly, simulating drift
+    // (e.g. after a rewind in a slightly different order, or simply a stale
+    // value) — it must have zero effect on gating, which never reads it.
+    await setAuthContext(db, null, 'service_role');
+    await db.query(`UPDATE profiles SET daily_right_swipes_count = 999 WHERE id = $1`, [USER_FREE]);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const next = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-authority-2' });
+    // No FK to `opportunities` exists for swipes (dropped in migration 003),
+    // so a second opportunity id needs no separate seed row. What matters:
+    // the real rolling count is 1 (far under 15), and gating must follow
+    // that, not the tampered legacy counter (999, which would wrongly block
+    // if it were ever consulted).
+    assert(next.allowed === true, 'gating ignores a tampered legacy counter (999) and follows the real rolling count (1 of 15)', next);
+  }
+
+  // ---- Item 28: the `applications` row exists at reservation time, before AI enrichment ----
+  {
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-app-timing']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const r1 = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-app-timing' });
+    assert(r1.allowed, 'reservation succeeds');
+    await setAuthContext(db, null, 'service_role');
+    const appRow = await db.query(`SELECT status FROM applications WHERE profile_id = $1 AND opportunity_id = 'opp-app-timing'`, [USER_FREE]);
+    assert(appRow.rows.length === 1 && (appRow.rows[0] as any).status === 'interested', 'the applications row exists immediately after reservation, BEFORE attach_right_swipe_decision ever runs', appRow.rows);
+    const swipeRow = await db.query(`SELECT decision_snapshot FROM swipes WHERE id = $1`, [r1.swipeId]);
+    assert((swipeRow.rows[0] as any).decision_snapshot === null, 'confirms this really is before enrichment: the swipe row has no decision yet while the application row already exists');
+  }
+
+  // ---- Item 14 (static check): /api/profile and the swipe RPCs call the SAME shared function, by name ----
+  {
+    const profileRouteSrc = read('src/app/api/profile/route.ts');
+    assert(profileRouteSrc.includes("supabase.rpc('get_rolling_swipe_counts')"), 'GET /api/profile calls get_rolling_swipe_counts() — the identical function the swipe RPCs use, not a separate query');
+    const migrationSrc = read('supabase/migrations/045_swipe_limits_rolling_24h.sql');
+    const callsInMigration = migrationSrc.split('get_rolling_swipe_counts()').length - 1;
+    assert(callsInMigration >= 3, 'get_rolling_swipe_counts() is defined once and called from both reserve_and_record_right_swipe and record_pass, not reimplemented inline in either', { occurrences: callsInMigration });
+  }
+
   // ---- Old RPC signatures are gone ----
   {
     const db = await buildDb();
@@ -424,17 +619,29 @@ async function migrationSuite() {
     assert(threw2, 'old finalize_interested_swipe(TEXT, JSONB) no longer exists post-migration');
   }
 
-  // ---- Client-supplied timestamps are never consulted ----
+  // ---- Item 13: client-supplied timestamps are never consulted ----
+  // Relabeled per independent review (LOW finding): the previous version of
+  // this test only confirmed a call without a timestamp arg succeeds, which
+  // is tautological (it would pass identically whether or not the function
+  // used `now()` correctly). This version actually inspects the deployed
+  // function signatures via pg_catalog — a real structural check — to
+  // confirm none of the gating RPCs has ANY parameter of a time/date type
+  // for a client to even attempt to supply.
   {
     const db = await buildDb();
-    await insertOpportunities(db, ['opp-ts']);
-    await setAuthContext(db, USER_FREE, 'authenticated');
-    // None of the RPCs accept a timestamp parameter at all — structurally
-    // confirmed by the fact that the calls below (matching the real
-    // signatures) succeed without one; a client cannot pass what the
-    // function signature has no slot for.
-    const r = await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-ts' });
-    assert(r.allowed === true, 'reserve_and_record_right_swipe has no client-timestamp parameter to exploit', r);
+    await setAuthContext(db, null, 'service_role');
+    const res = await db.query(`
+      SELECT p.proname, pg_catalog.pg_get_function_arguments(p.oid) AS args
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public'
+        AND p.proname IN ('reserve_and_record_right_swipe', 'record_pass', 'attach_right_swipe_decision', 'get_rolling_swipe_counts');
+    `);
+    for (const row of res.rows as Array<{ proname: string; args: string }>) {
+      const hasTimeParam = /\b(timestamp|date|time)\b/i.test(row.args);
+      assert(!hasTimeParam, `${row.proname}(${row.args}) has no timestamp/date/time-typed parameter a client could supply`, row);
+    }
+    assert(res.rows.length === 4, 'all four gating/counting functions were found and checked', res.rows.length);
   }
 }
 

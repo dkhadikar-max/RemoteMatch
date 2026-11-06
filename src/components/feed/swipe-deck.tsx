@@ -18,9 +18,6 @@ interface SwipeDeckProps {
   onRewind: () => Promise<string | null>;
   canRewind: boolean;
   planTier?: 'free' | 'pro';
-  dailyRightSwipesCount?: number;
-  /** Rolling-24h total (right + left) swipe count — no independent left cap, only right (15) and total (50) gate anything. */
-  totalSwipesCount?: number;
   onRequireUpgrade?: (reason: 'rewind' | 'rightSwipeLimit' | 'totalSwipeLimit') => void;
   /** True while a modal rendered over the feed (filter, upgrade, …) is open: the keyboard shortcuts must not act. */
   paused?: boolean;
@@ -32,8 +29,6 @@ export function SwipeDeck({
   onRewind,
   canRewind,
   planTier = 'free',
-  dailyRightSwipesCount = 0,
-  totalSwipesCount = 0,
   onRequireUpgrade,
   paused = false,
 }: SwipeDeckProps) {
@@ -72,23 +67,22 @@ export function SwipeDeck({
       if (!currentOpp) return;
       const swiped = currentOpp;
 
-      // Client-side pre-check only — purely to avoid a pointless round trip;
-      // the server is the sole authority on the actual limit (migration
-      // 045 / src/app/api/opportunities/swipe/route.ts). Right-specific cap
-      // takes precedence over the total cap when both would apply, matching
-      // the server's own check ordering.
-      if (planTier === 'free') {
-        if (action === 'interested' && dailyRightSwipesCount >= 15) {
-          x.set(0);
-          onRequireUpgrade?.('rightSwipeLimit');
-          return;
-        }
-        if (totalSwipesCount >= 50) {
-          x.set(0);
-          onRequireUpgrade?.('totalSwipeLimit');
-          return;
-        }
-      }
+      // No client-side blocking pre-check here, deliberately. An earlier
+      // version short-circuited on cached dailyRightSwipesCount/
+      // totalSwipesCount without consulting the server — but those counts
+      // are a rolling-24h window that only ever DECREASES on its own as
+      // swipes age out (never increases except via the user's own actions,
+      // which the client already tracks). A cache that's gone stale while
+      // the user sits on the feed can therefore only ever show a FALSE
+      // block (a cap the user has actually fallen back under), never a
+      // false allow — and nothing here was refreshing that cache on any
+      // schedule. The server (migration 045 /
+      // src/app/api/opportunities/swipe/route.ts) is the only authority
+      // that can see the real, current window; onSwipe below always
+      // reaches it, and feed/page.tsx's existing rejection handling
+      // (branching on the server's RIGHT_LIMIT_REACHED / TOTAL_LIMIT_
+      // REACHED code) is what shows the correct upgrade modal when the
+      // server actually says no.
 
       if (action === 'interested') {
         setLastInterestedOpp(swiped);
@@ -100,7 +94,7 @@ export function SwipeDeck({
       setDeck((prev) => prev.slice(1));
       x.set(0);
     },
-    [currentOpp, onSwipe, x, planTier, dailyRightSwipesCount, totalSwipesCount, onRequireUpgrade]
+    [currentOpp, onSwipe, x]
   );
 
   const handleRewind = useCallback(async () => {
