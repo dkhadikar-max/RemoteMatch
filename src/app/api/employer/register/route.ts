@@ -108,9 +108,17 @@ export function normalizeDomain(rawWebsite: string): string | null {
  * POST /api/employer/register — Direct Employer Supply, Phase 1. Creates a
  * `companies` row (`verification_status = 'pending'`) and the registering
  * caller's own `company_members` row (`role = 'owner'`) carrying the
- * authorized-representative fields from the PRD. No business-email
- * verification (Phase 1 plan Q2 — deferred); no fuzzy duplicate detection
- * (Q3 — the official_domain unique index is the whole mechanism here).
+ * authorized-representative fields from the PRD, ATOMICALLY via the
+ * `register_employer_company()` RPC (migration 045) — a 2026-11-06 review
+ * finding fix: an earlier version did two separate inserts with a
+ * best-effort compensating delete, which left a real gap (a process crash
+ * between the two inserts orphaned the companies row forever, with no
+ * recovery). The RPC is one Postgres transaction: either both rows exist
+ * or neither does.
+ *
+ * No business-email verification (Phase 1 plan Q2 — deferred); no fuzzy
+ * duplicate detection (Q3 — the official_domain unique index is the whole
+ * mechanism here).
  */
 export async function POST(req: NextRequest) {
   let user;
@@ -139,63 +147,67 @@ export async function POST(req: NextRequest) {
   const admin = getSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
-  const { data: company, error: insertError } = await admin
-    .from('companies')
-    .insert({
-      legal_name: body.legalName.trim(),
-      official_website: body.officialWebsite.trim(),
-      official_domain: officialDomain,
-      business_email: body.businessEmail.trim(),
-      country_of_registration: body.countryOfRegistration.trim(),
-      registration_number: body.registrationNumber?.trim() || null,
-      linkedin_url: body.linkedinUrl?.trim() || null,
-      industry: body.industry?.trim() || null,
-      company_size: body.companySize?.trim() || null,
-      description: body.description?.trim() || null,
-      headquarters: body.headquarters?.trim() || null,
-      created_by: user.id,
-    })
-    .select('id, verification_status')
-    .single();
+  const { data: rpcRows, error: rpcError } = await admin.rpc('register_employer_company', {
+    p_legal_name: body.legalName.trim(),
+    p_official_website: body.officialWebsite.trim(),
+    p_official_domain: officialDomain,
+    p_business_email: body.businessEmail.trim(),
+    p_country_of_registration: body.countryOfRegistration.trim(),
+    p_registration_number: body.registrationNumber?.trim() || null,
+    p_linkedin_url: body.linkedinUrl?.trim() || null,
+    p_industry: body.industry?.trim() || null,
+    p_company_size: body.companySize?.trim() || null,
+    p_description: body.description?.trim() || null,
+    p_headquarters: body.headquarters?.trim() || null,
+    p_created_by: user.id,
+    p_representative_name: body.representativeName.trim(),
+    p_representative_designation: body.representativeDesignation.trim(),
+    p_representative_relationship: body.representativeRelationship.trim(),
+  });
 
-  if (insertError) {
-    // Unique violation on official_domain — a company for this domain
-    // already exists. Reported as a clear conflict, not a generic 500.
-    if (insertError.code === '23505') {
+  if (rpcError) {
+    // Unique violation on official_domain. Rather than a bare 409, check
+    // whether THIS caller already owns the existing company at this domain
+    // (2026-11-06 review finding fix: a lost HTTP response after a fully
+    // successful registration previously left the caller stuck behind a
+    // 409 with no way back to the company they just created) — if so,
+    // hand back that company instead of an error, so a retry recovers
+    // instead of dead-ending. A domain already owned by someone ELSE still
+    // gets the plain conflict, with no information about who owns it.
+    if (rpcError.code === '23505') {
+      const { data: existing } = await admin
+        .from('companies')
+        .select('id, verification_status')
+        .eq('official_domain', officialDomain)
+        .maybeSingle();
+      if (existing) {
+        const { data: existingMembership } = await admin
+          .from('company_members')
+          .select('id')
+          .eq('company_id', existing.id)
+          .eq('profile_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (existingMembership) {
+          return NextResponse.json(
+            { companyId: existing.id, verificationStatus: existing.verification_status, alreadyRegistered: true },
+            { status: 200 }
+          );
+        }
+      }
       return NextResponse.json(
         { error: 'A company is already registered for this website domain.' },
         { status: 409 }
       );
     }
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
 
-  const { error: memberError } = await admin.from('company_members').insert({
-    company_id: company.id,
-    profile_id: user.id,
-    role: 'owner',
-    representative_name: body.representativeName.trim(),
-    representative_designation: body.representativeDesignation.trim(),
-    representative_relationship: body.representativeRelationship.trim(),
-  });
-
-  if (memberError) {
-    // Roll back the orphaned company row rather than leaving a companies
-    // row with no owning member — best-effort, not atomic with the two
-    // inserts above. The delete's own result IS checked (2026-11-05 review
-    // finding: an earlier version of this code discarded it entirely while
-    // claiming otherwise in this comment) — if the rollback itself fails,
-    // that is logged with both errors and the company's domain/id, since the
-    // caller only ever sees `memberError` and would otherwise have no way to
-    // know the orphaned row is still there.
-    const { error: rollbackError } = await admin.from('companies').delete().eq('id', company.id);
-    if (rollbackError) {
-      console.error(
-        '[employer/register] rollback delete failed after company_members insert failed — orphaned company row remains',
-        { companyId: company.id, officialDomain, memberError: memberError.message, rollbackError: rollbackError.message }
-      );
-    }
-    return NextResponse.json({ error: memberError.message }, { status: 500 });
+  const company = (rpcRows ?? [])[0] as { id: string; verification_status: string } | undefined;
+  if (!company) {
+    // Should be unreachable — the RPC either returns exactly one row or
+    // throws. Fails loudly rather than crashing on `company.id` below.
+    return NextResponse.json({ error: 'Registration did not return a company record.' }, { status: 500 });
   }
 
   return NextResponse.json(

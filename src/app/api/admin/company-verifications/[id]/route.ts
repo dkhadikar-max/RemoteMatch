@@ -44,7 +44,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 type VerificationAction = 'mark_under_review' | 'verify' | 'reject' | 'suspend' | 'reinstate';
 
-const TRANSITIONS: Record<VerificationAction, { from: string[]; to: string }> = {
+export const TRANSITIONS: Record<VerificationAction, { from: string[]; to: string }> = {
   mark_under_review: { from: ['pending'], to: 'under_review' },
   verify: { from: ['pending', 'under_review'], to: 'verified' },
   reject: { from: ['pending', 'under_review'], to: 'rejected' },
@@ -84,8 +84,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
+  // Object.hasOwn(), not `action in TRANSITIONS` (2026-11-06 review finding
+  // fix): `in` also matches inherited Object.prototype properties
+  // ('toString', 'constructor', '__proto__', ...), which would then pass
+  // this check and make `TRANSITIONS[action]` below resolve to an
+  // inherited function/object rather than undefined — `transition.from`
+  // would throw a TypeError (unhandled -> 500) instead of being rejected
+  // here with a clean 400.
   const action = body.action as VerificationAction | undefined;
-  if (!action || !(action in TRANSITIONS)) {
+  if (!action || typeof action !== 'string' || !Object.hasOwn(TRANSITIONS, action)) {
     return NextResponse.json(
       { error: `action must be one of: ${Object.keys(TRANSITIONS).join(', ')}` },
       { status: 400 }
@@ -143,7 +150,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .select('verification_status');
 
   if (updateErr) {
-    await recordAdminAction({
+    const audit = await recordAdminAction({
       adminId: adminAuth.user.id,
       adminEmail: adminAuth.adminEmail,
       action: AUDIT_ACTION[action],
@@ -153,6 +160,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       afterState: { error: updateErr.message },
       reason,
     });
+    if (!audit.ok) {
+      console.error('[admin/company-verifications] audit log write failed for a FAILED update', {
+        companyId: params.id, action, updateError: updateErr.message, auditError: audit.error,
+      });
+    }
     return NextResponse.json({ error: updateErr.message }, { status: 500 });
   }
 
@@ -163,7 +175,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  await recordAdminAction({
+  // Check recordAdminAction()'s own result rather than ignoring it
+  // (2026-11-06 review finding fix): the status transition above has
+  // already committed, so there is nothing left to roll back here, but the
+  // caller must not be told this was a clean, fully-audited success when
+  // the audit row never actually got written — `auditLogged: false` is
+  // surfaced explicitly, and the failure (with full context for manual
+  // reconciliation) is logged, since this is the one place that failure
+  // would otherwise be completely invisible.
+  const audit = await recordAdminAction({
     adminId: adminAuth.user.id,
     adminEmail: adminAuth.adminEmail,
     action: AUDIT_ACTION[action],
@@ -173,6 +193,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     afterState: { verification_status: transition.to },
     reason,
   });
+  if (!audit.ok) {
+    console.error('[admin/company-verifications] audit log write failed AFTER a successful status transition', {
+      companyId: params.id, action, newStatus: transition.to, reviewedBy: adminAuth.adminEmail, auditError: audit.error,
+    });
+  }
 
-  return NextResponse.json({ ok: true, verificationStatus: transition.to });
+  return NextResponse.json({ ok: true, verificationStatus: transition.to, auditLogged: audit.ok });
 }

@@ -79,12 +79,21 @@ export default function CompanyVerificationDetailPage() {
       body: JSON.stringify({ action: pendingAction.action, reason }),
     });
     setActionPending(false);
+    const resBody = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      setActionError(body.error || 'Action failed.');
+      setActionError(resBody.error || 'Action failed.');
       return;
     }
     setPendingAction(null);
+    // The status transition itself always succeeded here (that's what
+    // `res.ok` means) — `auditLogged === false` is the rarer case where the
+    // audit-log write failed afterward. Surfaced as a warning, not an
+    // error: the action is NOT retried (it already happened), but the admin
+    // is told the audit trail may be missing an entry, since the server
+    // has no other way to tell them.
+    if (resBody.auditLogged === false) {
+      setActionError('Action succeeded, but the audit log entry failed to write. This has been logged server-side for reconciliation.');
+    }
     load();
   };
 

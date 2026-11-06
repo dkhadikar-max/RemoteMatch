@@ -181,6 +181,65 @@ Grepped every new file under `src/app/api/employer/**`, `src/app/api/admin/compa
 
 **Resolved:** Deep confirmed `wmbodnkemnyaxdbhelar` is production-sensitive, not a safe isolated test project — identified from Supabase logs (2026-09-09, project ref + db hostname), Deep's own 2026-09-13 statement that both his dev environment and production pointed to it at the time, and `funnel_events` (a real prod table) existing inside it. Likely the pre-2026-10-12-cutover production project, superseded by `kxzlwwjvagzwodrdxqbh` but never repointed in this working directory's `.env.local`; its status since the cutover is unconfirmed either way. **The live-infrastructure suite must not run against it.** A genuinely separate, confirmed-isolated test project still needs to be identified or provisioned before §5 can be completed — not done in this session.
 
+---
+
+## Second final-review pass (2026-11-05, same day, read-only) — combined `a049c48` + `037d0a1` vs `origin/main`
+
+**Correction to the preceding status report first:** the "Live CAS concurrency test — Passed" line in that report is inaccurate. Re-ran the suite in this sandbox: `TEST_BASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are still unset, so the live section (including the new concurrency test) hits its self-skip branch exactly as every prior run has — only the 32 static/unit checks have ever actually executed. The concurrency test is written and will run the first time a confirmed-safe test project is available; it has not run anywhere yet.
+
+### 1. Full registration-to-verification lifecycle
+
+Traced end-to-end by re-reading every route in the chain: `POST /api/employer/register` (creates `pending` + owner membership) → `GET/PATCH /api/employer/companies/[id]` (member-scoped read/cosmetic-edit, unaffected by the remediation) → `GET /api/admin/company-verifications` + `[id]` (admin list/detail) → `PATCH [id]` (the 5-action state machine, now CAS-protected). `verification_status` values are used consistently across every layer (`pending/under_review/verified/rejected/suspended`); the admin UI's `ACTIONS_FOR_STATUS` map (in the page component) and the API's `TRANSITIONS` map agree. No gap found in the chain.
+
+### 2. RLS and service-role boundaries
+
+The remediation commit (`037d0a1`) touched zero SQL/migration files (confirmed via `git diff a049c48 037d0a1 --stat`) — migration `044`'s RLS (zero client policy on `companies`/`company_members`, `FORCE ROW LEVEL SECURITY`, explicit `REVOKE`) is unchanged from the first audit. No new finding.
+
+### 3. Audit-log consistency
+
+`AUDIT_ACTION` is a total `Record<VerificationAction, AdminAuditAction>` (every action logs); `admin_audit_log`'s CHECK constraint and the TS union remain in exact sync (unchanged by the remediation). The CAS fix's error-branch ordering is correct on re-read: a genuine `updateErr` still gets its own audit row (`afterState: {error}`); a lost-race zero-row result returns 409 and reaches `recordAdminAction()` for that request. The pre-check 409 (invalid transition for the current state, e.g. trying to `verify` an already-`rejected` company) is correctly NOT audit-logged — it never attempted a write, so there's nothing to log as a failed transition.
+
+### 4. Middleware access protection
+
+`src/middleware.ts` was not touched by the remediation commit — the `VERIFIED_ONLY_PREFIXES = ['/employer']` fix from the earlier round stands unchanged, still deliberately excluded from the onboarding-completion gate.
+
+### 5. Migration 044 compatibility
+
+Re-fetched `origin/main` and re-checked PR #48: both are unchanged since the prior audit (`origin/main` still tops out at `035`; PR #48 still open, same head `9fedf9c`, still `mergeable: MERGEABLE`). `044` remains clear of both.
+
+### 6. Regression against existing admin/candidate workflows
+
+`git diff a049c48 037d0a1 --stat` confirms the remediation touched exactly the 5 files it was supposed to — no shared file (`Sidebar.tsx`, `audit-log.ts`, `api-error.ts`, `admin.ts`, `middleware.ts`) was touched again. Ran `test/verification-suite.ts` (the project's general-purpose regression baseline, covering matching/dedup/quota/URL-integrity, unrelated to this feature) fresh in this sandbox: **20/20 passed**, confirming the remediation introduced no regression anywhere else in the app. `test/gate1-rls-isolation.ts` (an in-memory PGlite RLS check, would have been a useful second data point) was blocked by this sandbox's own permission classifier on an unrelated-looking "local destruction" false flag — not attempted around; skipped rather than forced.
+
+### Round 2 remediation (2026-11-06) — independent review findings on PR #49 head `037d0a1`
+
+An independent review of the actual PR #49 diff (not a self-review) found 3 issues, all fixed:
+
+1. **P1, audit failure silently reported as success** (`company-verifications/[id]/route.ts`) — `recordAdminAction()`'s `{ok, error}` result was called but never inspected, so an admin's status transition could commit while the audit insert failed, with the API still returning a plain 200. Fixed: both call sites now capture and check the result; a failed audit write is logged with full context for manual reconciliation, and the success response now carries an explicit `auditLogged: boolean` field rather than always implying a clean, fully-audited success. The admin UI surfaces a warning (not an error — the action itself did succeed) when `auditLogged === false`.
+2. **P1, registration not transactionally atomic** (`employer/register/route.ts`) — two sequential inserts (`companies` then `company_members`) meant a process crash between them left a permanently orphaned company row (no recovery), and even a fully successful registration gave a caller whose HTTP response was lost no way to recover — a retry just hit the unique-domain 409. Fixed two ways: (a) **migration 045** adds `register_employer_company()`, a single Postgres function doing both inserts in one transaction — either both rows exist or neither does, closing the crash-between-inserts window entirely; (b) the route now checks, on a unique-domain conflict, whether the calling user already owns the existing company at that domain, and if so returns it (`200`, `alreadyRegistered: true`) instead of a bare `409` — closing the lost-response-retry gap. The old manual compensating-delete rollback logic is gone entirely; it's structurally unnecessary now.
+3. **P2, inherited JS properties pass action validation** (`company-verifications/[id]/route.ts`) — `action in TRANSITIONS` also matches inherited `Object.prototype` properties (`toString`, `constructor`, `__proto__`, `hasOwnProperty`), which would then resolve `TRANSITIONS[action]` to an inherited value and throw a `TypeError` on `.from.includes(...)` (an unhandled 500) instead of being cleanly rejected. Fixed: `Object.hasOwn(TRANSITIONS, action)` plus an explicit `typeof action !== 'string'` guard. `TRANSITIONS` exported for direct unit testing (same pattern as `normalizeDomain`/`escapeLikeWildcards`).
+
+Test suite updated: static checks for all 3 fixes, a genuine unit test proving `Object.hasOwn()` rejects all 4 inherited-property names that `in` would have let through, and two new live tests — the lost-response-retry recovery flow, and `auditLogged: true` on the ordinary happy path (a true audit-write-failure injection isn't possible against a live DB without breaking something else, so this proves the field exists and is correct on the path that can be exercised). Static/unit section: **53/0/0**. `tsc --noEmit` clean. Baseline `verification-suite.ts` re-run: **20/20**.
+
+**What this does NOT do:** it does not add a transactional RPC for the admin verification-status-update + audit-log write together (the reviewer's "prefer a transactional RPC" framing for finding #1) — that would mean either making `companies.update()` and the `admin_audit_log` insert one Postgres function, which is a reasonable future hardening but a larger, separately-justified change than the finding strictly requires; the chosen fix (explicit `auditLogged` disclosure + logged failure) directly satisfies the finding's own stated fallback ("if retaining separate writes, explicitly report the partial-success condition"). Live integration verification (migration 045 applied, the RPC actually exercised against a real Postgres instance, the new retry-recovery flow proven live) remains entirely unexecuted, same disclosed limitation as every prior round — still no confirmed-safe isolated Supabase test project available.
+
+### Release classification (Deep, 2026-11-05)
+
+**Ready for PR review, pending live integration verification before production release.** Everything local verification can establish has been established (code review, static/unit tests, baseline regression suite, migration-collision check) — but two claims remain explicitly unproven, not just untested-but-assumed-fine:
+1. Concurrent admin transitions (the compare-and-swap fix) behave correctly against a real database — supported by code review and static/unit evidence only, no live concurrency evidence exists.
+2. Employer registration, membership isolation, and RLS behave correctly against the target Supabase environment — never run live anywhere.
+
+Before production deployment, run (against a confirmed-safe isolated Supabase project — never the production-sensitive one `.env.local` currently points to):
+- Concurrent verify/reject requests (the suite's own `Promise.all` test).
+- Registration rollback-failure behavior.
+- Cross-company membership isolation.
+- Admin transition + audit-log consistency.
+- RLS deny-by-default verification.
+
+### Summary of this second pass
+
+No new issues found. The three corrections to the prior report: (a) the live CAS test has not run anywhere — it's written, not executed; (b) confirmed, not just re-asserted, that the remediation commit touched only its 5 intended files; (c) `verification-suite.ts` run fresh (20/20) as a general regression check, something not explicitly covered in the prior report. Still not done: push, PR, migration apply, deploy — none authorized or performed.
+
 ### Summary of this final pass
 
 No new blockers for **this branch specifically** — `044` is clean, ownership/auth/audit logic all re-confirmed correct, discovery controls confirmed untouched, and the `admin.ts` conflict-avoidance holds up under a real diff re-check. Two things still stand between this branch and a commit: (a) the live-infrastructure section has still never run anywhere, and now there's a concrete reason it can't run blindly — an unidentified Supabase project in `.env.local` that needs confirmation first; and (b) the wider 3-branch migration plan is only 2/3 done (international payments' `036`→`043` renumber is outstanding, on a different workstream). Nothing was changed, committed, pushed, migrated, or deployed in this pass.

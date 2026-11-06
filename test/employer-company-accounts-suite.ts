@@ -19,6 +19,7 @@ import { createClient } from '@supabase/supabase-js';
 import { hasRequiredEnv, adminClient, anonKeyClient, newVerifiedSession, uniqueEmail } from './helpers/verified-session';
 import { normalizeDomain } from '../src/app/api/employer/register/route';
 import { escapeLikeWildcards } from '../src/app/api/admin/company-verifications/route';
+import { TRANSITIONS } from '../src/app/api/admin/company-verifications/[id]/route';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 let passed = 0, failed = 0, skipped = 0;
@@ -63,16 +64,22 @@ async function main() {
   assert(!/UNIQUE\s*\(\s*profile_id\s*\)/.test(migrationSqlOnly), 'no UNIQUE(profile_id) on company_members — one profile may belong to multiple companies (Q4)');
 
   const registerSrc = fs.readFileSync(path.resolve(__dirname, '../src/app/api/employer/register/route.ts'), 'utf8');
-  assert(/23505/.test(registerSrc), 'register route reports the domain-uniqueness conflict as 409, not a generic 500');
-  assert(/role:\s*'owner'|role: 'owner'/.test(registerSrc) || /role:\s*'owner'/.test(registerSrc), 'the registering caller is inserted as company_members role=owner');
+  assert(/23505/.test(registerSrc), 'register route reports the domain-uniqueness conflict as 409 (or a recoverable 200 — see below), not a generic 500');
 
-  // 2026-11-05 review finding #1: the rollback delete's own error must be
-  // checked and logged, not discarded while a comment claims otherwise.
-  assert(
-    /const \{ error: rollbackError \} = await admin\s*\n?\s*\.from\('companies'\)\s*\n?\s*\.delete\(\)/.test(registerSrc),
-    'the compensating rollback delete checks its own result (does not discard it)'
+  // 2026-11-06 review finding #2: registration must be atomic (one Postgres
+  // transaction, not two sequential inserts with a compensating delete),
+  // AND a lost-response retry by the SAME caller must recover their
+  // existing company rather than dead-ending behind a 409.
+  const registerMigrationSrc = fs.readFileSync(
+    path.resolve(__dirname, '../supabase/migrations/045_employer_register_transaction.sql'),
+    'utf8'
   );
-  assert(/if \(rollbackError\)/.test(registerSrc) && /console\.error/.test(registerSrc), 'a rollback failure is logged with both errors, not silently dropped');
+  assert(/CREATE OR REPLACE FUNCTION public\.register_employer_company/.test(registerMigrationSrc), 'migration 045 defines register_employer_company() as a single Postgres function (one transaction for both inserts)');
+  assert(/REVOKE ALL ON FUNCTION public\.register_employer_company FROM PUBLIC, anon, authenticated/.test(registerMigrationSrc), 'register_employer_company() is revoked from anon/authenticated — service-role only, no end-user session can call it directly');
+  assert(/role,?\s*\n?\s*representative_name/.test(registerMigrationSrc) && /'owner'/.test(registerMigrationSrc), "the function inserts the registering caller's company_members row with role='owner'");
+  assert(/admin\.rpc\('register_employer_company'/.test(registerSrc), 'the register route calls the atomic RPC, not two separate .from().insert() calls');
+  assert(!/\.from\('companies'\)\s*\n?\s*\.delete\(\)/.test(registerSrc), 'no compensating-delete rollback logic remains in the route (the RPC makes it unnecessary — either both rows exist or neither does)');
+  assert(/alreadyRegistered/.test(registerSrc) && /existingMembership/.test(registerSrc), "a unique-domain conflict checks whether the SAME caller already owns that company and recovers it instead of a bare 409 (lost-response retry recovery)");
 
   // 2026-11-05 review finding #2: normalizeDomain() unit tests — a real
   // import + call, not a source-text regex, since this is a pure function.
@@ -103,12 +110,43 @@ async function main() {
   );
   const zeroRowCheckIdx = adminDetailSrc.indexOf('(updatedRows ?? []).length === 0');
   assert(zeroRowCheckIdx !== -1, 'a zero-row update result (lost race) is detected explicitly');
-  const lostRaceBlock = adminDetailSrc.slice(zeroRowCheckIdx, adminDetailSrc.indexOf('await recordAdminAction', zeroRowCheckIdx));
-  assert(/status: 409/.test(lostRaceBlock) && !/recordAdminAction/.test(lostRaceBlock), 'the lost-race branch returns a 409 and the NEXT recordAdminAction() call in the file comes strictly after it (a lost race is never logged as a successful transition)');
+  const lostRaceBlockRaw = adminDetailSrc.slice(zeroRowCheckIdx, adminDetailSrc.indexOf('await recordAdminAction', zeroRowCheckIdx));
+  // Strip `//` comment lines first — a prose comment mentioning
+  // "recordAdminAction()'s own result" (added for the 2026-11-06 fix)
+  // would otherwise false-positive this check, same class of bug as the
+  // SQL-comment false positive found in the 2026-11-05 audit.
+  const lostRaceBlock = lostRaceBlockRaw.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+  assert(/status: 409/.test(lostRaceBlock) && !/recordAdminAction/.test(lostRaceBlock), 'the lost-race branch returns a 409 and the NEXT real recordAdminAction() call comes strictly after it (a lost race is never logged as a successful transition)');
 
   // 2026-11-05 review finding #4: a genuine DB/query error on the
   // membership lookup must not be folded into "not a member".
   assert(/must\(/.test(gateSrc) && /from\('company_members'\)/.test(gateSrc), 'the membership lookup is wrapped in must() so a real query error throws instead of being treated as "no member"');
+
+  // 2026-11-06 review finding #1: recordAdminAction()'s own {ok, error}
+  // result must be checked — a failed audit write must never be reported
+  // as an unqualified success. Unit-tested via a real TRANSITIONS/action
+  // flow is impossible without a live DB, so this is a precise static
+  // check that both call sites inspect `audit.ok`, not just invoke it.
+  const auditCallSites = adminDetailSrc.split('await recordAdminAction(').length - 1;
+  assert(auditCallSites === 2, `recordAdminAction() is called at exactly 2 sites (update-error path + success path), found ${auditCallSites}`);
+  assert(/const audit = await recordAdminAction/.test(adminDetailSrc), "recordAdminAction()'s result is captured, not discarded");
+  assert(/if \(!audit\.ok\)/.test(adminDetailSrc) && /console\.error/.test(adminDetailSrc), 'an audit-write failure is detected and logged with full context for manual reconciliation');
+  assert(/auditLogged: audit\.ok/.test(adminDetailSrc), 'the success response explicitly surfaces whether the audit log write succeeded, rather than always claiming a clean success');
+
+  // 2026-11-06 review finding #3: Object.hasOwn(), not the `in` operator,
+  // so an inherited Object.prototype property (toString, constructor,
+  // __proto__) cannot pass action validation and reach TRANSITIONS[action]
+  // as an unintended inherited value.
+  assert(/Object\.hasOwn\(TRANSITIONS, action\)/.test(adminDetailSrc), 'action validation uses Object.hasOwn(), not the `in` operator (which also matches inherited Object.prototype properties)');
+  console.log('\n0d. UNIT — TRANSITIONS rejects inherited Object.prototype property names');
+  for (const inherited of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+    assert(!Object.hasOwn(TRANSITIONS, inherited), `Object.hasOwn(TRANSITIONS, '${inherited}') is false (the \`in\` operator this replaces would have returned true)`);
+    // eslint-disable-next-line no-prototype-builtins
+    assert((inherited in TRANSITIONS) === true, `sanity check: '${inherited}' DOES exist via \`in\` (proving the old check would have let it through) — got ${inherited in TRANSITIONS}`);
+  }
+  for (const real of Object.keys(TRANSITIONS)) {
+    assert(Object.hasOwn(TRANSITIONS, real), `Object.hasOwn(TRANSITIONS, '${real}') is true for every real action`);
+  }
 
   const adminListSrc = fs.readFileSync(path.resolve(__dirname, '../src/app/api/admin/company-verifications/route.ts'), 'utf8');
   // 2026-11-05 review finding #5: both source-presence AND a real unit test
@@ -209,6 +247,21 @@ async function main() {
     });
     assert(dupCaseRes.status === 409, `a different-case duplicate of the same domain is also rejected 409 (got ${dupCaseRes.status})`);
 
+    // 1h. 2026-11-06 review finding #2, lost-response-retry recovery: the
+    // SAME caller re-submitting the exact same registration (simulating a
+    // retry after a lost HTTP response) gets their EXISTING company back,
+    // not a bare 409.
+    const retryRes = await fetch(`${BASE_URL}/api/employer/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+      body: JSON.stringify(registerPayload),
+    });
+    const retryBody = await retryRes.json();
+    assert(
+      retryRes.status === 200 && retryBody.companyId === companyId && retryBody.alreadyRegistered === true,
+      `the original registrant retrying the same registration recovers their existing company (got status ${retryRes.status}, companyId match ${retryBody.companyId === companyId}, alreadyRegistered ${retryBody.alreadyRegistered})`
+    );
+
     // --- Admin review path ---
     const adminEmail = uniqueEmail();
     const { data: adminUser, error: adminCreateErr } = await admin.auth.admin.createUser({
@@ -301,6 +354,11 @@ async function main() {
       });
       const verifyBody = await verifyRes.json();
       assert(verifyRes.status === 200 && verifyBody.verificationStatus === 'verified', `admin verify transitions pending -> verified (got ${verifyRes.status})`);
+      // 2026-11-06 review finding #1: the success response must explicitly
+      // surface audit-log health. Can't inject a real audit-write failure
+      // against a live DB without breaking something else, so this proves
+      // the field exists and is true on the ordinary happy path.
+      assert(verifyBody.auditLogged === true, `the success response includes auditLogged: true on the happy path (got ${verifyBody.auditLogged})`);
       adminAuditRowCreated = true;
 
       const { data: auditRows } = await admin
