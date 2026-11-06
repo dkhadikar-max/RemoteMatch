@@ -28,11 +28,11 @@ export async function GET(req: NextRequest) {
     // user has no row yet -> treat as the 'continue' default.
     supabase.from('profile_intents').select('career_direction').eq('profile_id', user.id).maybeSingle(),
     // Rolling-24h right/total swipe counts — the SAME shared function the
-    // swipe route's gating RPCs call (migration 045), so this display value
+    // swipe route's gating RPCs call (migration 046), so this display value
     // can never drift from what actually gates a swipe. Replaces the old
     // calendar-day `daily_right_swipes_count` counter for display purposes;
     // that column is retained only as a rollback safety net (see migration
-    // 045), no longer read here.
+    // 046), no longer read here.
     supabase.rpc('get_rolling_swipe_counts'),
   ]);
 

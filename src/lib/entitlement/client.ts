@@ -2,7 +2,7 @@ import type { CareerDirection } from '@/types/byn';
 
 export interface ServerEntitlement {
   planTier: 'free' | 'pro';
-  /** Rolling-24h count, not calendar-day — same source as the swipe route's own gating (migration 045). */
+  /** Rolling-24h count, not calendar-day — same source as the swipe route's own gating (migration 046). */
   dailyRightSwipesCount: number;
   dailyProposalsCount: number;
   usageDate: string;

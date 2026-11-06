@@ -2,11 +2,11 @@
  * RemoteMatch — Swipe limits: rolling 24h window + Pro upgrade popups
  * ==============================================================================
  * Plan: docs/swipe-limits-rolling-24h-implementation-plan.md (revision 9,
- * implementation authorized). Migration: 045_swipe_limits_rolling_24h.sql.
+ * implementation authorized). Migration: 046_swipe_limits_rolling_24h.sql.
  *
  * Covers the plan's §7 test list:
  *   - UNIT: the pure countdown formatter used by the upgrade modal.
- *   - MIGRATION (PGlite): applies 001 + 003 + 045 against an embedded
+ *   - MIGRATION (PGlite): applies 001 + 003 + 046 against an embedded
  *     Postgres and drives the real SQL functions — right/total caps, no
  *     independent left cap, duplicate detection, the enrichment-claim +
  *     fencing-token mechanism (including the delayed-response overwrite
@@ -30,7 +30,7 @@
  *     "(sequential, not a true race)" are deliberately honest about this;
  *     do not read them as closing items 4/5/29 on their own.
  *   - LIVE (isolated project, local server; skipped with a FAIL unless an
- *     isolated project is configured and migration 045 is applied there —
+ *     isolated project is configured and migration 046 is applied there —
  *     same gate shape as test/apply-click-tracking-suite.ts): not run by
  *     this change — plan §7/§8 requires a verified isolated Supabase
  *     project before any live run, which is a separate go-ahead. This is
@@ -155,7 +155,7 @@ async function buildDb(): Promise<PGlite> {
   await db.exec(read('supabase/migrations/001_initial_schema.sql'));
   await db.exec(read('supabase/migrations/002_row_level_security.sql'));
   await db.exec(read('supabase/migrations/003_security_remediation.sql'));
-  await db.exec(read('supabase/migrations/045_swipe_limits_rolling_24h.sql'));
+  await db.exec(read('supabase/migrations/046_swipe_limits_rolling_24h.sql'));
 
   await setAuthContext(db, null, 'service_role');
   // Inserting into auth.users fires migration 003's handle_new_auth_user
@@ -182,7 +182,7 @@ async function countRows(db: PGlite, sql: string, params: unknown[] = []): Promi
 }
 
 async function migrationSuite() {
-  console.log('\nMIGRATION (PGlite): 001 + 003 + 045 apply, real SQL functions');
+  console.log('\nMIGRATION (PGlite): 001 + 003 + 046 apply, real SQL functions');
 
   // ---- 1/2/3: right (15) and total (50) caps, no independent left cap ----
   {
@@ -594,7 +594,7 @@ async function migrationSuite() {
   {
     const profileRouteSrc = read('src/app/api/profile/route.ts');
     assert(profileRouteSrc.includes("supabase.rpc('get_rolling_swipe_counts')"), 'GET /api/profile calls get_rolling_swipe_counts() — the identical function the swipe RPCs use, not a separate query');
-    const migrationSrc = read('supabase/migrations/045_swipe_limits_rolling_24h.sql');
+    const migrationSrc = read('supabase/migrations/046_swipe_limits_rolling_24h.sql');
     const callsInMigration = migrationSrc.split('get_rolling_swipe_counts()').length - 1;
     assert(callsInMigration >= 3, 'get_rolling_swipe_counts() is defined once and called from both reserve_and_record_right_swipe and record_pass, not reimplemented inline in either', { occurrences: callsInMigration });
   }

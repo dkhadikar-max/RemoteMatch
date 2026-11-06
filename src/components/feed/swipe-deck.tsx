@@ -76,7 +76,7 @@ export function SwipeDeck({
       // the user sits on the feed can therefore only ever show a FALSE
       // block (a cap the user has actually fallen back under), never a
       // false allow — and nothing here was refreshing that cache on any
-      // schedule. The server (migration 045 /
+      // schedule. The server (migration 046 /
       // src/app/api/opportunities/swipe/route.ts) is the only authority
       // that can see the real, current window; onSwipe below always
       // reaches it, and feed/page.tsx's existing rejection handling
