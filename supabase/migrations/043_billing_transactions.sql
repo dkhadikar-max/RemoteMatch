@@ -25,15 +25,7 @@
 -- amount_minor is the integer minor-unit amount Razorpay itself reports
 -- (paise/cents/fils), never a value computed or trusted from the browser.
 --
--- 2026-11-06 review fixes:
--- - Uniqueness moved from razorpay_payment_id to razorpay_event_id
---   (requirement #5): a payment now gets ONE row per webhook event it
---   appears on — a capture, then later a separate refund, are two rows —
---   instead of one row that a later event overwrote in place, which lost
---   the original capture from history. Redelivery of the SAME event (same
---   X-Razorpay-Event-Id) still upserts idempotently onto the same row.
---   razorpay_payment_id is now indexed rather than unique, so a payment's
---   full event history can still be queried by payment id.
+-- 2026-11-06 review fixes (first round):
 -- - razorpay_order_id and country columns were dropped (requirement #7,
 --   explicit decision): nothing in this PR extracts either from the webhook
 --   payload — RazorpayPaymentEntity (src/lib/razorpay.ts) only carries
@@ -42,6 +34,22 @@
 --   defined-but-always-NULL column is worse than no column; add either back
 --   in a future migration alongside the parsing code that would actually
 --   populate it.
+--
+-- 2026-11-06 FRESH review fix (second round): the first round moved
+-- uniqueness from razorpay_payment_id alone to razorpay_event_id alone —
+-- that fixed the original bug (a refund overwriting its capture row) but
+-- introduced a new one: a single real capture is reported on TWO separate
+-- webhook deliveries with two different event ids (subscription.charged AND
+-- payment.captured both fire for the same renewal), so keying on event id
+-- wrote the SAME capture twice. The correct key is the COMPOSITE
+-- (razorpay_payment_id, status): both deliveries for the same real capture
+-- share the same payment id AND the same status ('captured'), so they
+-- collapse onto ONE row; a LATER status transition for that payment (e.g.
+-- 'refunded') has a different composite key, so it is still a separate row —
+-- history is preserved exactly as the first-round fix intended, without the
+-- double-count. razorpay_event_id is a plain, nullable audit column now (not
+-- a constraint) — a delivery with no X-Razorpay-Event-Id header no longer
+-- risks failing a NOT NULL check on this table.
 -- ==============================================================================
 
 CREATE TABLE IF NOT EXISTS billing_transactions (
@@ -52,8 +60,9 @@ CREATE TABLE IF NOT EXISTS billing_transactions (
   amount_minor           BIGINT NOT NULL CHECK (amount_minor >= 0),
   currency               TEXT NOT NULL,
   status                 TEXT NOT NULL CHECK (status IN ('created', 'authorized', 'captured', 'failed', 'refunded')),
-  razorpay_event_id      TEXT NOT NULL UNIQUE,
-  created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+  razorpay_event_id      TEXT,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (razorpay_payment_id, status)
 );
 
 CREATE INDEX IF NOT EXISTS idx_billing_transactions_profile_id ON billing_transactions(profile_id);

@@ -181,6 +181,27 @@ async function run() {
     );
   }
 
+  console.log('\nF4.7: notes.userId presence alone must NOT make an unrelated plan "ours" (regression guard, 2026-11-06 FRESH review)');
+  // An earlier attempt at closing the process-restart gap (F4.4's historical
+  // Map is empty again after every restart) tried treating a well-formed
+  // notes.userId as sufficient evidence alone. That was UNSOUND and was
+  // reverted: it broke F3.2 below ("a payment on a plan that is not ours is
+  // never written to the ledger") by recognizing a completely unrelated plan
+  // as ours whenever it happened to carry a user-id-shaped notes.userId.
+  // This test guards against that regression recurring — plan-id
+  // recognition (activePlanIds, historical within a process but NOT
+  // notes-based) remains the sole check; the restart gap itself stays
+  // genuinely open (documented, not silently papered over, in
+  // currency-config.ts's knownPlanIdToCurrency doc comment).
+  {
+    const unrelatedPlanId = `plan_definitelyNotOursEvenWithNotes_${Date.now()}`;
+    assert(
+      isProPlanSubscription(stubSub({ id: 'sub_f47', plan_id: unrelatedPlanId, notes: { userId: 'some-real-looking-user-id' } })) === false,
+      'a subscription on an unrelated/unknown plan id is correctly rejected EVEN WHEN it carries a well-formed notes.userId — plan-id membership is the only thing that may grant "ours", never notes.userId alone',
+      { unrelatedPlanId }
+    );
+  }
+
   // ----------------------------------------------------------------------
   console.log('\nPART B — real webhook activation (real infra, isolated DB, stubbed Razorpay read)');
   if (!USD_PLAN_ID) {
@@ -397,20 +418,18 @@ async function run() {
         await processWebhookEvent(admin, { eventId: `evt_d3_redelivery_${Date.now()}`, eventType, subscription, payment }, seam);
         assert(
           captured.length === 2 && captured[0] === paymentId && captured[1] === paymentId,
-          // 2026-11-06 fix (requirement #5): the table's idempotency key
-          // moved from razorpay_payment_id to razorpay_event_id — these two
-          // calls use DIFFERENT event ids (first vs redelivery), so once
-          // migration 043 is applied they would land as two SEPARATE rows,
-          // both correctly carrying the same payment id. True delivery-level
-          // idempotency (the literal SAME Razorpay webhook delivery arriving
-          // twice) is enforced one layer up, by the X-Razorpay-Event-Id
-          // short-circuit in webhook/route.ts before processWebhookEvent is
-          // even reached — not by this table. This assertion only confirms
-          // both calls correctly carry the same payment id, which D6 below
-          // extends to prove a capture and a later refund stay as two
-          // distinct, correctly-attributed rows rather than one overwriting
-          // the other.
-          'a redelivered payment.failed event (two different event ids, same payment) passes the same razorpay_payment_id to the writer both times',
+          // 2026-11-06 FRESH review fix: the table's idempotency key is the
+          // COMPOSITE (razorpay_payment_id, status), not razorpay_event_id
+          // alone. These two calls share the SAME payment id AND the SAME
+          // status ('failed' both times) despite having different event ids
+          // — once migration 043 is applied, they correctly collapse onto
+          // ONE row (true idempotent redelivery), unlike the event-id-keyed
+          // design this replaced, which would have written two rows for one
+          // real failure. D6 below extends this to prove a capture and a
+          // LATER refund (same payment id, DIFFERENT status) still land as
+          // two distinct rows, and D7 proves two DIFFERENT event types
+          // reporting the same real capture collapse onto one.
+          'a redelivered payment.failed event (two different event ids, same payment, same status) passes the same razorpay_payment_id to the writer both times',
           captured
         );
       }
@@ -449,13 +468,71 @@ async function run() {
             capturedRows[0].razorpay_payment_id === paymentId &&
             capturedRows[1].razorpay_payment_id === paymentId &&
             capturedRows[0].status === 'captured' &&
-            capturedRows[1].status === 'refunded' &&
-            capturedRows[0].razorpay_event_id === captureEventId &&
-            capturedRows[1].razorpay_event_id === refundEventId &&
-            capturedRows[0].razorpay_event_id !== capturedRows[1].razorpay_event_id,
-          'capture and refund on the same payment produce TWO rows with the same payment id but DIFFERENT (non-null) event ids and distinct statuses — once migration 043 (razorpay_event_id NOT NULL UNIQUE) is applied, the refund can never overwrite the capture row in place',
+            capturedRows[1].status === 'refunded',
+          'capture and refund on the same payment produce TWO rows with the same payment id but DIFFERENT statuses — once migration 043 (UNIQUE on (payment_id, status)) is applied, the refund (a different composite key) can never overwrite the capture row in place',
           capturedRows
         );
+      }
+
+      console.log('\nD7: the SAME real capture reported on TWO different event types (subscription.charged AND payment.captured) collapses onto ONE row, not two (2026-11-06 FRESH review fix)');
+      {
+        const paymentId = `pay_d7_paired_delivery_${Date.now()}`;
+        const capturedRows: Array<{ razorpay_payment_id: string; status: string }> = [];
+        const seam = {
+          recordBillingTransaction: async (row: { razorpay_payment_id: string; status: string }) => {
+            capturedRows.push(row);
+            return { error: null };
+          },
+        };
+
+        // Delivery 1: subscription.charged — carries BOTH subscription.entity
+        // and payment.entity for the real charge.
+        const chargedBody = JSON.stringify({
+          event: 'subscription.charged',
+          payload: {
+            subscription: { entity: { id: subId } },
+            payment: { entity: { id: paymentId, amount: 900, currency: 'USD', status: 'captured', subscription_id: subId } },
+          },
+        });
+        const chargedParsed = parseWebhookEvent(chargedBody);
+        const subForCharged = await fetchSubscription(chargedParsed.subscriptionId!);
+        await processWebhookEvent(admin, { eventId: `evt_d7_subcharged_${Date.now()}`, eventType: chargedParsed.eventType, subscription: subForCharged, payment: chargedParsed.payment }, seam);
+
+        // Delivery 2: payment.captured — a SEPARATE webhook delivery, same
+        // real payment, no subscription.entity of its own (resolved via
+        // payment.entity.subscription_id, the G1 path).
+        const capturedBody2 = JSON.stringify({
+          event: 'payment.captured',
+          payload: { payment: { entity: { id: paymentId, amount: 900, currency: 'USD', status: 'captured', subscription_id: subId } } },
+        });
+        const captured2Parsed = parseWebhookEvent(capturedBody2);
+        const subForCaptured = await fetchSubscription(captured2Parsed.subscriptionId!);
+        await processWebhookEvent(admin, { eventId: `evt_d7_paymentcaptured_${Date.now()}`, eventType: captured2Parsed.eventType, subscription: subForCaptured, payment: captured2Parsed.payment }, seam);
+
+        assert(
+          capturedRows.length === 2 &&
+            capturedRows[0].razorpay_payment_id === paymentId &&
+            capturedRows[1].razorpay_payment_id === paymentId &&
+            capturedRows[0].status === 'captured' &&
+            capturedRows[1].status === 'captured',
+          'both deliveries construct a row with the IDENTICAL composite key (same payment id, same status "captured") — once migration 043 is applied, the second upsert lands on the SAME row instead of creating a duplicate, fixing the double-count the event-id-keyed design (first round) had introduced',
+          capturedRows
+        );
+      }
+
+      console.log('\nD8: a delivery with no X-Razorpay-Event-Id header no longer risks a guaranteed ledger-insert failure (2026-11-06 FRESH review fix)');
+      {
+        const rawBody = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: `pay_d8_no_header_${Date.now()}`, amount: 900, currency: 'USD', status: 'captured', subscription_id: subId } } } });
+        const { eventType, subscriptionId, payment } = parseWebhookEvent(rawBody);
+        const subscription = await fetchSubscription(subscriptionId!);
+        const box: { value: { razorpay_event_id: string | null } | null } = { value: null };
+        const result = await processWebhookEvent(
+          admin,
+          { eventId: null, eventType, subscription, payment }, // simulates a delivery with no X-Razorpay-Event-Id header
+          { recordBillingTransaction: async (row) => { box.value = row as { razorpay_event_id: string | null }; return { error: null }; } }
+        );
+        assert(result.status === 200, 'a header-less delivery still returns 200', result);
+        assert(box.value !== null && box.value.razorpay_event_id === null, 'the ledger row is still constructed and written with razorpay_event_id: null — the first-round fix made this column NOT NULL, which would have guaranteed-failed this exact case; it is a plain nullable audit column now', box.value);
       }
 
       console.log('\nD4: missing/malformed association never produces an incorrectly-attributed row');

@@ -225,7 +225,17 @@ function run() {
     const columnList = createTableMatch ? createTableMatch[0] : migrationSql;
     assert(!/razorpay_order_id\s+TEXT/.test(columnList), 'migration 043\'s CREATE TABLE no longer defines a razorpay_order_id column — nothing in this PR populates it, so it was removed rather than shipped as a silently-NULL column', columnList);
     assert(!/\bcountry\s+TEXT/.test(columnList), 'migration 043\'s CREATE TABLE no longer defines a bare country column — same reasoning as razorpay_order_id', columnList);
-    assert(/razorpay_event_id\s+TEXT\s+NOT NULL\s+UNIQUE/.test(migrationSql), 'migration 043 makes razorpay_event_id the NOT NULL UNIQUE idempotency key (requirement #5), not razorpay_payment_id');
+
+    // 2026-11-06 FRESH review fix: uniqueness is the COMPOSITE
+    // (razorpay_payment_id, status), not razorpay_event_id alone — keying on
+    // event id let a single real capture (reported on two separate
+    // deliveries: subscription.charged AND payment.captured) write two rows
+    // for the same payment. The composite key collapses both onto one row
+    // (same payment id, same status) while a later status transition (e.g.
+    // a refund) is still a distinct row, preserving the original fix's
+    // intent without the double-count.
+    assert(/UNIQUE\s*\(\s*razorpay_payment_id\s*,\s*status\s*\)/.test(columnList), 'migration 043\'s CREATE TABLE has a composite UNIQUE(razorpay_payment_id, status) constraint, not razorpay_event_id alone', columnList);
+    assert(!/razorpay_event_id\s+TEXT\s+NOT NULL/.test(columnList), 'razorpay_event_id is a plain nullable audit column now, not a NOT NULL constraint — a delivery with no X-Razorpay-Event-Id header no longer risks a guaranteed insert failure', columnList);
   }
 
   console.log(`\n${passed} passed, ${failed} failed.`);

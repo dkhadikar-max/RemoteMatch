@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { activePlanIds } from './billing/currency-config';
+import { activePlanIds, validPlanId } from './billing/currency-config';
 
 /**
  * Razorpay Subscriptions — server-only helpers for RemoteMatch Pro
@@ -20,7 +20,14 @@ import { activePlanIds } from './billing/currency-config';
 
 const keyId = process.env.RAZORPAY_KEY_ID;
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
-const planId = process.env.RAZORPAY_PRO_PLAN_ID;
+// Trimmed (2026-11-06 fresh-review fix): previously compared the raw,
+// untrimmed env value against 'plan_' directly, which could disagree with
+// currency-config.ts's validPlanId() (which does trim) for the exact same
+// env var on whitespace — the two files' "is this plan id well-formed"
+// checks had diverged. validPlanId() is now the single source of truth for
+// that check; planId itself stays available (trimmed) as the default plan id
+// createSubscription falls back to.
+const planId = process.env.RAZORPAY_PRO_PLAN_ID?.trim();
 const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
 const API_BASE = 'https://api.razorpay.com/v1';
@@ -30,8 +37,7 @@ export const isRazorpayConfigured = Boolean(
     /^rzp_(test|live)_/.test(keyId) &&
     keySecret &&
     keySecret.length > 0 &&
-    planId &&
-    planId.startsWith('plan_')
+    validPlanId(planId)
 );
 
 export const isRazorpayWebhookConfigured = isRazorpayConfigured && Boolean(webhookSecret);
@@ -268,7 +274,26 @@ export function cancelSubscriptionAtCycleEnd(subscriptionId: string): Promise<Ra
  *  rather than fixed the real issue. `activePlanIds()` is now the single
  *  source of truth — it already includes the INR plan id (it scans every
  *  currency in PLAN_ENV_VAR_BY_CURRENCY, INR included) and is historical, so
- *  there is nothing left for a second equality check to add. */
+ *  there is nothing left for a second equality check to add.
+ *
+ *  KNOWN, NOT-FULLY-CLOSED LIMITATION (2026-11-06 fresh review finding,
+ *  named rather than papered over): `activePlanIds()` is historical only
+ *  within ONE process's lifetime — it comes back empty after a restart
+ *  (every Railway deploy). A currency rotated out shortly before a redeploy,
+ *  while a subscription on it is still live, would not be recognized here by
+ *  the next process, reopening the double-mandate/dropped-orphan risk this
+ *  function exists to prevent. An earlier attempt at a fix treated a
+ *  well-formed `notes.userId` as sufficient evidence alone — that is UNSOUND
+ *  and was reverted: it also recognized a subscription on an unrelated plan
+ *  on this account as "ours" whenever that subscription happened to carry a
+ *  user-id-shaped `notes.userId` (caught by the existing F3.2 regression
+ *  test — "a payment on a plan that is not ours is never written to the
+ *  ledger" — which started failing). `activePlanIds()` is therefore kept as
+ *  the SOLE check; the restart gap stays open. The real fix needs a durable
+ *  (plan_id → currency, is-ours) record outside process memory — e.g. in the
+ *  database, written at subscription-creation time — which is a schema
+ *  change deliberately left for a separate, future pass rather than rushed
+ *  here. */
 export function isProPlanSubscription(sub: RazorpaySubscription): boolean {
   return isRazorpayConfigured && activePlanIds().has(sub.plan_id);
 }

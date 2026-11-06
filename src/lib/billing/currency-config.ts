@@ -61,9 +61,20 @@ export interface PlanResolution {
  *  so a malformed non-INR value (placeholder text, a key id pasted into the
  *  wrong var) passed `isCurrencyActive` and only failed later at the live
  *  Razorpay API call instead of being treated as "not configured" up front. */
-function validPlanId(raw: string | undefined): string | null {
+export function validPlanId(raw: string | undefined): string | null {
   const trimmed = raw?.trim();
   return trimmed && trimmed.startsWith('plan_') ? trimmed : null;
+}
+
+/** The one place that turns a currency into "its currently configured plan
+ *  id, if validly formatted, else null" — `isCurrencyActive`,
+ *  `observeCurrentConfig` and `resolvePlan` all share this instead of each
+ *  re-deriving "look up the env var, then validate it" independently
+ *  (2026-11-06 fresh-review fix: those three had already started to drift —
+ *  this is the single source every one of them reads through now). */
+function configuredPlanId(currency: string): string | null {
+  const envVar = PLAN_ENV_VAR_BY_CURRENCY[currency.toUpperCase()];
+  return envVar ? validPlanId(process.env[envVar]) : null;
 }
 
 /** True only when this currency has a real, validly-formatted Plan id
@@ -73,8 +84,7 @@ function validPlanId(raw: string | undefined): string | null {
  *  whether a currency may be used for a NEW subscription, so it must always
  *  reflect the current environment, nothing cached. */
 export function isCurrencyActive(currency: string): boolean {
-  const envVar = PLAN_ENV_VAR_BY_CURRENCY[currency.toUpperCase()];
-  return envVar !== undefined && validPlanId(process.env[envVar]) !== null;
+  return configuredPlanId(currency) !== null;
 }
 
 export function activeCurrencies(): string[] {
@@ -104,12 +114,31 @@ export function activeCurrencies(): string[] {
  * — whether a currency may be offered for a NEW subscription is a live
  * question; whether an EXISTING subscription's plan id is still recognized
  * as ours is a historical one. Conflating the two is what caused the bug.
+ *
+ * KNOWN, NOT-FULLY-CLOSED LIMITATION (named, not silently left open, per the
+ * 2026-11-06 fresh review): this Map is per-process memory, so it is empty
+ * again after every restart — on Railway, that's every deploy. A currency
+ * rotated out shortly before a redeploy, while a subscription on it is still
+ * live, would not be remembered by the next process, so `isProPlanSubscription`
+ * (razorpay.ts) and `currencyForPlanId` could both briefly stop recognizing
+ * it — the double-mandate / dropped-orphan / wrong-fallback-price risks this
+ * fix otherwise closes. An earlier attempt patched `isProPlanSubscription`
+ * with a `notes.userId`-presence fallback (reasoning: Razorpay persists
+ * notes forever, set only by this server); that was UNSOUND and was
+ * reverted — it also recognized a subscription on a completely UNRELATED
+ * plan on this account as "ours" whenever it happened to carry a
+ * user-id-shaped `notes.userId`, breaking the existing F3.2 regression test.
+ * `activePlanIds()` therefore remains the SOLE check, and the restart gap
+ * stays genuinely open. The real fix needs a durable (plan_id → currency,
+ * is-ours) record OUTSIDE process memory — e.g. in the database, written at
+ * subscription-creation time — a real schema change deliberately left for a
+ * separate, future pass rather than rushed here with an unsound shortcut.
  */
 const knownPlanIdToCurrency = new Map<string, string>();
 
 function observeCurrentConfig(): void {
-  for (const [currency, envVar] of Object.entries(PLAN_ENV_VAR_BY_CURRENCY)) {
-    const planId = validPlanId(process.env[envVar]);
+  for (const currency of Object.keys(PLAN_ENV_VAR_BY_CURRENCY)) {
+    const planId = configuredPlanId(currency);
     if (planId && !knownPlanIdToCurrency.has(planId)) {
       knownPlanIdToCurrency.set(planId, currency);
     }
@@ -171,13 +200,12 @@ export function currencyForCountry(countryCode: string | null | undefined): stri
  */
 export function resolvePlan(requestedCurrency: string): PlanResolution {
   const wanted = requestedCurrency.toUpperCase();
-  const envVar = PLAN_ENV_VAR_BY_CURRENCY[wanted];
-  const planId = envVar ? validPlanId(process.env[envVar]) : null;
+  const planId = configuredPlanId(wanted);
   if (planId) {
     observeCurrentConfig();
     return { currency: wanted, planId, fellBack: false };
   }
-  const fallbackPlanId = validPlanId(process.env[PLAN_ENV_VAR_BY_CURRENCY[DEFAULT_CURRENCY]]);
+  const fallbackPlanId = configuredPlanId(DEFAULT_CURRENCY);
   if (!fallbackPlanId) {
     throw new Error(`resolvePlan: neither ${wanted} nor the default currency ${DEFAULT_CURRENCY} has a configured plan`);
   }

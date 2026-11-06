@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  cancelSubscriptionAtCycleEnd,
   createSubscription,
   decideSubscriptionReuse,
   fetchSubscription,
@@ -199,23 +200,42 @@ export async function POST(req: NextRequest) {
       }
       if (existing && isProPlanSubscription(existing) && subscriptionUserId(existing) === user.id) {
         const decision = decideSubscriptionReuse(existing, resolvedPlanId);
-        if (decision === 'reuse_unpaid') {
-          // F1 fix: report THIS subscription's real currency, derived from
-          // its own plan_id — never the current request's currency hint
-          // (which is guaranteed to match here anyway, since decision ===
-          // 'reuse_unpaid' only when existing.plan_id === resolvedPlanId).
-          return checkoutFor(existing.id, currencyForPlanId(existing.plan_id) ?? DEFAULT_CURRENCY);
+        // Exhaustive switch (2026-11-06 fresh-review fix): a future 4th
+        // SubscriptionReuseAction value is now a compile error here instead
+        // of silently falling through to 'replace' (create a new
+        // subscription) with no warning.
+        switch (decision) {
+          case 'reuse_unpaid':
+            // F1 fix: report THIS subscription's real currency, derived from
+            // its own plan_id — never the current request's currency hint
+            // (which is guaranteed to match here anyway, since decision ===
+            // 'reuse_unpaid' only when existing.plan_id === resolvedPlanId).
+            return checkoutFor(existing.id, currencyForPlanId(existing.plan_id) ?? DEFAULT_CURRENCY);
+          case 'blocked_live_mandate':
+            return NextResponse.json(
+              { error: 'Your payment is being confirmed. Please refresh in a minute.' },
+              { status: 409 }
+            );
+          case 'replace':
+            // Either a halted/cancelled/completed/expired/paused
+            // subscription, OR an unpaid ('created') one in a DIFFERENT
+            // currency than this request asked for (requirement #1) — either
+            // way, fall through and create a fresh one in the currency just
+            // resolved. Best-effort, non-blocking cancel of the stale one
+            // first (2026-11-06 fresh-review fix) — it would otherwise be
+            // silently orphaned at Razorpay forever; a failure here (e.g. it
+            // already has no cycle to cancel) never blocks checkout.
+            try {
+              await cancelSubscriptionAtCycleEnd(existing.id);
+            } catch (err) {
+              console.error('[razorpay] could not cancel stale replaced subscription (non-fatal)', existing.id, (err as Error).message);
+            }
+            break;
+          default: {
+            const _exhaustive: never = decision;
+            throw new Error(`decideSubscriptionReuse: unhandled decision ${_exhaustive}`);
+          }
         }
-        if (decision === 'blocked_live_mandate') {
-          return NextResponse.json(
-            { error: 'Your payment is being confirmed. Please refresh in a minute.' },
-            { status: 409 }
-          );
-        }
-        // 'replace': either a halted/cancelled/completed/expired/paused
-        // subscription, OR an unpaid ('created') one in a DIFFERENT currency
-        // than this request asked for (requirement #1) — either way, fall
-        // through and create a fresh one in the currency just resolved.
       }
     }
 
