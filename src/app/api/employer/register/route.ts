@@ -175,19 +175,37 @@ export async function POST(req: NextRequest) {
     // instead of dead-ending. A domain already owned by someone ELSE still
     // gets the plain conflict, with no information about who owns it.
     if (rpcError.code === '23505') {
-      const { data: existing } = await admin
+      // Both lookups' own errors are checked (2026-11-06 review, found
+      // during this same pass's re-verification): a transient DB error on
+      // EITHER lookup must not silently fall through to the generic 409 —
+      // that would wrongly tell a caller "this domain is taken" when a
+      // read failure, not a real ownership mismatch, is why recovery
+      // couldn't be confirmed. Logged and reported as a real 500 instead.
+      const { data: existing, error: existingErr } = await admin
         .from('companies')
         .select('id, verification_status')
         .eq('official_domain', officialDomain)
         .maybeSingle();
+      if (existingErr) {
+        console.error('[employer/register] lookup for retry-recovery failed after a 23505 on companies', {
+          officialDomain, error: existingErr.message,
+        });
+        return NextResponse.json({ error: 'Could not verify registration status for this domain.' }, { status: 500 });
+      }
       if (existing) {
-        const { data: existingMembership } = await admin
+        const { data: existingMembership, error: membershipErr } = await admin
           .from('company_members')
           .select('id')
           .eq('company_id', existing.id)
           .eq('profile_id', user.id)
           .eq('status', 'active')
           .maybeSingle();
+        if (membershipErr) {
+          console.error('[employer/register] lookup for retry-recovery failed after a 23505 on company_members', {
+            companyId: existing.id, error: membershipErr.message,
+          });
+          return NextResponse.json({ error: 'Could not verify registration status for this domain.' }, { status: 500 });
+        }
         if (existingMembership) {
           return NextResponse.json(
             { companyId: existing.id, verificationStatus: existing.verification_status, alreadyRegistered: true },
