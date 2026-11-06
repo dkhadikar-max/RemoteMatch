@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchSubscription, isRazorpayWebhookConfigured, verifyWebhookSignature } from '@/lib/razorpay';
 import { processWebhookEvent } from '@/lib/razorpay-webhook-apply';
+import { parseWebhookEvent } from '@/lib/razorpay-webhook-parse';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 
 /**
@@ -51,14 +52,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 });
   }
 
-  let event: { event?: string; payload?: { subscription?: { entity?: { id?: string } } } };
+  // Parsing — including the G1 fix (2026-11-05): resolving the subscription
+  // id from EITHER `payload.subscription.entity.id` (subscription.* events)
+  // OR `payload.payment.entity.subscription_id` (payment.failed,
+  // payment.captured, refund.created, etc. — separate top-level event types
+  // that carry a payment but no subscription entity of their own), never
+  // gated on the event type string, consistent with this route's own stated
+  // principle above ("never from the event type") — lives in
+  // razorpay-webhook-parse.ts, pure and independently unit-tested, so this
+  // exact fix is regression-tested without needing a live server or a real
+  // Razorpay subscription (test/razorpay-webhook-parse-suite.ts). Before this
+  // fix, only the subscription-entity source was read, so a failed renewal
+  // charge or a refund never resolved a subscription at all — entitlement
+  // was unaffected (Razorpay's own subscription.pending/halted events, which
+  // DO carry a subscription entity, still drove that correctly) but
+  // billing_transactions could never record a 'failed' or 'refunded' row,
+  // despite the schema explicitly supporting both.
+  let parsed: ReturnType<typeof parseWebhookEvent>;
   try {
-    event = JSON.parse(rawBody);
+    parsed = parseWebhookEvent(rawBody);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-
-  const eventType = typeof event.event === 'string' ? event.event : '';
+  const { eventType, subscriptionId, payment } = parsed;
   const eventId = req.headers.get('x-razorpay-event-id');
 
   if (eventId) {
@@ -71,8 +87,7 @@ export async function POST(req: NextRequest) {
   }
 
   let subscription = null;
-  const subscriptionId = event.payload?.subscription?.entity?.id;
-  if (eventType.startsWith('subscription.') && typeof subscriptionId === 'string') {
+  if (typeof subscriptionId === 'string') {
     try {
       subscription = await fetchSubscription(subscriptionId);
     } catch {
@@ -80,10 +95,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
     }
   }
-  // Any other event type carries no subscription: acknowledged and recorded.
+  // An event with no subscription id from either source carries no
+  // subscription: acknowledged and recorded.
 
   // Apply, then record the event only if the apply succeeded; any non-2xx
   // leaves it unrecorded so Razorpay redelivers.
-  const result = await processWebhookEvent(admin, { eventId, eventType, subscription });
+  const result = await processWebhookEvent(admin, { eventId, eventType, subscription, payment });
   return NextResponse.json(result.body, { status: result.status });
 }

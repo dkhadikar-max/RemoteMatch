@@ -21,6 +21,7 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { hasActivePurchaseGrant } from '@/lib/billing/purchase-access';
+import { currencyForPlanId, DEFAULT_CURRENCY, planDescription, resolvePlan } from '@/lib/billing/currency-config';
 
 /** How long a request waits for a concurrent request's claim to finish before giving up. */
 const CLAIM_WAIT_MS = 6_000;
@@ -91,8 +92,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, isMock: true });
   }
 
-  const checkoutFor = (subscriptionId: string) =>
-    NextResponse.json({ success: true, subscriptionId, keyId: razorpayKeyId, email: user.email ?? null });
+  // Currency is a ROUTING hint only, never a price: the client may suggest
+  // one (e.g. from browser locale, once a country/currency picker exists —
+  // not built yet, see docs/international-payments-audit-plan-2026-10-31.md).
+  // resolvePlan() is the sole authority on what's actually chargeable — it
+  // only ever returns a plan id this server has configured itself (via env
+  // vars), and silently falls back to INR for anything else. The body is
+  // otherwise unused and ignored; a malformed/absent body is not an error.
+  const requestedCurrency = await req
+    .json()
+    .then((body) => (typeof body?.currency === 'string' ? body.currency : DEFAULT_CURRENCY))
+    .catch(() => DEFAULT_CURRENCY);
+  const { planId: resolvedPlanId, currency: resolvedCurrency } = resolvePlan(requestedCurrency);
+
+  // F1 (2026-11-05 audit): `currency` here MUST reflect the currency of
+  // whatever subscription is actually being checked out — never just the
+  // latest request's hint. A reused stored subscription (below) may be on a
+  // different plan than what THIS request asked for (e.g. it was created
+  // under a different currency selection on an earlier, abandoned attempt);
+  // callers reusing one must pass ITS real currency, derived from its own
+  // plan_id via currencyForPlanId, not `resolvedCurrency`.
+  const checkoutFor = (subscriptionId: string, currency: string) =>
+    NextResponse.json({
+      success: true,
+      subscriptionId,
+      keyId: razorpayKeyId,
+      email: user.email ?? null,
+      currency,
+      description: planDescription(currency),
+    });
   const alreadyStarting = () =>
     NextResponse.json({ error: 'Checkout is already starting. Please try again in a moment.' }, { status: 409 });
 
@@ -148,7 +176,12 @@ export async function POST(req: NextRequest) {
         }
       }
       if (existing && isProPlanSubscription(existing) && subscriptionUserId(existing) === user.id) {
-        if (existing.status === 'created') return checkoutFor(existing.id);
+        if (existing.status === 'created') {
+          // F1 fix: report THIS subscription's real currency, derived from
+          // its own plan_id — never the current request's currency hint,
+          // which may differ from what it was originally created under.
+          return checkoutFor(existing.id, currencyForPlanId(existing.plan_id) ?? DEFAULT_CURRENCY);
+        }
         if (hasLiveMandate(existing.status)) {
           return NextResponse.json(
             { error: 'Your payment is being confirmed. Please refresh in a minute.' },
@@ -167,7 +200,7 @@ export async function POST(req: NextRequest) {
 
     let subscription;
     try {
-      subscription = await createSubscription({ userId: user.id });
+      subscription = await createSubscription({ userId: user.id, planId: resolvedPlanId });
     } catch (err) {
       // Recoverable: hand the claim back so the next click can try again.
       await releaseSubscriptionSlot(admin, user.id, marker, profile.razorpay_subscription_status);
@@ -179,7 +212,7 @@ export async function POST(req: NextRequest) {
     // Store the binding before the browser ever sees the id: /verify and the
     // webhook both resolve the user from this column.
     if (await commitSubscriptionSlot(admin, user.id, marker, subscription)) {
-      return checkoutFor(subscription.id);
+      return checkoutFor(subscription.id, resolvedCurrency);
     }
     // Our claim expired and was taken over before we stored. The subscription
     // we created was never shown to the browser, so it cannot be paid; it

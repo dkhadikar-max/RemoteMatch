@@ -109,7 +109,11 @@ export async function startProUpgrade(): Promise<UpgradeResult> {
         key: data.keyId,
         subscription_id: data.subscriptionId,
         name: 'RemoteMatch',
-        description: 'RemoteMatch Pro — ₹499/month',
+        // F2 (2026-11-05 audit): server computes this from the subscription's
+        // actual currency (never hardcoded here) — see planDescription() in
+        // billing/currency-config.ts. Falls back only if an older/unexpected
+        // response shape omits it.
+        description: data.description ?? 'RemoteMatch Pro — monthly subscription',
         prefill: data.email ? { email: data.email } : undefined,
         theme: brandColor ? { color: brandColor } : undefined,
         handler: (resp: RazorpayHandlerResult) => {

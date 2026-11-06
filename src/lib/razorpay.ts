@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { activePlanIds } from './billing/currency-config';
 
 /**
  * Razorpay Subscriptions — server-only helpers for RemoteMatch Pro
@@ -93,6 +94,21 @@ export interface RazorpaySubscription {
   notes: Record<string, string> | [] | null;
 }
 
+/** The subset of Razorpay's Payment entity billing_transactions needs (migration
+ *  043). Present on `payload.payment.entity` for most subscription/payment
+ *  webhook events (subscription.charged, payment.captured, payment.failed,
+ *  etc.) — never fetched separately; whatever the signed webhook body itself
+ *  reports is trusted as-is here, same trust anchor as the rest of this file.
+ *  `amount` is already Razorpay's own integer minor units (paise/cents) —
+ *  never recomputed. `status` values (created/authorized/captured/failed/
+ *  refunded) match billing_transactions' CHECK constraint exactly. */
+export interface RazorpayPaymentEntity {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+}
+
 /**
  * THE entitlement rule — the only place a Razorpay subscription is mapped to
  * a tier; /verify and the webhook both call it. It reads the whole record, not
@@ -181,9 +197,12 @@ async function razorpayRequest<T>(method: 'GET' | 'POST', path: string, body?: u
   return json as T;
 }
 
-export function createSubscription(params: { userId: string }): Promise<RazorpaySubscription> {
+export function createSubscription(params: { userId: string; planId?: string }): Promise<RazorpaySubscription> {
   return razorpayRequest<RazorpaySubscription>('POST', '/subscriptions', {
-    plan_id: planId,
+    // Caller passes a currency-resolved plan id (see resolvePlan in
+    // billing/currency-config.ts) when one is known; defaults to the base
+    // INR plan, same as before currency selection existed.
+    plan_id: params.planId ?? planId,
     total_count: TOTAL_BILLING_CYCLES,
     quantity: 1,
     customer_notify: 1,
@@ -209,9 +228,11 @@ export function cancelSubscriptionAtCycleEnd(subscriptionId: string): Promise<Ra
   });
 }
 
-/** True when the subscription is on the configured Pro plan (not some other plan on the account). */
+/** True when the subscription is on one of OUR configured Pro plans (the base
+ *  INR plan, or any currently-active currency's plan — never some unrelated
+ *  plan on the same Razorpay account). */
 export function isProPlanSubscription(sub: RazorpaySubscription): boolean {
-  return isRazorpayConfigured && sub.plan_id === planId;
+  return isRazorpayConfigured && (sub.plan_id === planId || activePlanIds().has(sub.plan_id));
 }
 
 /** The user id we bound at creation time, or null if absent/malformed. */

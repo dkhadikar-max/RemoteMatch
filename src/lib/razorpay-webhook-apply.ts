@@ -6,6 +6,7 @@ import {
   planTierForSubscription,
   RazorpayApiError,
   subscriptionUserId,
+  type RazorpayPaymentEntity,
   type RazorpaySubscription,
 } from '@/lib/razorpay';
 import { isActiveClaim, writeProfileIfUnchanged } from '@/lib/razorpay-claim';
@@ -37,6 +38,15 @@ export type ApplyOutcome =
   | { kind: 'error' };
 
 type LedgerRow = { event_id: string; event_type: string };
+type BillingTransactionRow = {
+  profile_id: string;
+  razorpay_payment_id: string;
+  razorpay_subscription_id: string;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  razorpay_event_id: string | null;
+};
 
 export interface ApplyDeps {
   fetchSubscription?: (id: string) => Promise<RazorpaySubscription>;
@@ -44,6 +54,12 @@ export interface ApplyDeps {
   beforeWrite?: (path: 'holder' | 'orphan', attempt: number) => Promise<void>;
   /** Writes a ledger row idempotently (existing row = success). Overridable so tests can force a failure. */
   recordLedgerRow?: (row: LedgerRow) => Promise<{ error: unknown }>;
+  /** Writes/updates a billing_transactions row (migration 043), keyed on the
+   *  payment id so redelivery updates status rather than duplicating. Never
+   *  blocks the primary entitlement flow — a failure here is logged, not
+   *  surfaced as a webhook failure (Razorpay must not be made to redeliver
+   *  just because the secondary ledger write failed). Overridable for tests. */
+  recordBillingTransaction?: (row: BillingTransactionRow) => Promise<{ error: unknown }>;
 }
 
 function defaultLedgerWriter(admin: SupabaseClient) {
@@ -51,6 +67,15 @@ function defaultLedgerWriter(admin: SupabaseClient) {
     const { error } = await admin
       .from('razorpay_webhook_events')
       .upsert(row, { onConflict: 'event_id', ignoreDuplicates: true });
+    return { error };
+  };
+}
+
+function defaultBillingTransactionWriter(admin: SupabaseClient) {
+  return async (row: BillingTransactionRow) => {
+    const { error } = await admin
+      .from('billing_transactions')
+      .upsert(row, { onConflict: 'razorpay_payment_id' });
     return { error };
   };
 }
@@ -167,10 +192,20 @@ export async function applySubscriptionToProfiles(
  */
 export async function processWebhookEvent(
   admin: SupabaseClient,
-  event: { eventId: string | null; eventType: string; subscription: RazorpaySubscription | null },
+  event: {
+    eventId: string | null;
+    eventType: string;
+    subscription: RazorpaySubscription | null;
+    /** payload.payment.entity, when the event carries one. Independent of
+     *  `subscription` being applicable — a payment can arrive on an event
+     *  whose subscription apply was 'ignored' (not ours), in which case the
+     *  ownership check below skips the ledger write too. */
+    payment?: RazorpayPaymentEntity | null;
+  },
   deps: ApplyDeps = {}
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const recordLedgerRow = deps.recordLedgerRow ?? defaultLedgerWriter(admin);
+  const recordBillingTransaction = deps.recordBillingTransaction ?? defaultBillingTransactionWriter(admin);
   let reconcile = false;
 
   if (event.subscription) {
@@ -178,6 +213,46 @@ export async function processWebhookEvent(
     if (outcome.kind === 'error') return { status: 500, body: { error: 'Could not apply event' } };
     if (outcome.kind === 'retry_later') return { status: outcome.status, body: { error: outcome.reason } };
     reconcile = outcome.kind === 'reconcile';
+  }
+
+  // billing_transactions (migration 043): best-effort, never blocks or fails
+  // the webhook response — a ledger-write problem must not make Razorpay
+  // redeliver an otherwise-successfully-applied entitlement event. Only
+  // written when the payment is tied to one of OUR Pro plans and bound to a
+  // real profile (notes.userId) — never for an unrelated plan on the account.
+  if (event.payment && event.subscription) {
+    const profileId = subscriptionUserId(event.subscription);
+    if (profileId && isProPlanSubscription(event.subscription)) {
+      const ledgerRow = {
+        profile_id: profileId,
+        razorpay_payment_id: event.payment.id,
+        razorpay_subscription_id: event.subscription.id,
+        amount_minor: event.payment.amount,
+        currency: event.payment.currency,
+        status: event.payment.status,
+        razorpay_event_id: event.eventId,
+      };
+      const { error } = await recordBillingTransaction(ledgerRow);
+      if (error) {
+        // Non-fatal (see above), but must carry everything needed to
+        // reconcile the missing row by hand later: the payment id above all
+        // (that's the actual financial record this failed to capture), plus
+        // enough context to re-derive the row without re-deriving it from
+        // scratch. Webhook redelivery safely retries this same upsert — it's
+        // idempotent on razorpay_payment_id — so a transient failure here
+        // self-heals on the next delivery; this log is for the case it doesn't.
+        console.error('[razorpay][ledger] FAILED to record billing_transactions row (non-fatal to entitlement, but NOT silently treated as success)', {
+          razorpay_payment_id: ledgerRow.razorpay_payment_id,
+          razorpay_subscription_id: ledgerRow.razorpay_subscription_id,
+          profile_id: ledgerRow.profile_id,
+          amount_minor: ledgerRow.amount_minor,
+          currency: ledgerRow.currency,
+          status: ledgerRow.status,
+          razorpay_event_id: ledgerRow.razorpay_event_id,
+          error,
+        });
+      }
+    }
   }
 
   if (event.eventId) {
