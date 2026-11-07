@@ -24,6 +24,8 @@ import {
 } from '@/lib/seo/data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
+import { SITE_URL } from '@/lib/site';
+import { jobHref, jobUrl, findJobByRouteParam } from '@/lib/seo/job-href';
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -47,7 +49,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const job = await getJobById(id);
+  const job = await findJobByRouteParam(id, getJobById);
   if (!job) return {};
 
   const isLive = isJobIndexable(job);
@@ -58,7 +60,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: `${job.title} at ${job.company} (Remote) | RemoteMatch`,
     description: `${job.title} remote opportunity at ${job.company}.${salaryText}${locText} Know your chances before you apply with RemoteMatch.`,
     alternates: {
-      canonical: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+      canonical: jobUrl(job.sourceId),
     },
     robots: isLive
       ? { index: true, follow: true }
@@ -66,7 +68,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     openGraph: {
       title: `${job.title} at ${job.company} — Remote Role`,
       description: job.description.slice(0, 160),
-      url: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+      url: jobUrl(job.sourceId),
       type: 'website',
     },
   };
@@ -74,7 +76,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PublicJobDetailPage({ params }: Props) {
   const { id } = await params;
-  const job = await getJobById(id);
+  const job = await findJobByRouteParam(id, getJobById);
   if (!job) notFound();
 
   const isLive = isJobIndexable(job);
@@ -107,18 +109,18 @@ export default async function PublicJobDetailPage({ params }: Props) {
   });
 
   const breadcrumbItems = [
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
   ];
   if (matchedCategory) {
     breadcrumbItems.push({
       name: matchedCategory.title,
-      url: `https://remotematch.com/remote-jobs/${matchedCategory.slug}`,
+      url: `${SITE_URL}/remote-jobs/${matchedCategory.slug}`,
     });
   }
   breadcrumbItems.push({
     name: job.title,
-    url: `https://remotematch.com/remote-jobs/view/${job.sourceId}`,
+    url: jobUrl(job.sourceId),
   });
 
   const breadcrumbsSchema = buildBreadcrumbSchema(breadcrumbItems);
@@ -347,7 +349,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
             {relatedJobs.map((related) => (
               <Link
                 key={related.sourceId}
-                href={`/remote-jobs/view/${related.sourceId}`}
+                href={jobHref(related.sourceId)}
                 className="soft-card p-4 hover:shadow-sm transition-all group block border border-[var(--line)] bg-[var(--surface)]"
               >
                 <span className="text-xs sm:text-sm text-[var(--muted)] block">{related.company}</span>

@@ -311,10 +311,10 @@ async function section1Planner() {
   assert(lpOff.expireIds.join() === 'b2' && lpOff.unobservable === 0, 'rule L.7: without a scope gate (no fetch evidence) complete coverage behaves exactly as before');
 
   const wmA = windowMetrics({ coverage: 'windowed', floorMs: NOW - 10.68 * H, newestMs: NOW - 3.21 * H }, NOW);
-  assert(wmA.windowHours === 10.68 && wmA.newestAgeHours === 3.21 && wmA.gapMarginHours === 1.47 && wmA.gapRisk === false, `D-N5: Cycle-2-shaped window (10.68h wide, newest 3.21h old) => margin +1.47h, no gap risk (${JSON.stringify(wmA)})`);
-  const wmB = windowMetrics({ coverage: 'windowed', floorMs: NOW - 7.47 * H, newestMs: NOW - 3 * H }, NOW);
-  assert(wmB.gapMarginHours === -1.53 && wmB.gapRisk === true, `D-N5: a 7.47h window with 3h publication lag cannot cover a 6h cadence => gapRisk (${JSON.stringify(wmB)})`);
-  assert(windowMetrics({ coverage: 'windowed', floorMs: NOW - 8 * H }, NOW).gapMarginHours === 2 && windowMetrics({ coverage: 'windowed', floorMs: NOW - 8 * H }, NOW).newestAgeHours === null, 'D-N5: with no newest evidence the lag is assumed 0 and newestAgeHours is reported as null, not hidden');
+  assert(wmA.windowHours === 10.68 && wmA.newestAgeHours === 3.21 && wmA.gapMarginHours === 4.47 && wmA.gapRisk === false, `D-N5: Cycle-2-shaped window (10.68h wide, newest 3.21h old) => margin +4.47h at the 3h cadence (10.68 - 3.21 - 3), no gap risk (${JSON.stringify(wmA)})`);
+  const wmB = windowMetrics({ coverage: 'windowed', floorMs: NOW - 5.9 * H, newestMs: NOW - 3 * H }, NOW);
+  assert(wmB.gapMarginHours === -0.1 && wmB.gapRisk === true, `D-N5: a 5.9h window with 3h publication lag cannot cover a 3h cadence => gapRisk (${JSON.stringify(wmB)})`);
+  assert(windowMetrics({ coverage: 'windowed', floorMs: NOW - 8 * H }, NOW).gapMarginHours === 5 && windowMetrics({ coverage: 'windowed', floorMs: NOW - 8 * H }, NOW).newestAgeHours === null, 'D-N5: with no newest evidence the lag is assumed 0 and newestAgeHours is reported as null, not hidden');
   const wmN = [windowMetrics({ coverage: 'complete' }, NOW), windowMetrics({ coverage: 'exempt' }, NOW), windowMetrics({ coverage: 'windowed', floorMs: null }, NOW)];
   assert(wmN.every((m) => m.windowHours === null && m.gapMarginHours === null && m.gapRisk === false), 'D-N5: complete / exempt / no-date-evidence sources report nulls and no gap risk');
 
@@ -882,12 +882,12 @@ async function section3RealInfra() {
       const ago = (h: number) => new Date(Date.now() - h * H).toISOString();
       const mk = (id: string, h: number) => raw({ sourceId: `lc1b-gap-${id}`, publicationDate: ago(h) });
       const near = (x: number | null, y: number, tol = 0.1) => x !== null && Math.abs(x - y) < tol;
-      const narrow = (await planCatalogSyncReadOnly(fetchOf({ [SRC_R]: [mk('a', 2), mk('b', 5)] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' })).bySource[SRC_R];
-      assert(near(narrow.windowHours, 5) && near(narrow.newestAgeHours, 2) && near(narrow.gapMarginHours, -3) && narrow.gapRisk === true, `a 5h window with a 2h-old newest posting cannot cover a 6h cadence => gapRisk (${narrow.windowHours}h, newest ${narrow.newestAgeHours}h, margin ${narrow.gapMarginHours}h)`);
+      const narrow = (await planCatalogSyncReadOnly(fetchOf({ [SRC_R]: [mk('a', 2), mk('b', 4)] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' })).bySource[SRC_R];
+      assert(near(narrow.windowHours, 4) && near(narrow.newestAgeHours, 2) && near(narrow.gapMarginHours, -1) && narrow.gapRisk === true, `a 4h window with a 2h-old newest posting cannot cover a 3h cadence => gapRisk (${narrow.windowHours}h, newest ${narrow.newestAgeHours}h, margin ${narrow.gapMarginHours}h)`);
       const widePlan = await planCatalogSyncReadOnly(fetchOf({ [SRC_R]: [mk('c', 1), mk('d', 40)] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' });
       const wide = widePlan.bySource[SRC_R];
-      assert(near(wide.windowHours, 40) && near(wide.gapMarginHours, 33) && wide.gapRisk === false && !widePlan.gapRiskSources.includes(SRC_R), 'a 40h window => margin +33h, no gap risk, and the source is not in gapRiskSources');
-      const narrowPlan = await planCatalogSyncReadOnly(fetchOf({ [SRC_R]: [mk('e', 2), mk('f', 5)] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' });
+      assert(near(wide.windowHours, 40) && near(wide.gapMarginHours, 36) && wide.gapRisk === false && !widePlan.gapRiskSources.includes(SRC_R), 'a 40h window => margin +36h (40 - 1 - 3), no gap risk, and the source is not in gapRiskSources');
+      const narrowPlan = await planCatalogSyncReadOnly(fetchOf({ [SRC_R]: [mk('e', 2), mk('f', 4)] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' });
       assert(narrowPlan.gapRiskSources.includes(SRC_R), 'gapRiskSources lists the narrow-window source at report level');
       const nonWin = await planCatalogSyncReadOnly(fetchOf({ [SRC_C]: [raw({ sourceId: 'lc1b-gap-cur', source: SRC_C as any })], [SRC_W]: [raw({ sourceId: 'lc1b-gap-wwr', source: SRC_W as any })] }), { absenceScanSourceIdPrefix: 'lc1b-gap-' });
       assert([SRC_C, SRC_W].every((s) => nonWin.bySource[s].windowHours === null && nonWin.bySource[s].gapRisk === false), 'complete (curated) and exempt (WWR) sources report windowHours null and gapRisk false');

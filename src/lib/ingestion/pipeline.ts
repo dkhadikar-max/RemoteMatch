@@ -111,8 +111,45 @@ export function classifyRemoteEligibility(locationStr?: string, tags: string[] =
     return { remoteType: 'Contractor only', eligibleCountries: [] };
   }
 
+  // 8. US remote (additive; reached only when nothing above matched). A listing that says "remote" and names the
+  // US in a form conditions 1-7 do not know ("Remote U.S.", "US-Remote", "Remote (US)", "Remote, US"). Without
+  // this it fell through to the 'Worldwide' default below, which is wrong for a US-only job. The matching of this
+  // rule is intentionally duplicated in classifyExplicitRemoteScope() (see that function's header: no shared code).
+  if (isUsRemoteForEligibility(locationStr)) {
+    return { remoteType: 'US', eligibleCountries: ['US', 'USA'] };
+  }
+
   // Default to Worldwide if not restricted
   return { remoteType: 'Worldwide', eligibleCountries: [] };
+}
+
+// Any OTHER country or region named anywhere in the string makes a listing multi-country/ambiguous: the US-remote rule
+// below then declines (typing "Remote, Canada; Remote, US" as US would wrongly mark Canadian candidates ineligible).
+// The list is every sovereign country (UN members + observers) plus common aliases and regions; UK names are in it on purpose
+// (UK handling is a separate, later decision). A denylist can only be as complete as its names — test/classifier-us-remote-suite.ts
+// asserts every listed country vetoes. Duplicated in
+// isUsRemoteForScope() by design — keep the two in sync (test/classifier-us-remote-suite.ts asserts they agree).
+const ELIGIBILITY_OTHER_COUNTRY_OR_REGION =
+  /\b(central african republic|united arab emirates|republic of ireland|dominican republic|equatorial guinea|marshall islands|northern ireland|papua new guinea|ceska republika|north macedonia|solomon islands|czech republic|southeast asia|united kingdom|cote d ivoire|great britain|latin america|liechtenstein|saint vincent|burkina faso|magyarorszag|sierra leone|south africa|turkmenistan|afghanistan|deutschland|el salvador|ivory coast|middle east|netherlands|new zealand|north korea|philippines|royaume uni|saint kitts|saint lucia|scandinavia|south korea|south sudan|switzerland|azerbaijan|bangladesh|cape verde|costa rica|kazakhstan|kyrgyzstan|luxembourg|madagascar|mauritania|micronesia|montenegro|mozambique|osterreich|san marino|seychelles|south asia|tajikistan|uzbekistan|allemagne|argentina|australia|caribbean|guatemala|hong kong|indonesia|lithuania|macedonia|mauritius|nederland|nicaragua|palestine|singapore|slovenija|slovensko|sri lanka|swaziland|venezuela|worldwide|americas|anywhere|barbados|belgique|botswana|bulgaria|cambodia|cameroon|colombia|djibouti|dominica|emirates|eswatini|ethiopia|honduras|hrvatska|kiribati|malaysia|maldives|mongolia|pakistan|paraguay|portugal|principe|sao tome|scotland|slovakia|slovenia|suriname|svizzera|tanzania|thailand|trinidad|tuerkiye|viet nam|zimbabwe|albania|algeria|andorra|antigua|armenia|austria|bahamas|bahrain|balkans|baltics|belarus|belgium|benelux|bolivia|britain|burundi|comoros|croatia|curacao|czechia|danmark|denmark|ecuador|england|eritrea|espagne|estonia|finland|georgia|germany|grenada|holland|hungary|iceland|ireland|jamaica|latvija|lebanon|lesotho|liberia|lietuva|mexique|moldova|morocco|myanmar|namibia|nigeria|nordics|oceania|reunion|romania|rossiya|schweiz|senegal|somalia|sverige|tunisia|turkiye|türkiye|ukraina|ukraine|uruguay|vanuatu|vatican|vietnam|africa|angola|belgie|belize|bhutan|bosnia|brasil|brazil|bresil|brunei|canada|cote d|cyprus|ellada|espana|france|gambia|global|greece|guinea|guyana|israel|italia|italie|jordan|kosovo|kuwait|latvia|malawi|mexico|monaco|norway|panama|poland|polska|russia|rwanda|serbia|srbija|suisse|sweden|taiwan|turkey|tuvalu|uganda|zambia|benin|burma|cesko|chile|china|chine|congo|czech|dubai|eesti|egypt|gabon|ghana|haiti|india|italy|japan|japon|kenya|korea|latam|libya|malta|nauru|nepal|niger|norge|palau|qatar|samoa|saudi|spain|sudan|suomi|syria|timor|tonga|wales|yemen|apac|asia|chad|cuba|dach|emea|fiji|inde|iran|iraq|laos|mali|mena|oman|peru|togo|anz|cis|eea|gcc|ksa|uae|eu)\b/;
+
+/**
+ * True only for a REMOTE listing that names the US and nothing else: the location (tags are deliberately NOT read —
+ * department names would cause accidents) has no other country/region, and some `;`/`|`/`•`-separated segment has a
+ * remote marker, no onsite/in-office marker, and a US token ("US", "U.S.", "U.S.A.").
+ */
+function isUsRemoteForEligibility(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!loc.trim()) return false;
+  // Checked on the original AND on an accent-stripped copy (NFKD + combining marks removed), so "México", "Côte d’Ivoire",
+  // "São Tomé", "Perú" and decomposed forms cannot slip past the ASCII list. Accent stripping does not translate names:
+  // non-English spellings such as "Brasil" or "Deutschland" are explicit aliases in the list.
+  if (ELIGIBILITY_OTHER_COUNTRY_OR_REGION.test(loc) || ELIGIBILITY_OTHER_COUNTRY_OR_REGION.test(loc.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''))) return false;
+  for (const seg of loc.split(/[;|•]/)) {
+    if (!/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(seg)) continue;
+    if (/\b(on-?site|in[- ]office|office[- ]based)\b/.test(seg)) continue;
+    if (/\bu\.s\.(a\.)?|\bus\b/.test(seg)) return true;
+  }
+  return false;
 }
 
 export type ExplicitRemoteScope = 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
@@ -189,10 +226,69 @@ export function classifyExplicitRemoteScope(locationStr?: string, tags: string[]
     return 'explicit_restricted';
   }
 
+  // US remote (additive; mirrors classifyRemoteEligibility() condition 8). Reached only when nothing above matched, so
+  // every string recognised before is unchanged. Duplicated, not shared — see the KNOWN TRADEOFF above.
+  if (isUsRemoteForScope(locationStr)) {
+    return 'explicit_restricted';
+  }
+
   // classifyRemoteEligibility() would default to 'Worldwide' here. This
   // function reports the honest state instead: nothing in the listing
   // text matched any known pattern.
   return 'unknown';
+}
+
+// See ELIGIBILITY_OTHER_COUNTRY_OR_REGION: same list, duplicated on purpose so neither classifier can change the other.
+const SCOPE_OTHER_COUNTRY_OR_REGION =
+  /\b(central african republic|united arab emirates|republic of ireland|dominican republic|equatorial guinea|marshall islands|northern ireland|papua new guinea|ceska republika|north macedonia|solomon islands|czech republic|southeast asia|united kingdom|cote d ivoire|great britain|latin america|liechtenstein|saint vincent|burkina faso|magyarorszag|sierra leone|south africa|turkmenistan|afghanistan|deutschland|el salvador|ivory coast|middle east|netherlands|new zealand|north korea|philippines|royaume uni|saint kitts|saint lucia|scandinavia|south korea|south sudan|switzerland|azerbaijan|bangladesh|cape verde|costa rica|kazakhstan|kyrgyzstan|luxembourg|madagascar|mauritania|micronesia|montenegro|mozambique|osterreich|san marino|seychelles|south asia|tajikistan|uzbekistan|allemagne|argentina|australia|caribbean|guatemala|hong kong|indonesia|lithuania|macedonia|mauritius|nederland|nicaragua|palestine|singapore|slovenija|slovensko|sri lanka|swaziland|venezuela|worldwide|americas|anywhere|barbados|belgique|botswana|bulgaria|cambodia|cameroon|colombia|djibouti|dominica|emirates|eswatini|ethiopia|honduras|hrvatska|kiribati|malaysia|maldives|mongolia|pakistan|paraguay|portugal|principe|sao tome|scotland|slovakia|slovenia|suriname|svizzera|tanzania|thailand|trinidad|tuerkiye|viet nam|zimbabwe|albania|algeria|andorra|antigua|armenia|austria|bahamas|bahrain|balkans|baltics|belarus|belgium|benelux|bolivia|britain|burundi|comoros|croatia|curacao|czechia|danmark|denmark|ecuador|england|eritrea|espagne|estonia|finland|georgia|germany|grenada|holland|hungary|iceland|ireland|jamaica|latvija|lebanon|lesotho|liberia|lietuva|mexique|moldova|morocco|myanmar|namibia|nigeria|nordics|oceania|reunion|romania|rossiya|schweiz|senegal|somalia|sverige|tunisia|turkiye|türkiye|ukraina|ukraine|uruguay|vanuatu|vatican|vietnam|africa|angola|belgie|belize|bhutan|bosnia|brasil|brazil|bresil|brunei|canada|cote d|cyprus|ellada|espana|france|gambia|global|greece|guinea|guyana|israel|italia|italie|jordan|kosovo|kuwait|latvia|malawi|mexico|monaco|norway|panama|poland|polska|russia|rwanda|serbia|srbija|suisse|sweden|taiwan|turkey|tuvalu|uganda|zambia|benin|burma|cesko|chile|china|chine|congo|czech|dubai|eesti|egypt|gabon|ghana|haiti|india|italy|japan|japon|kenya|korea|latam|libya|malta|nauru|nepal|niger|norge|palau|qatar|samoa|saudi|spain|sudan|suomi|syria|timor|tonga|wales|yemen|apac|asia|chad|cuba|dach|emea|fiji|inde|iran|iraq|laos|mali|mena|oman|peru|togo|anz|cis|eea|gcc|ksa|uae|eu)\b/;
+
+/** Same rule as isUsRemoteForEligibility(), duplicated by design. */
+function isUsRemoteForScope(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!loc.trim()) return false;
+  // Checked on the original AND on an accent-stripped copy (NFKD + combining marks removed), so "México", "Côte d’Ivoire",
+  // "São Tomé", "Perú" and decomposed forms cannot slip past the ASCII list. Accent stripping does not translate names:
+  // non-English spellings such as "Brasil" or "Deutschland" are explicit aliases in the list.
+  if (SCOPE_OTHER_COUNTRY_OR_REGION.test(loc) || SCOPE_OTHER_COUNTRY_OR_REGION.test(loc.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''))) return false;
+  for (const seg of loc.split(/[;|•]/)) {
+    if (!/\b(remote|remotely|work[- ]from[- ]home|wfh)\b/.test(seg)) continue;
+    if (/\b(on-?site|in[- ]office|office[- ]based)\b/.test(seg)) continue;
+    if (/\bu\.s\.(a\.)?|\bus\b/.test(seg)) return true;
+  }
+  return false;
+}
+
+/**
+ * C3 ATS gate rule (policy decided by Deep, 2026-10-24: "hybrid option 2"): a Greenhouse/Lever/Ashby listing whose LOCATION
+ * says "hybrid" is admitted only if the same location string ALSO carries an explicit remote marker. So
+ *   "Remote, Hybrid, New York, NY"  -> kept   (the employer flagged remote; Ashby/Lever prefix "Remote" from isRemote)
+ *   "Hybrid" / "Hybrid - Chicago" / "New York, NY (Hybrid)" / "New York, NY, hybrid" -> rejected
+ * Not a classifier: it changes neither remoteType nor explicitRemoteScope (both stay frozen), only whether the gate admits
+ * the job. Location only — department tags are never read. "Remote-friendly" counts as a marker (it contains the word
+ * "remote"), which is the literal reading of the policy. Hybrid spelled in another language is not detected.
+ *
+ * A NEGATED marker does not count: the word "remote" immediately preceded by non / not / no / without / never ("non-remote",
+ * "not remote", "no remote", "without remote"), or immediately followed by less / free ("remote-less", "remote-free") or by
+ * not / n/a / unavailable ("remote not available", "remote n/a"). "Hybrid - Remote-less" therefore has NO marker and is
+ * rejected. Only an ADJACENT negation counts ("Remote, no relocation" keeps its marker), and one genuine marker anywhere is
+ * enough ("Hybrid - not remote; Remote, US" is kept).
+ */
+export function isHybridWithoutRemoteMarker(locationStr?: string): boolean {
+  const loc = (locationStr || '').toLowerCase();
+  if (!/\bhybrid\b/.test(loc)) return false;
+  const marker = /\b(?:remote|remotely|work[- ]from[- ]home|wfh)\b/g; // fresh regex object per call (no shared lastIndex state)
+  let m: RegExpExecArray | null;
+  while ((m = marker.exec(loc)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = loc.slice(Math.max(0, start - 21), start);
+    const after = loc.slice(end, end + 48);
+    const negated =
+      /(?:^|[^a-z0-9_])(?:non|not|no|without|never)[-\s]{0,4}$/.test(before) ||
+      /^(?:[-\s]{0,2}(?:less|free)\b|\s{1,4}(?:is\s+)?(?:not|n\/a|unavailable)\b)/.test(after);
+    if (!negated) return false; // a genuine remote marker: the hybrid listing is admissible
+  }
+  return true; // hybrid, and every remote marker (if any) is negated
 }
 
 // Calculate Quality Score (0-100)
@@ -302,6 +398,7 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     salaryQuality: raw.salaryMin && raw.salaryMin > 0 ? 'verified' : raw.salaryString ? 'estimated' : 'unspecified',
     remotePolicyConfidence: remoteType === 'Worldwide' || eligibleCountries.length > 0 ? 'high' : 'medium',
     explicitRemoteScope,
+    hybridWithoutRemoteMarker: isHybridWithoutRemoteMarker(raw.locationString),
     status: status,
     isActive: status === 'active',
     postedAt: raw.publicationDate,

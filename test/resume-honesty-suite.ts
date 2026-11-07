@@ -19,7 +19,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 (globalThis as unknown as { React: unknown }).React = React;
 
 import { skillAppearsInText, normalizeResumeText } from '../src/lib/resume/skill-evidence';
-import { checkResumeAgainstSkills, sanitizeSkills, MAX_SKILLS_CHECKED, type ResumeCheck } from '../src/lib/resume/resume-check';
+import { checkResumeAgainstSkills, sanitizeSkills, suggestSkillsFromResume, MAX_SKILLS_CHECKED, MAX_SUGGESTED_SKILLS, type ResumeCheck } from '../src/lib/resume/resume-check';
 import { ResumeCheckSummary } from '../src/components/onboarding/resume-check-summary';
 
 let passed = 0;
@@ -117,8 +117,16 @@ assert(propertyOk, '400 random cases: no skill is ever both found and not found;
 
 // ── 3. The review UI ────────────────────────────────────────────────────────
 console.log('\n5. ResumeCheckSummary — rendered output');
-const render = (check: ResumeCheck, skills: string[] = ['React', 'Go']) =>
-  renderToStaticMarkup(React.createElement(ResumeCheckSummary, { check, targetRoles: ['Backend Engineer'], skills, onRemoveSkill: () => {}, onBack: () => {}, onContinue: () => {} }));
+const render = (
+  check: ResumeCheck,
+  skills: string[] = ['React', 'Go'],
+  suggestedSkills: string[] = [],
+  onAddSkill: (skill: string) => void = () => {}
+) =>
+  renderToStaticMarkup(React.createElement(ResumeCheckSummary, {
+    check, targetRoles: ['Backend Engineer'], skills, onRemoveSkill: () => {}, onBack: () => {}, onContinue: () => {},
+    suggestedSkills, onAddSkill,
+  }));
 const okCheck: ResumeCheck = { status: 'ok', characterCount: 500, wordCount: 90, found: ['React'], notFound: ['Go'], skillsChecked: 2 };
 const html = render(okCheck);
 assert(html.includes('How matching works today') && html.includes('based on the skills, target roles and preferences') && html.includes('isn&#x27;t analysed for accuracy or used to score jobs yet'), 'always states that matching uses the declared profile, not the resume');
@@ -180,6 +188,111 @@ if (pr9Files === null) {
 }
 const payloadBlock = onboarding.slice(onboarding.indexOf('const payload: OnboardingPayload = {'), onboarding.indexOf('const clientErrors'));
 assert(['fullName', 'headline', 'employmentTypes', 'targetRoles', 'yearsOfExperience', 'skills:', 'workPreference', 'currentCountry', 'currentTimezone', 'allowedCountries', 'willingTimezones', 'rawResumeText: resumeText'].every((k) => payloadBlock.includes(k)), 'the onboarding payload sent to the server is unchanged (same fields)');
+
+// ── 6. suggestSkillsFromResume — undeclared skill suggestions, never invented ──
+console.log('\n8. suggestSkillsFromResume — undeclared skill suggestions, never invented');
+const vocab = ['React', 'Go', 'C++', 'C#', '.NET', 'Python', 'Kubernetes', 'SQL', 'Java', 'Node.js'];
+assert(suggestSkillsFromResume([], 'asdf qwer', vocab).length === 0, 'gibberish, too-short text → no suggestions (same too_short gate as checkResumeAgainstSkills)');
+assert(suggestSkillsFromResume([], '', vocab).length === 0, 'empty resume text → no suggestions');
+assert(
+  suggestSkillsFromResume(null, sys, vocab).join() === 'C++,Python',
+  'real text with no declared skills surfaces exactly the vocabulary terms it actually contains',
+  JSON.stringify(suggestSkillsFromResume(null, sys, vocab))
+);
+assert(suggestSkillsFromResume(['C++'], sys, vocab).join() === 'Python', 'a skill already declared is never re-suggested');
+assert(
+  suggestSkillsFromResume(['c++', 'PYTHON'], sys, vocab).length === 0,
+  'normalization: declared-skill matching is case-insensitive, same as the rest of this module'
+);
+assert(
+  suggestSkillsFromResume([], 'I enjoy going to work and my google searches. Built in Go and Rust.', ['Go']).join() === 'Go',
+  'false positive excluded: "going"/"google" do not themselves satisfy "Go" — only the real, later occurrence does, and it is still correctly suggested'
+);
+assert(
+  suggestSkillsFromResume([], 'I enjoy going to work and my google searches.', ['Go']).length === 0,
+  '"going"/"google" alone, with no real occurrence of "Go", produce no suggestion at all'
+);
+assert(
+  !suggestSkillsFromResume([], 'Frontend engineer with five years of experience in JavaScript and React.', ['Java']).includes('Java'),
+  'substring collision excluded: "Java" is not suggested from text that only contains "JavaScript" (11 words — above the too_short gate, so this exercises the token-boundary matcher, not the length gate)'
+);
+assert(
+  suggestSkillsFromResume([], 'Backend engineer who has worked with NoSQL and MySQL databases only.', ['SQL']).length === 0,
+  'substring collision excluded: "SQL" is not suggested from "NoSQL"/"MySQL" alone (11 words — above the too_short gate, so this exercises the token-boundary matcher, not the length gate)'
+);
+const exactDup = suggestSkillsFromResume([], sys, ['C++', 'C++', 'Python']);
+assert(exactDup.join() === 'C++,Python', 'an EXACT repeated entry in the candidate vocabulary is deduplicated (checked once, suggested once)', JSON.stringify(exactDup));
+// 'PostgreSQL' / 'Postgres' is a genuinely SYMMETRIC alias pair in ALIASES (skill-evidence.ts: 'postgresql':
+// ['postgres'] AND 'postgres': ['postgresql']) — unlike 'C++'/'cpp', which is one-directional ('c++': ['cpp'] has
+// no reverse entry), so a candidate list containing only 'cpp' would never match "C++" in resume text. With a
+// symmetric pair, both spellings independently satisfy skillAppearsInText against the SAME resume evidence
+// ("PostgreSQL" in the text) — demonstrating the real, documented limitation: the two spellings are not
+// canonicalized into one entry, so both appear verbatim in the result, not merged.
+const pgResume = 'Senior backend engineer with eight years building services on PostgreSQL and Python.';
+const aliasPair = suggestSkillsFromResume([], pgResume, ['PostgreSQL', 'Postgres', 'Python']);
+assert(
+  aliasPair.join() === 'PostgreSQL,Postgres,Python',
+  'documented limitation, not a defect: distinct, genuinely-symmetric alias spellings in the candidate vocabulary are NOT canonicalized to each other, so both independently match the same resume evidence and both appear in the result — the one real caller (onboarding\'s fixed popularSkills list) has no alias pairs at all, so this does not occur in practice',
+  JSON.stringify(aliasPair)
+);
+assert(
+  suggestSkillsFromResume([], 'Python C++ Go SQL Java Kubernetes .NET all in one sentence here for length', vocab).length <= MAX_SUGGESTED_SKILLS,
+  `suggestions are capped at ${MAX_SUGGESTED_SKILLS} even when more are present`
+);
+for (const [label, v] of [['null', null], ['undefined', undefined], ['number', 42], ['object', {}]] as Array<[string, unknown]>) {
+  assert(suggestSkillsFromResume(v, sys, vocab).length >= 0, `${label} declaredSkills never throws`);
+}
+assert(suggestSkillsFromResume([], sys, [] as string[]).length === 0, 'an empty candidate vocabulary yields no suggestions — it can never fall back to inventing one');
+
+console.log('\n9. Resume review UI — Add/Dismiss wiring and guard logic');
+// NOTE: this harness (renderToStaticMarkup, no DOM) cannot simulate a real click — a true event-level test would
+// need jsdom/React Testing Library, a new dependency that is out of scope. What follows instead: (a) static
+// source-text assertions that the exact guard/reducer expressions are present and correctly wired — the same
+// convention already used below for handleRemoveSkill — and (b) before/after render comparisons that model the
+// state transition a real click would cause.
+const htmlWithSuggestions = render(okCheck, ['React', 'Go'], ['Python', 'Kubernetes']);
+assert(
+  htmlWithSuggestions.includes('Mentioned in your resume, not on your profile yet (2)') &&
+    htmlWithSuggestions.includes('aria-label="Add Python to my profile"') &&
+    htmlWithSuggestions.includes('aria-label="Dismiss Python suggestion"') &&
+    htmlWithSuggestions.includes('aria-label="Add Kubernetes to my profile"'),
+  'BEFORE a click: suggested skills render with explicit, individually-labelled Add and Dismiss controls'
+);
+assert(
+  htmlWithSuggestions.includes('aria-label="Keep Go in my profile"') && htmlWithSuggestions.includes('aria-label="Remove Go from my profile"'),
+  'the existing Keep/Remove controls for a declared-but-not-found skill are unaffected by the new section'
+);
+const htmlAlreadyDeclared = render(okCheck, ['React', 'Go', 'Python'], ['Python']);
+assert(
+  !htmlAlreadyDeclared.includes('Mentioned in your resume, not on your profile yet'),
+  'AFTER a click: once "Python" is in the declared skills list, the same suggestedSkills prop no longer offers it — idempotent even if the stale prop still lists it, so Add can never apply the same skill twice'
+);
+const htmlNoSuggestions = render(okCheck, ['React', 'Go'], []);
+assert(!htmlNoSuggestions.includes('Mentioned in your resume'), 'no suggestions → the new section renders nothing extra');
+assert(
+  !render({ status: 'empty', characterCount: 0, wordCount: 0, found: [], notFound: [], skillsChecked: 0 }, ['React'], ['Python']).includes('Mentioned in your resume'),
+  'suggestions are not shown when there is no resume text to have found them in (status "empty")'
+);
+assert(
+  onboarding.includes('const handleAddSuggestedSkill = (skill: string) => {') &&
+    /setSkills\(\(prev\) => \(prev\.some\(\(s\) => s\.toLowerCase\(\) === skill\.toLowerCase\(\)\) \? prev : \[\.\.\.prev, skill\]\)\)/.test(onboarding),
+  'Add is guarded by an exact case-insensitive duplicate check before appending — the same suggestion (or a skill already present) can never be added a second time, by construction of the state update itself, not just by what happens to render afterward'
+);
+assert(
+  summarySrc.includes('const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());') &&
+    /pendingSuggestions = suggestedSkills\.filter\(\s*\(s\) => !current\.has\(s\.toLowerCase\(\)\) && !dismissedSuggestions\.has\(s\.toLowerCase\(\)\)\s*\)/.test(summarySrc),
+  'a suggestion disappears once it is either declared (added) or dismissed — both are checked independently in the same filter'
+);
+assert(
+  /onClick=\{\(\) => setDismissedSuggestions\(\(prev\) => new Set\(prev\)\.add\(s\.toLowerCase\(\)\)\)\}/.test(summarySrc),
+  'Dismiss updates only local dismissedSuggestions state'
+);
+const onAddSkillCallSites = (summarySrc.match(/onAddSkill\(s\)/g) ?? []).length;
+assert(
+  onAddSkillCallSites === 1,
+  'onAddSkill is wired to exactly one control (Add) — Dismiss never calls it, so Dismiss structurally cannot change the candidate\'s declared skills, by construction rather than by observed render output alone',
+  String(onAddSkillCallSites)
+);
 
 console.log('\n' + '='.repeat(78));
 console.log(`RESULT: ${passed} passed, ${failed} failed`);

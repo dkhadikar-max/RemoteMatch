@@ -190,6 +190,10 @@ export interface CanonicalOpportunity {
    *  no location information was found — never conflated with a real
    *  value. */
   explicitRemoteScope?: 'explicit_worldwide' | 'explicit_restricted' | 'unknown';
+  /** INGESTION-ONLY (C3 ATS gate): true when the raw location says "hybrid" and names no remote marker
+   *  (see isHybridWithoutRemoteMarker() in src/lib/ingestion/pipeline.ts). Read only by the gate; never persisted
+   *  (it is not in the catalog's content fields) and never used by matching. */
+  hybridWithoutRemoteMarker?: boolean;
   status: 'active' | 'expired' | 'draft' | 'unknown';
   isActive?: boolean;
   /** Live Supply Activation — drives the existing 410-vs-noindex SEO

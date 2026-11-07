@@ -238,7 +238,9 @@ export function isGateRejected(
   opp: NormalizedOpp,
   policy: Pick<UpsertPolicy, 'atsGated' | 'passesFreshness'>
 ): boolean {
-  return policy.atsGated.has(opp.source) && (!policy.passesFreshness(opp.postedAt) || opp.explicitRemoteScope === 'unknown');
+  // Rejected when: stale, OR scope unknown, OR the location says "hybrid" with no remote marker (isHybridWithoutRemoteMarker,
+  // pipeline.ts — policy "hybrid option 2"). The legacy path in catalog-sync.ts applies the same three conditions.
+  return policy.atsGated.has(opp.source) && (!policy.passesFreshness(opp.postedAt) || opp.explicitRemoteScope === 'unknown' || opp.hybridWithoutRemoteMarker === true);
 }
 
 export function planUpserts(
@@ -411,8 +413,10 @@ export function computeSourceCoverage(
 // Window metrics (spec v2.1 D-N5)
 // ---------------------------------------------------------------------------
 
-/** The run cadence the gap check is measured against (Railway cron: every 6h). */
-export const EXPECTED_CADENCE_HOURS = 6;
+/** The run cadence the gap check is measured against: Railway `remotematch-sync-cron` runs every 3 hours (minute 0, UTC; one POST
+ *  fetches every provider, so the cadence is the same for all sources). Observed run starts are 2h56m-3h04m apart. It was 6 while the
+ *  cron ran every 6h; it only feeds the reported `gapMarginHours` / `gapRisk` — no expiry, retirement or absence decision reads it. */
+export const EXPECTED_CADENCE_HOURS = 3;
 
 export interface WindowMetrics {
   /** age of the oldest fetched posting (the floor) at plan time */
