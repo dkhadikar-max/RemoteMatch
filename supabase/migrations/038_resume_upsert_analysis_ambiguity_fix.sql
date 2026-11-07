@@ -47,7 +47,7 @@
 -- Exact signature (unchanged from 036/037):
 --   public.upsert_resume_analysis(uuid, text, text, text, text, text, jsonb, boolean, text, integer, integer, numeric)
 
-\set ON_ERROR_STOP on
+-- Supabase SQL Editor does not support psql meta-commands; execution errors stop the submitted statement batch.
 BEGIN;
 
 CREATE OR REPLACE FUNCTION public.upsert_resume_analysis(
