@@ -136,7 +136,7 @@ Migration ordering — Pass. SQL security/privileges — Pass. Cron authenticati
    See §6 for the matching rollback-sequencing requirement.
 5. **`RESUME_QUOTA_RECONCILE_SECRET` must be set in the real deployment environment** before the reconciliation route can ever be called successfully (fails closed, same as `INGESTION_SYNC_SECRET`) — not set anywhere outside this local worktree.
 6. **The cron schedule itself (how often, via which scheduler) is an operational choice not fixed by this implementation** — `runResumeQuotaReconciliation()`/the route support `dryRun` specifically so the first few real-world runs can be observed before trusting the live-write path.
-7. **Migration-036 numbering collision** (pre-existing, unrelated to this specific workstream, already known): this worktree's own `036_resume_intelligence.sql` collides in number only with the separate, unmerged international-payments branch's `036_billing_transactions.sql`. **Do not renumber either migration silently to resolve this** — it needs explicit coordination between whichever branch merges first and whichever merges second, decided at merge time, not pre-emptively.
+7. **Migration numbering status (verified 2026-11-07):** PR #48 contains `036_resume_intelligence.sql` and migrations 037–042. PR #50 contains `043_billing_transactions.sql`. There is no migration-number collision between the current PR #48 and PR #50 file lists; no renumbering is required for this pair. Re-check the complete target-branch migration history immediately before either PR merges, because another intervening migration could change this assessment.
 
 ---
 
