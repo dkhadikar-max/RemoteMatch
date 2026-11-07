@@ -9,8 +9,8 @@ import { join } from 'path';
 let passed = 0;
 let failed = 0;
 function assert(condition: boolean, message: string) {
-  if (condition) { passed++; console.log(`  ✓ PASS: ${message}`); }
-  else { failed++; console.error(`  ✗ FAIL: ${message}`); }
+  if (condition) { passed++; console.log('  ✓ PASS: ' + message); }
+  else { failed++; console.error('  ✗ FAIL: ' + message); }
 }
 
 const dir = join(__dirname, '..', 'supabase', 'migrations');
@@ -29,27 +29,27 @@ function main() {
   for (const file of files) {
     const raw = readFileSync(join(dir, file), 'utf8');
     const sql = raw.replace(/--.*$/gm, '');
-    const definitions = [...sql.matchAll(/SECURITY DEFINER\\s+SET search_path\\s*=\\s*([^\\r\\n]+)/gi)];
+    const definitions = [...sql.matchAll(/SECURITY DEFINER\s+SET search_path\s*=\s*([^\r\n]+)/gi)];
     functionCount += definitions.length;
-    assert(definitions.length > 0, `${file}: SECURITY DEFINER definitions found`);
+    assert(definitions.length > 0, file + ': SECURITY DEFINER definitions found');
     for (const definition of definitions) {
       assert(
         definition[1].trim() === 'pg_catalog, public, pg_temp',
-        `${file}: SECURITY DEFINER uses pg_catalog, public, pg_temp in that order`,
+        file + ': SECURITY DEFINER uses pg_catalog, public, pg_temp in that order',
       );
     }
     assert(
-      !/SECURITY DEFINER\\s+SET search_path\\s*=\\s*public(?:\\s|$)/i.test(sql),
-      `${file}: no SECURITY DEFINER function retains SET search_path = public`,
+      !/SECURITY DEFINER\s+SET search_path\s*=\s*public(?:\s|$)/i.test(sql),
+      file + ': no SECURITY DEFINER function retains SET search_path = public',
     );
     const unqualified = new RegExp(
-      `\\\\b(?:FROM|JOIN|INTO|UPDATE|REFERENCES|TABLE|ON)\\\\s+(?:IF\\\\s+NOT\\\\s+EXISTS\\\\s+)?(?:${relations})\\\\b`,
+      '\\b(?:FROM|JOIN|INTO|UPDATE|REFERENCES|TABLE|ON)\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:' + relations + ')\\b',
       'i',
     );
-    assert(!unqualified.test(sql), `${file}: persistent resume/profile relations are schema-qualified`);
+    assert(!unqualified.test(sql), file + ': persistent resume/profile relations are schema-qualified');
   }
-  assert(functionCount === 13, `all 13 SECURITY DEFINER definitions across migrations 036–042 are covered (found ${functionCount})`);
-  console.log(`\\nRESULT: ${passed} passed, ${failed} failed`);
+  assert(functionCount === 13, 'all 13 SECURITY DEFINER definitions across migrations 036–042 are covered (found ' + functionCount + ')');
+  console.log('\nRESULT: ' + passed + ' passed, ' + failed + ' failed');
   process.exitCode = failed === 0 ? 0 : 1;
 }
 main();
