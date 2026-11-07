@@ -51,7 +51,7 @@ CREATE FUNCTION public.reconcile_resume_quota_orphans(p_dry_run boolean DEFAULT 
 RETURNS TABLE (analysis_id UUID, attempt_number INT, reconciled BOOLEAN, detail TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_orphan RECORD;
@@ -72,11 +72,11 @@ BEGIN
   -- lock before any write.
   FOR v_orphan IN
     SELECT r.analysis_id, r.attempt_number, r.usage_date AS reserved_usage_date, ra.profile_id
-    FROM resume_quota_events r
-    JOIN resume_analyses ra ON ra.id = r.analysis_id
+    FROM public.resume_quota_events r
+    JOIN public.resume_analyses ra ON ra.id = r.analysis_id
     WHERE r.event_type = 'reserved'
       AND NOT EXISTS (
-        SELECT 1 FROM resume_quota_events r2
+        SELECT 1 FROM public.resume_quota_events r2
         WHERE r2.analysis_id = r.analysis_id AND r2.attempt_number = r.attempt_number AND r2.event_type = 'refunded'
       )
       AND (
@@ -94,12 +94,12 @@ BEGIN
       -- Lock order: profiles FIRST, then the specific resume_analyses row --
       -- matches reserve_resume_analysis()/refund_resume_analysis() exactly, so
       -- this sweep can never deadlock against a live request on the same row.
-      SELECT true INTO v_profile_found FROM profiles WHERE id = v_orphan.profile_id FOR UPDATE;
+      SELECT true INTO v_profile_found FROM public.profiles WHERE id = v_orphan.profile_id FOR UPDATE;
       IF v_profile_found IS NULL THEN
         RETURN QUERY SELECT v_orphan.analysis_id, v_orphan.attempt_number, false, 'profile_not_found'::text;
         CONTINUE;
       END IF;
-      PERFORM 1 FROM resume_analyses WHERE id = v_orphan.analysis_id FOR UPDATE;
+      PERFORM 1 FROM public.resume_analyses WHERE id = v_orphan.analysis_id FOR UPDATE;
 
       -- Re-verify idempotency under the lock -- time has passed since the
       -- unlocked detection read above, and this is the real safety net: running
@@ -112,7 +112,7 @@ BEGIN
       -- (2026-11-02) by this exact live suite -- and correctly isolated to just this one
       -- candidate by the EXCEPTION WHEN OTHERS block around it, proving that isolation works.
       SELECT EXISTS (
-        SELECT 1 FROM resume_quota_events rqe
+        SELECT 1 FROM public.resume_quota_events rqe
         WHERE rqe.analysis_id = v_orphan.analysis_id AND rqe.attempt_number = v_orphan.attempt_number AND rqe.event_type = 'refunded'
       ) INTO v_already_refunded;
 
@@ -124,10 +124,10 @@ BEGIN
         -- reservation's own usage_date. A no-op UPDATE (0 rows touched) when it
         -- doesn't -- the exact same behavior as refund_resume_analysis()'s own
         -- IF branch, just expressed as a conditional UPDATE instead of an IF.
-        UPDATE profiles SET daily_resume_analyses_count = GREATEST(0, daily_resume_analyses_count - 1)
+        UPDATE public.profiles SET daily_resume_analyses_count = GREATEST(0, daily_resume_analyses_count - 1)
           WHERE id = v_orphan.profile_id AND usage_date = v_orphan.reserved_usage_date;
 
-        INSERT INTO resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
+        INSERT INTO public.resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
           VALUES (v_orphan.analysis_id, v_orphan.attempt_number, 'refunded', v_orphan.reserved_usage_date, 'reconciliation_sweep');
 
         RETURN QUERY SELECT v_orphan.analysis_id, v_orphan.attempt_number, true, 'refunded'::text;
