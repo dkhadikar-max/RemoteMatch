@@ -1,0 +1,38 @@
+name: CI
+
+# This repo has no existing CI (confirmed during PR #51's review: the only
+# check on open PRs is "Supabase Preview", which reports SKIPPED and runs no
+# tests). This workflow is intentionally narrow in scope — it typechecks the
+# whole repo and runs ONE self-contained test suite that needs no external
+# credentials (PGlite, an embedded Postgres — no live Supabase/Razorpay
+# access required, nothing here can touch production or any isolated
+# project). It does not run the rest of test/, most of which expects live
+# credentials this CI runner does not have and was never authorized to
+# receive. Broader CI coverage (the full test/ directory, live-tier gates,
+# per-PR suites for #48/#49/#50) is a separate decision, not made here.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  typecheck-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Swipe-limits suite (self-contained, no external credentials)
+        run: npx tsx test/swipe-limits-rolling-24h-suite.ts
