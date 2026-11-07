@@ -1,0 +1,67 @@
+name: Resume Intelligence PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/resume-intelligence-service]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resume-intelligence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resume-intelligence:
+    name: Resume Intelligence static and application regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Run Resume Intelligence regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          suites=(
+            test/resume-acl-hardening-static-suite.ts
+            test/resume-security-definer-search-path-static-suite.ts
+            test/live-pg/resume-concurrency-live-guards-static-suite.ts
+            test/resume-upsert-ambiguity-fix-static-suite.ts
+            test/resume-pr-b-quota-lifecycle-migration-static-suite.ts
+            test/resume-pr-b-finalize-ownership-migration-static-suite.ts
+            test/resume-pr-b-quota-reconciliation-migration-static-suite.ts
+            test/resume-pr-b-quota-lifecycle-application-suite.ts
+            test/resume-pr-b-quota-reconciliation-application-suite.ts
+            test/resume-pr-b-audit-fixes-static-suite.ts
+            test/resume-pr-b-workstream1-failure-audit-suite.ts
+            test/resume-pr-b-workstream2-entitlement-suite.ts
+            test/resume-pr-b-usage-instrumentation-suite.ts
+            test/resume-intelligence-persistence-suite.ts
+            test/resume-intelligence-rubric-suite.ts
+            test/resume-intelligence-validation-suite.ts
+            test/resume-intelligence-decision-client-suite.ts
+          )
+          for suite in "${suites[@]}"; do
+            echo "::group::${suite}"
+            npx --yes tsx@4.20.6 "${suite}"
+            echo "::endgroup::"
+          done
+
+      - name: Check patch whitespace
+        run: git diff --check

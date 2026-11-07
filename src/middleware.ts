@@ -18,7 +18,10 @@ const isSupabaseConfigured = Boolean(
 //   ONBOARDING_PREFIXES — verified account required, onboarding NOT required
 //                          (this is where an un-onboarded user is sent).
 //   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
-const ONBOARDING_PREFIXES = ['/onboarding'];
+// Resume Intelligence (PR B) joins /onboarding here, not PRODUCT_PREFIXES: it's linked from
+// onboarding's own review step, before onboarding_completed_at is set — requiring completed
+// onboarding would bounce that link straight back to /onboarding.
+const ONBOARDING_PREFIXES = ['/onboarding', '/resume-intelligence'];
 const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings', '/linkedin-jobs'];
 
 // Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
