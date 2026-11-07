@@ -34,7 +34,7 @@ This package covers three new, sequential migrations (040, 041, 042) and their a
 
 **Two defects found and fixed during implementation itself** (not part of the original design):
 1. **NULL-logic hardening**: `<>` against a NULL `p_expected_attempt_number` is SQL-NULL, and PL/pgSQL's `IF` treats NULL as false — silently skipping the rejection and falling through to the write. Added an explicit `IS NULL` guard plus `IS DISTINCT FROM` (NULL-safe) instead of `<>`.
-2. **A real "ambiguous column" (42702) bug, caught live** — the same class of defect migration 038 fixed years... days earlier: `finalize_resume_analysis()`'s own `RETURNS TABLE (id UUID, ...)` makes `id` an implicit PL/pgSQL variable colliding with a bare `id` column reference in its `SELECT` and `UPDATE` statements. Fixed by qualifying both.
+2. **A real "ambiguous column" (42702) bug, caught live** — the same class of defect migration 038 fixed days earlier: `finalize_resume_analysis()`'s own `RETURNS TABLE (id UUID, ...)` makes `id` an implicit PL/pgSQL variable colliding with a bare `id` column reference in its `SELECT` and `UPDATE` statements. Fixed by qualifying both.
 
 `refund_resume_analysis()` required **no change** — its ownership check never depended on current status/attempt_number, so a refund for a superseded attempt keeps working exactly as before.
 
