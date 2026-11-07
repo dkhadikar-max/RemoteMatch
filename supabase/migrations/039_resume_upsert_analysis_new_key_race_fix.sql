@@ -49,7 +49,6 @@
 -- Exact signature (unchanged):
 --   public.upsert_resume_analysis(uuid, text, text, text, text, text, jsonb, boolean, text, integer, integer, numeric)
 
-\set ON_ERROR_STOP on
 BEGIN;
 
 CREATE OR REPLACE FUNCTION public.upsert_resume_analysis(

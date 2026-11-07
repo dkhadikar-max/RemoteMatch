@@ -82,7 +82,10 @@ async function main() {
   assert(!/CREATE TABLE|CREATE INDEX|DROP TABLE|ALTER TABLE/i.test(migration037), 'this migration touches ONLY grants — no schema/table changes, consistent with a least-privilege-only fix');
 
   console.log('\n6. Transactional safety, matching 00-bootstrap.sql\'s own established pattern');
-  assert(/\\set ON_ERROR_STOP on/.test(migration037), 'ON_ERROR_STOP is set');
+  assert(
+    !/^\\set\s+ON_ERROR_STOP\s+on\s*$/im.test(migration037),
+    'no psql-only ON_ERROR_STOP directive — compatible with Supabase SQL Editor'
+  );
   assert(/^BEGIN;/m.test(migration037) && /^COMMIT;/m.test(migration037), 'wrapped in an explicit top-level BEGIN/COMMIT (unlike 036, which relies on psql -1 instead)');
 
   console.log('\n7. A manual DOWN is documented (not automated, but present for operator reference)');

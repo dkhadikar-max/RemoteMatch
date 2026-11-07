@@ -29,7 +29,13 @@ function main() {
   for (const file of files) {
     const raw = readFileSync(join(dir, file), 'utf8');
     const sql = raw.replace(/--.*$/gm, '');
-    const definitions = [...sql.matchAll(/SECURITY DEFINER\s+SET search_path\s*=\s*([^\r\n]+)/gi)];
+    const definitions: RegExpExecArray[] = [];
+    const definitionPattern = /SECURITY DEFINER\s+SET search_path\s*=\s*([^\r\n]+)/gi;
+    let definitionMatch: RegExpExecArray | null;
+
+    while ((definitionMatch = definitionPattern.exec(sql)) !== null) {
+      definitions.push(definitionMatch);
+    }
     functionCount += definitions.length;
     assert(definitions.length > 0, file + ': SECURITY DEFINER definitions found');
     for (const definition of definitions) {

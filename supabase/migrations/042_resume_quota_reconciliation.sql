@@ -44,7 +44,6 @@
 -- the function itself returns without an uncaught exception.
 -- ==============================================================================
 
-\set ON_ERROR_STOP on
 BEGIN;
 
 CREATE FUNCTION public.reconcile_resume_quota_orphans(p_dry_run boolean DEFAULT false)
