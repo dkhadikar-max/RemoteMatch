@@ -34,32 +34,32 @@
 -- never rewritten (docs/resume-intelligence-design.md §6, "reversible
 -- edits").
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS resume_versions (
+CREATE TABLE IF NOT EXISTS public.resume_versions (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id        UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  profile_id        UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   content           TEXT NOT NULL CHECK (char_length(content) BETWEEN 1 AND 60000),
   content_sha256    TEXT NOT NULL CHECK (content_sha256 ~ '^[0-9a-f]{64}$'),
   source            TEXT NOT NULL CHECK (source IN ('onboarding', 'upload', 'paste', 'accepted_edits')),
-  parent_version_id UUID REFERENCES resume_versions(id) ON DELETE SET NULL,
+  parent_version_id UUID REFERENCES public.resume_versions(id) ON DELETE SET NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (profile_id, content_sha256)
 );
 
 CREATE INDEX IF NOT EXISTS idx_resume_versions_profile_created
-  ON resume_versions (profile_id, created_at DESC);
+  ON public.resume_versions (profile_id, created_at DESC);
 
-COMMENT ON TABLE resume_versions IS
+COMMENT ON TABLE public.resume_versions IS
   'Resume Intelligence (migration 036). One row per distinct resume text a user has had '
   '(content-addressed by sha256; re-submitting identical text is a no-op via the unique '
   'constraint). Never updated in place — an accepted edit creates a NEW row with '
   'parent_version_id set. Retention: the owning RPC below keeps only the most recent 10 '
   'versions per profile, oldest pruned on insert.';
 
-ALTER TABLE resume_versions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE resume_versions FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_versions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY "resume_versions_select_own"
-  ON resume_versions FOR SELECT
+  ON public.resume_versions FOR SELECT
   USING (auth.uid() = profile_id);
 
 -- ---------------------------------------------------------------------------- 2.
@@ -73,10 +73,10 @@ CREATE POLICY "resume_versions_select_own"
 -- result is NULL until status moves to 'success' (then validated JSON) or
 -- stays NULL for 'insufficient_input' / 'unavailable'.
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS resume_analyses (
+CREATE TABLE IF NOT EXISTS public.resume_analyses (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id          UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  resume_version_id   UUID NOT NULL REFERENCES resume_versions(id) ON DELETE CASCADE,
+  profile_id          UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  resume_version_id   UUID NOT NULL REFERENCES public.resume_versions(id) ON DELETE CASCADE,
   mode                TEXT NOT NULL CHECK (mode IN ('general', 'target_job')),
   opportunity_id      TEXT,                 -- CanonicalOpportunity id string, when mode = 'target_job'
   job_content_hash    TEXT NOT NULL DEFAULT '',  -- '' for general mode; sha256 of the job text for target_job
@@ -95,20 +95,20 @@ CREATE TABLE IF NOT EXISTS resume_analyses (
 );
 
 CREATE INDEX IF NOT EXISTS idx_resume_analyses_profile_created
-  ON resume_analyses (profile_id, created_at DESC);
+  ON public.resume_analyses (profile_id, created_at DESC);
 
-COMMENT ON TABLE resume_analyses IS
+COMMENT ON TABLE public.resume_analyses IS
   'Resume Intelligence (migration 036). Cached, idempotent analysis results — the unique '
   'key (profile_id, resume_version_id, mode, job_content_hash, analysis_version) is the '
   'whole cache/idempotency contract (docs/resume-intelligence-design.md §6). A failed run '
   '(status unavailable/insufficient_input) never overwrites a prior success row for the '
   'same key — the RPC below enforces that, not the UNIQUE constraint alone.';
 
-ALTER TABLE resume_analyses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE resume_analyses FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_analyses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_analyses FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY "resume_analyses_select_own"
-  ON resume_analyses FOR SELECT
+  ON public.resume_analyses FOR SELECT
   USING (auth.uid() = profile_id);
 
 -- ---------------------------------------------------------------------------- 3.
@@ -118,10 +118,10 @@ CREATE POLICY "resume_analyses_select_own"
 -- client action, §6) is what turns an accepted decision into a new
 -- resume_versions row.
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS resume_suggestion_decisions (
+CREATE TABLE IF NOT EXISTS public.resume_suggestion_decisions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  profile_id     UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  analysis_id    UUID NOT NULL REFERENCES resume_analyses(id) ON DELETE CASCADE,
+  profile_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  analysis_id    UUID NOT NULL REFERENCES public.resume_analyses(id) ON DELETE CASCADE,
   suggestion_id  TEXT NOT NULL CHECK (char_length(suggestion_id) BETWEEN 1 AND 100),
   decision       TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected', 'edited')),
   final_text     TEXT CHECK (final_text IS NULL OR char_length(final_text) <= 2000),
@@ -129,17 +129,17 @@ CREATE TABLE IF NOT EXISTS resume_suggestion_decisions (
   UNIQUE (analysis_id, suggestion_id)
 );
 
-COMMENT ON TABLE resume_suggestion_decisions IS
+COMMENT ON TABLE public.resume_suggestion_decisions IS
   'Resume Intelligence (migration 036). One row per suggestion the user has acted on '
   '(re-deciding the same suggestion_id updates the existing row via the RPC''s upsert, '
   'not a new one). Purely a record of the choice — it never itself edits a resume; '
   '"Create new version" is a separate client action.';
 
-ALTER TABLE resume_suggestion_decisions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE resume_suggestion_decisions FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_suggestion_decisions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_suggestion_decisions FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY "resume_suggestion_decisions_select_own"
-  ON resume_suggestion_decisions FOR SELECT
+  ON public.resume_suggestion_decisions FOR SELECT
   USING (auth.uid() = profile_id);
 
 -- ---------------------------------------------------------------------------- 4.
@@ -157,7 +157,7 @@ CREATE OR REPLACE FUNCTION public.create_resume_version(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
@@ -178,22 +178,22 @@ BEGIN
   -- parent_version_id, when supplied, must belong to the caller — never lets one
   -- user chain a new version off another user's resume.
   IF p_parent_version_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM resume_versions WHERE id = p_parent_version_id AND profile_id = v_uid
+    SELECT 1 FROM public.resume_versions WHERE id = p_parent_version_id AND profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'parent_version_id not found for this profile' USING ERRCODE = '42501';
   END IF;
 
-  INSERT INTO resume_versions (profile_id, content, content_sha256, source, parent_version_id)
+  INSERT INTO public.resume_versions (profile_id, content, content_sha256, source, parent_version_id)
   VALUES (v_uid, p_content, p_sha256, p_source, p_parent_version_id)
   ON CONFLICT (profile_id, content_sha256) DO UPDATE SET profile_id = resume_versions.profile_id
   RETURNING id INTO v_id;
 
   -- Retention: keep only the most recent 10 versions for this profile.
   -- CASCADE takes their analyses and decisions with them.
-  DELETE FROM resume_versions
+  DELETE FROM public.resume_versions
   WHERE profile_id = v_uid
     AND id NOT IN (
-      SELECT id FROM resume_versions
+      SELECT id FROM public.resume_versions
       WHERE profile_id = v_uid
       ORDER BY created_at DESC
       LIMIT 10
@@ -257,7 +257,7 @@ CREATE OR REPLACE FUNCTION public.upsert_resume_analysis(
 RETURNS TABLE (id UUID, wrote BOOLEAN)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -274,13 +274,13 @@ BEGIN
     RAISE EXCEPTION 'invalid status' USING ERRCODE = '23514';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM resume_versions WHERE id = p_resume_version_id AND profile_id = v_uid
+    SELECT 1 FROM public.resume_versions WHERE id = p_resume_version_id AND profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'resume_version_id does not belong to caller' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_existing
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE profile_id = v_uid
     AND resume_version_id = p_resume_version_id
     AND mode = p_mode
@@ -302,7 +302,7 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO resume_analyses (
+  INSERT INTO public.resume_analyses (
     profile_id, resume_version_id, mode, opportunity_id, job_content_hash, analysis_version,
     status, result, source_ai, model, prompt_tokens, completion_tokens, cost_usd, updated_at
   )
@@ -345,7 +345,7 @@ CREATE OR REPLACE FUNCTION public.record_resume_suggestion_decision(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
@@ -364,12 +364,12 @@ BEGIN
     RAISE EXCEPTION 'final_text too long' USING ERRCODE = '23514';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM resume_analyses WHERE id = p_analysis_id AND profile_id = v_uid
+    SELECT 1 FROM public.resume_analyses WHERE id = p_analysis_id AND profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'analysis not found for this profile' USING ERRCODE = '42501';
   END IF;
 
-  INSERT INTO resume_suggestion_decisions (profile_id, analysis_id, suggestion_id, decision, final_text)
+  INSERT INTO public.resume_suggestion_decisions (profile_id, analysis_id, suggestion_id, decision, final_text)
   VALUES (v_uid, p_analysis_id, p_suggestion_id, p_decision, p_final_text)
   ON CONFLICT (analysis_id, suggestion_id) DO UPDATE SET
     decision   = EXCLUDED.decision,
@@ -395,13 +395,13 @@ GRANT EXECUTE ON FUNCTION public.record_resume_suggestion_decision(uuid, text, t
 -- never got past input validation costs nothing (caller simply never calls
 -- this RPC for those cases).
 -- ----------------------------------------------------------------------------
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS daily_resume_analyses_count INT DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS daily_resume_analyses_count INT DEFAULT 0;
 
 CREATE OR REPLACE FUNCTION public.reserve_resume_analysis()
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
@@ -413,7 +413,7 @@ BEGIN
     RAISE EXCEPTION 'unauthenticated' USING ERRCODE = '28000';
   END IF;
 
-  SELECT * INTO v_row FROM profiles WHERE id = v_uid FOR UPDATE;
+  SELECT * INTO v_row FROM public.profiles WHERE id = v_uid FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'profile_not_found';
   END IF;
@@ -429,7 +429,7 @@ BEGIN
   v_limit := CASE WHEN v_row.plan_tier = 'pro' THEN 10 ELSE 2 END;
 
   IF v_row.daily_resume_analyses_count >= v_limit THEN
-    UPDATE profiles SET
+    UPDATE public.profiles SET
       usage_date = v_row.usage_date,
       daily_right_swipes_count = v_row.daily_right_swipes_count,
       daily_proposals_count = v_row.daily_proposals_count,
@@ -443,7 +443,7 @@ BEGIN
 
   v_row.daily_resume_analyses_count := v_row.daily_resume_analyses_count + 1;
 
-  UPDATE profiles SET
+  UPDATE public.profiles SET
     usage_date = v_row.usage_date,
     daily_right_swipes_count = v_row.daily_right_swipes_count,
     daily_proposals_count = v_row.daily_proposals_count,
@@ -468,7 +468,7 @@ CREATE OR REPLACE FUNCTION public.refund_resume_analysis()
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid UUID := auth.uid();
@@ -476,7 +476,7 @@ BEGIN
   IF v_uid IS NULL THEN
     RAISE EXCEPTION 'unauthenticated' USING ERRCODE = '28000';
   END IF;
-  UPDATE profiles
+  UPDATE public.profiles
   SET daily_resume_analyses_count = GREATEST(0, daily_resume_analyses_count - 1)
   WHERE id = v_uid;
 END;
@@ -491,7 +491,7 @@ NOTIFY pgrst, 'reload schema';
 -- DOWN:
 --   DROP FUNCTION IF EXISTS public.refund_resume_analysis();
 --   DROP FUNCTION IF EXISTS public.reserve_resume_analysis();
---   ALTER TABLE profiles DROP COLUMN IF EXISTS daily_resume_analyses_count;
+--   ALTER TABLE public.profiles DROP COLUMN IF EXISTS daily_resume_analyses_count;
 --   DROP FUNCTION IF EXISTS public.record_resume_suggestion_decision(uuid, text, text, text);
 --   DROP FUNCTION IF EXISTS public.upsert_resume_analysis(uuid, text, text, text, text, text, jsonb, boolean, text, integer, integer, numeric);
 --   DROP FUNCTION IF EXISTS public.create_resume_version(text, text, text, uuid);
