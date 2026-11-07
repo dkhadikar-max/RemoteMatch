@@ -249,6 +249,22 @@ function ResumeIntelligenceInner() {
   const loadResume = useCallback(async () => {
     setState({ phase: 'loading_resume' });
     try {
+      // FIX (browser verification, 2026-11-07): a resume saved through THIS panel (paste, or a
+      // prior accepted edit) is a real resume_versions row from the moment it's saved — check for
+      // one first, so a reload doesn't lose it and force a re-paste. Only when no version exists
+      // yet (first-ever visit) do we fall back to profiles.raw_resume_text from onboarding, same
+      // as before.
+      const existingRes = await fetch('/api/resume/versions', { cache: 'no-store' });
+      if (existingRes.ok) {
+        const existing = await existingRes.json();
+        if (typeof existing.content === 'string' && existing.content.trim() && typeof existing.versionId === 'string') {
+          setResumeText(existing.content);
+          setVersionId(existing.versionId);
+          setState({ phase: 'ready', resumeText: existing.content, versionId: existing.versionId });
+          return;
+        }
+      }
+
       const res = await fetch('/api/onboarding', { cache: 'no-store' });
       if (!res.ok) {
         setState({ phase: 'error', message: 'Could not load your profile.' });

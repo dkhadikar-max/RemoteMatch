@@ -85,7 +85,23 @@ export function isResumeIntelligenceEnabled(): boolean {
   return process.env.RESUME_INTELLIGENCE_ENABLED === 'true';
 }
 
-const MAX_COMPLETION_TOKENS = 6000;
+// PARTIAL FIX, NOT YET PROVEN SUFFICIENT (browser verification, 2026-11-07): 6000 was too
+// small -- a live call against a real multi-bullet resume (7 bullets, 5 sections) consumed 8107
+// total tokens and still got cut off before the closing JSON brace, so JSON.parse() threw and
+// the user saw a silent 'malformed_response' (ai_unavailable) on an ordinary resume, not just a
+// large one. Raised here with real margin above that observed truncation point.
+//
+// HOWEVER: re-tested live at 16000 with the 90s timeout this file already enforces
+// (MODEL_CALL_TIMEOUT_MS) and the call still failed -- this time by running past 90s and being
+// aborted, not by truncating. Raising the cap gives the model room to keep generating for
+// LONGER, which traded a truncation failure for a timeout failure on the same call; it did not
+// make a call succeed. The real bottleneck for this prompt shape/model combination appears to be
+// latency (gpt-5-mini taking 80-95+ seconds even at reasoning_effort: 'minimal'), not output
+// size. A real fix likely needs a longer timeout AND confirmation the call completes within it --
+// NOT separately authorized as part of this change; keeping 16000 here only because it is
+// strictly no worse than 6000 (same failure class the user already sees, never a new one), and
+// documenting this honestly rather than claiming the underlying defect is resolved.
+const MAX_COMPLETION_TOKENS = 16000;
 /** Must match the RPC's own window (036_resume_intelligence.sql) — kept as a named constant
  *  here only for the "already in progress" copy; the actual enforcement is entirely in the DB. */
 const PENDING_CLAIM_WINDOW_MINUTES = 3;

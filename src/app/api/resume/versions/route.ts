@@ -65,3 +65,39 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ success: true, versionId: data as string });
 }
+
+/**
+ * Returns the caller's most recent resume version, if any.
+ *
+ * FIX (browser verification, 2026-11-07): resume-intelligence/page.tsx's loadResume() only ever
+ * read profiles.raw_resume_text (set by onboarding) — a resume pasted directly into this panel
+ * was saved as a real resume_versions row (via POST above) but was never read back on the next
+ * load, so every visit after the first showed "No resume on file yet" and required re-pasting,
+ * even though the row still existed. RLS ("resume_versions_select_own", migration 036) already
+ * scopes SELECT to auth.uid() = profile_id, so no explicit profile filter is needed here.
+ */
+export async function GET(req: NextRequest) {
+  if (!isResumeIntelligenceEnabled()) {
+    return NextResponse.json({ error: 'Resume Intelligence is not yet available.' }, { status: 503 });
+  }
+
+  let auth;
+  try {
+    auth = await getAuthenticatedUser(req);
+  } catch (err) {
+    return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const { supabase } = auth;
+
+  const { data, error } = await supabase
+    .from('resume_versions')
+    .select('id, content')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    return NextResponse.json({ error: 'Could not load your resume.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ versionId: data?.id ?? null, content: data?.content ?? null });
+}
