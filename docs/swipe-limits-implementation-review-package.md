@@ -2,8 +2,30 @@
 
 **Branch:** `feat/swipe-limits-rolling-24h` (isolated worktree, based on `origin/main` @ `675092d`)
 **PR:** [#51](https://github.com/dkhadikar-max/RemoteMatch/pull/51)
-**Commits:** `b6b10dd` (implementation) → `e452819` (first review package) → `3564330` (closing the first independent review's findings) → `80b4cb2` (renumbering the migration, §0a) → one further commit recording the live-tier concurrency proof (§0b, this revision).
-**Status:** implementation + verification complete, two rounds of independent review completed and closed, **and the live multi-connection concurrency proof completed** against a verified isolated project. Still stopping here per instruction — no merge to `main`, no migration apply to production, no deployment.
+**Commits:** `b6b10dd` (implementation) → `e452819` (first review package) → `3564330` (closing the first independent review's findings) → `80b4cb2` (renumbering the migration, §0a) → `f3e8514` (recording the live-tier concurrency proof, §0b) → `0c92e29` (public-repo redaction) → one further commit closing a CRITICAL security finding and a correctness finding (§0c, this revision).
+**Status:** implementation + verification complete, **a real, live-exploited P1 security vulnerability found and closed** (§0c), two rounds of independent review completed and closed, and the live multi-connection concurrency proof completed against a verified isolated project. Still stopping here per instruction — no merge to `main`, no migration apply to production, no deployment.
+
+---
+
+## 0c. CRITICAL — unauthenticated data exposure via `active_swipes`, found and closed
+
+A further independent review (against the actual PR head, not a summary) found that the `active_swipes` view (added in §3 to centralize the active-row predicate — see §0a's "finding 6") had no `REVOKE` statement and no `security_invoker` setting. **This was verified as a real, live, exploitable vulnerability, not a theoretical one**, by directly attacking the isolated test project: a completely unauthenticated request (the `anon` role — no login, no JWT at all) was able to read `SELECT profile_id, decision_snapshot FROM active_swipes` and retrieve another (synthetic, disposable) user's full `decision_snapshot` — the field containing AI-generated cover letters, fit scores, and resume content. Confirmed via a real victim/attacker account pair created specifically for this test.
+
+**Root cause:** a bare `CREATE VIEW` has no privileges of its own, and nothing in this migration (or any prior one) explicitly restricted it. The base `swipes` table is protected only because migration 003 explicitly re-stated its grants when it was created — that statement doesn't extend to new objects created later. Views are not automatically covered by a `REVOKE`/`GRANT` written against an underlying table.
+
+**Fix:** added `REVOKE ALL ON public.active_swipes FROM PUBLIC, anon, authenticated;` directly after the view definition in migration 046 §3. The `SECURITY DEFINER` functions that use the view internally (`get_rolling_swipe_counts`, `reserve_and_record_right_swipe`, `record_pass`) are unaffected — they run as the view's owner, not as the caller's role, the same trust model this file already used for the base table before this migration existed.
+
+**Verification, in order:**
+1. Re-applied the corrected migration to the isolated test project (idempotent — `CREATE OR REPLACE VIEW` + `REVOKE` re-run safely over the existing, vulnerable state).
+2. Re-ran the exact exploit: attacker now gets `403 permission denied` instead of the victim's data. Confirmed for both `authenticated` (a real but unrelated signed-in user) and fully anonymous `anon`.
+3. Confirmed `service_role` — the role the application's own server-side code actually needs — is unaffected, **directly against the real platform** (not inferred): `GET /rest/v1/active_swipes` with the service-role key returns `200`. Real Supabase projects carry a platform-level default-privileges configuration for `service_role` that isn't part of this repo's migrations at all (confirmed: no `ALTER DEFAULT PRIVILEGES` statement exists anywhere in `supabase/migrations/`) — this is why the fix doesn't need to (and shouldn't) touch `service_role` explicitly.
+4. All test data from both the exploit-confirmation run and its first (crashed) attempt were deleted and independently re-verified clean (a bug in the exploit script itself left two throwaway accounts behind on the first run — caught and cleaned up, not silently left).
+5. Added two new regression tests: a PGlite role-switching test confirming `anon` and `authenticated` are both denied direct `SELECT` on the view while the `SECURITY DEFINER` functions keep working, and a `service_role`-retains-access test. The latter required fixing PGlite's own test harness (not the application) to model the same platform-level default-privilege behavior real Supabase provides — the same category of stub this suite already uses for `auth.uid()`/`auth.role()`.
+6. "Survives a fresh application, not just reapplication": the PGlite suite proves this directly — every test in `migrationSuite()` builds a brand-new, empty PGlite instance and applies `001 → 002 → 003 → 046` from scratch each time, so the privilege fix has been exercised against a genuinely fresh database dozens of times over, not only reapplied to the already-migrated isolated project.
+
+**Second finding closed in the same pass (P2, correctness not security):** `src/app/api/profile/route.ts` silently discarded the `get_rolling_swipe_counts` RPC's `error` and substituted a stale legacy counter for the right-swipe count and a bare `0` for the total count on failure — meaning a transient RPC failure could show a user "0 total swipes used" when the real number could be anywhere up to 50. Fixed: the route now returns `503` on a genuine RPC failure instead of fabricating a plausible-looking but wrong value. Added a static regression test confirming the error check, the `503` status, and that neither fallback pattern remains in the file.
+
+**Full suite after both fixes:** 173 passed (up from 165), 1 intentional LIVE-tier gate, unchanged in meaning. `tsc --noEmit`: 0 errors.
 
 ---
 

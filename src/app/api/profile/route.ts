@@ -18,10 +18,10 @@ export async function GET(req: NextRequest) {
   }
   const { user, supabase } = auth;
 
-  const [{ data, error }, { data: intent }, { data: swipeCounts }] = await Promise.all([
+  const [{ data, error }, { data: intent }, { data: swipeCounts, error: swipeCountsError }] = await Promise.all([
     supabase
       .from('profiles')
-      .select('plan_tier, daily_right_swipes_count, daily_proposals_count, usage_date, linkedin_url, github_url')
+      .select('plan_tier, daily_proposals_count, usage_date, linkedin_url, github_url')
       .eq('id', user.id)
       .single(),
     // career_direction lives on profile_intents (migration 015); an un-onboarded
@@ -40,12 +40,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
 
+  // If the rolling-count RPC itself failed, this endpoint must not fabricate
+  // a plausible-looking quota (the stale legacy counter for "right", or a
+  // bare 0 for "total") — that previously meant a transient RPC failure
+  // could show a user "0 total swipes used" when the real number could be
+  // anywhere up to 50. The database gate (migration 046's RPCs) stays
+  // authoritative regardless; this is purely about not lying to the client
+  // about what it is.
+  if (swipeCountsError || !swipeCounts) {
+    return NextResponse.json({ error: 'Could not read swipe quota' }, { status: 503 });
+  }
+
   const careerDirection =
     (intent?.career_direction as string | null) === 'change_fields' ? 'change_fields' : 'continue';
 
-  const rollingRightCount = (swipeCounts as { rightCount: number; totalCount: number } | null)?.rightCount
-    ?? (data.daily_right_swipes_count as number);
-  const rollingTotalCount = (swipeCounts as { rightCount: number; totalCount: number } | null)?.totalCount ?? 0;
+  const rollingRightCount = (swipeCounts as { rightCount: number; totalCount: number }).rightCount;
+  const rollingTotalCount = (swipeCounts as { rightCount: number; totalCount: number }).totalCount;
 
   return NextResponse.json({
     planTier: data.plan_tier as 'free' | 'pro',

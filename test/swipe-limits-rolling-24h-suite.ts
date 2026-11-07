@@ -154,6 +154,19 @@ async function buildDb(): Promise<PGlite> {
   `);
   await db.exec(read('supabase/migrations/001_initial_schema.sql'));
   await db.exec(read('supabase/migrations/002_row_level_security.sql'));
+
+  // Test-harness-only platform stub (not in any committed migration, same
+  // category as the auth.uid()/auth.role() stubs above): real Supabase
+  // configures service_role with a standing default-privileges rule so it
+  // automatically gets full access to every NEW object created afterward —
+  // this lives at the platform level, outside this repo's migrations
+  // entirely (confirmed: no ALTER DEFAULT PRIVILEGES anywhere in
+  // supabase/migrations/). Without this, PGlite would show service_role
+  // denied on anything created after migration 002, which is a test-
+  // environment fidelity gap, not a real finding — the real platform was
+  // independently verified live (service_role -> 200 on active_swipes).
+  await db.exec(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;`);
+
   await db.exec(read('supabase/migrations/003_security_remediation.sql'));
   await db.exec(read('supabase/migrations/046_swipe_limits_rolling_24h.sql'));
 
@@ -599,6 +612,34 @@ async function migrationSuite() {
     assert(callsInMigration >= 3, 'get_rolling_swipe_counts() is defined once and called from both reserve_and_record_right_swipe and record_pass, not reimplemented inline in either', { occurrences: callsInMigration });
   }
 
+  // ---- P2 regression (post-PR independent review, STATIC): a failed
+  // get_rolling_swipe_counts RPC must surface as a real failure, never a
+  // fabricated plausible-looking quota (the original bug: `?? 0` for total,
+  // `?? data.daily_right_swipes_count` for right — a transient RPC failure
+  // could show a user "0 total swipes used" when the real number could be
+  // up to 50). Source-inspection, not an executable RPC-failure simulation
+  // (this route isn't run against a live server in this tier) — confirms
+  // the fix is actually present in the file, not just described. ----
+  {
+    const profileRouteSrc = read('src/app/api/profile/route.ts');
+    assert(
+      /swipeCountsError\s*\|\|\s*!swipeCounts/.test(profileRouteSrc),
+      'the route checks for an RPC error (or a missing result) on the swipe-counts call, not just destructuring data and ignoring error'
+    );
+    assert(
+      /status:\s*503/.test(profileRouteSrc),
+      'a failed swipe-counts RPC returns a real failure status (503), not a 200 with fabricated numbers'
+    );
+    assert(
+      !/totalSwipesCount.*\?\?\s*0/.test(profileRouteSrc) && !/rollingTotalCount\s*=.*\?\?\s*0/.test(profileRouteSrc),
+      'no "?? 0" fallback remains for totalSwipesCount — the original bug is gone, not just newly guarded'
+    );
+    assert(
+      !/data\.daily_right_swipes_count/.test(profileRouteSrc),
+      'the stale legacy-counter is no longer read as a live fallback value in this route (a code comment mentioning the column name by name is fine — it still exists in the DB as a display-only rollback safety net, just unused here)'
+    );
+  }
+
   // ---- Old RPC signatures are gone ----
   {
     const db = await buildDb();
@@ -617,6 +658,67 @@ async function migrationSuite() {
       threw2 = true;
     }
     assert(threw2, 'old finalize_interested_swipe(TEXT, JSONB) no longer exists post-migration');
+  }
+
+  // ---- P1 security finding (post-PR independent review): active_swipes must
+  // NOT be directly queryable by any client role. A live exploit against an
+  // isolated project confirmed the original revision (no REVOKE statement)
+  // let a fully unauthenticated `anon` request read every user's
+  // decision_snapshot. The fix is the `REVOKE ALL ... FROM PUBLIC, anon,
+  // authenticated` statement in migration 046 §3 — verified here directly
+  // by switching role (same technique as the repo's existing
+  // gate1-rls-isolation.ts) and confirming both client roles are denied,
+  // while the SECURITY DEFINER functions (which run as the view's owner,
+  // unaffected by this REVOKE) continue to work. ----
+  {
+    const db = await buildDb();
+    await insertOpportunities(db, ['opp-view-priv']);
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    await rpc(db, 'reserve_and_record_right_swipe', { p_opportunity_id: 'opp-view-priv' });
+
+    await db.query(`SET ROLE anon;`);
+    let anonThrew = false;
+    try {
+      await db.query(`SELECT * FROM active_swipes LIMIT 1;`);
+    } catch (e: any) {
+      anonThrew = /permission denied/i.test(String(e?.message ?? e));
+    }
+    assert(anonThrew, 'anon role (fully unauthenticated) is denied SELECT on active_swipes — permission denied, not a filtered empty result');
+
+    await db.query(`RESET ROLE;`);
+    await db.query(`SET ROLE authenticated;`);
+    let authThrew = false;
+    try {
+      await db.query(`SELECT * FROM active_swipes LIMIT 1;`);
+    } catch (e: any) {
+      authThrew = /permission denied/i.test(String(e?.message ?? e));
+    }
+    assert(authThrew, 'authenticated role is ALSO denied direct SELECT on active_swipes — the view is for SECURITY DEFINER function internal use only, never direct client access');
+    await db.query(`RESET ROLE;`);
+
+    // The SECURITY DEFINER functions must still work normally despite the
+    // REVOKE — they run as the view's owner, not as the caller's role.
+    await setAuthContext(db, USER_FREE, 'authenticated');
+    const counts = await rpc(db, 'get_rolling_swipe_counts');
+    assert(counts.rightCount === 1, 'get_rolling_swipe_counts still works through the view after REVOKE (runs as owner, not caller)', counts);
+
+    // service_role must retain whatever access the application actually
+    // needs. The REVOKE statement only names PUBLIC, anon, authenticated —
+    // service_role was never granted on this view and is untouched by it.
+    // In practice no application code queries active_swipes directly even
+    // as service_role (only the SECURITY DEFINER functions do, as the
+    // view's owner) — this asserts that remains true and that service_role
+    // itself is not newly blocked by this migration.
+    await db.query(`RESET ROLE;`);
+    await db.query(`SET ROLE service_role;`);
+    let serviceRoleThrew = false;
+    try {
+      await db.query(`SELECT * FROM active_swipes LIMIT 1;`);
+    } catch {
+      serviceRoleThrew = true;
+    }
+    assert(!serviceRoleThrew, 'service_role is NOT blocked by the REVOKE (only PUBLIC/anon/authenticated are named) — retains whatever access the application needs');
+    await db.query(`RESET ROLE;`);
   }
 
   // ---- Item 13: client-supplied timestamps are never consulted ----

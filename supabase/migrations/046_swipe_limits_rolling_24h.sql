@@ -48,6 +48,26 @@ DROP FUNCTION IF EXISTS public.finalize_interested_swipe(TEXT, JSONB);
 --    nothing actually enforcing they stay identical. This view is the one
 --    place that definition now lives; every function below reads through
 --    it instead of repeating the clause.
+--
+--    SECURITY (post-PR independent review, confirmed by a live exploit
+--    against an isolated project before this fix): a bare CREATE VIEW has
+--    no privileges of its own, but Postgres/PostgREST's default grants on
+--    `public` meant this view was reachable by `anon` — fully unauthenticated,
+--    no login at all — returning every user's `decision_snapshot`
+--    (cover letters, fit scores, resume content) with no profile_id
+--    filter, confirmed by directly reading another (synthetic) user's row
+--    as an unrelated attacker account in the isolated test project. The
+--    swipes table itself is never exposed this way only because migration
+--    003 explicitly re-stated its grants (`GRANT SELECT ON swipes TO
+--    authenticated`, scoped by that table's RLS policy) — this view, being
+--    new, inherited no such statement and no RLS of its own. Views are not
+--    automatically covered by a REVOKE/GRANT written against the
+--    underlying table. This view is for internal use by the SECURITY
+--    DEFINER functions below ONLY (each already filters explicitly by
+--    `profile_id = auth.uid()` in its own WHERE clause, the same trust
+--    model `record_pass`/`rewind_last_decision` already used against the
+--    base table before this migration) — it must never be directly
+--    queryable by any client role.
 -- ------------------------------------------------------------------------------
 
 CREATE OR REPLACE VIEW public.active_swipes AS
@@ -55,6 +75,8 @@ SELECT s.*
 FROM swipes s
 WHERE s.action <> 'rewind'
   AND NOT EXISTS (SELECT 1 FROM swipes r WHERE r.rewound_decision_id = s.id);
+
+REVOKE ALL ON public.active_swipes FROM PUBLIC, anon, authenticated;
 
 -- ------------------------------------------------------------------------------
 -- 4. SHARED ROLLING-WINDOW COUNTER — the one piece of SQL both the swipe
