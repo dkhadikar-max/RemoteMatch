@@ -71,7 +71,7 @@ CREATE FUNCTION public.upsert_resume_analysis(
 RETURNS TABLE (id UUID, wrote BOOLEAN, attempt_number INT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -86,13 +86,13 @@ BEGIN
     RAISE EXCEPTION 'invalid mode' USING ERRCODE = '23514';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
+    SELECT 1 FROM public.resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'resume_version_id does not belong to caller' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_existing
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE profile_id = v_uid
     AND resume_version_id = p_resume_version_id
     AND mode = p_mode
@@ -119,7 +119,7 @@ BEGIN
   -- recovery -- all three reach here identically). attempt_number/created_at are
   -- refreshed ONLY here, never on a rejection above. Always claims as 'pending' --
   -- finalize_resume_analysis() is the only path that ever writes a terminal status.
-  INSERT INTO resume_analyses (
+  INSERT INTO public.resume_analyses (
     profile_id, resume_version_id, mode, opportunity_id, job_content_hash, analysis_version,
     status, result, source_ai, model, prompt_tokens, completion_tokens, cost_usd,
     created_at, updated_at, attempt_number
@@ -154,7 +154,7 @@ BEGIN
     -- this exact key between our SELECT ... FOR UPDATE (which found nothing, on a brand-new
     -- key) and our INSERT. Re-read the now-genuinely-existing row.
     SELECT ra.id, ra.attempt_number INTO v_id, v_attempt
-    FROM resume_analyses ra
+    FROM public.resume_analyses ra
     WHERE ra.profile_id = v_uid
       AND ra.resume_version_id = p_resume_version_id
       AND ra.mode = p_mode
@@ -194,7 +194,7 @@ CREATE FUNCTION public.finalize_resume_analysis(
 RETURNS TABLE (id UUID, finalized BOOLEAN, result TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -226,7 +226,7 @@ BEGIN
   -- variable that collides with a bare `id` column reference. Caught live (2026-11-02) by this
   -- exact live suite, not by the static suite, which only checks source-text shape, not whether
   -- Postgres can actually parse it.
-  SELECT * INTO v_existing FROM resume_analyses ra WHERE ra.id = p_analysis_id AND ra.profile_id = v_uid FOR UPDATE;
+  SELECT * INTO v_existing FROM public.resume_analyses ra WHERE ra.id = p_analysis_id AND ra.profile_id = v_uid FOR UPDATE;
 
   IF v_existing.id IS NULL THEN
     RETURN QUERY SELECT p_analysis_id, false, 'invalid_attempt'::text;
@@ -253,7 +253,7 @@ BEGIN
   -- by the time this function is ever called, and is not touched here in either
   -- direction.
   -- WHERE resume_analyses.id (qualified, not bare id) -- same 42702 hazard as the SELECT above.
-  UPDATE resume_analyses SET
+  UPDATE public.resume_analyses SET
     status            = p_status,
     result            = p_result,
     source_ai         = p_source_ai,
