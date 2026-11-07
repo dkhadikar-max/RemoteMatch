@@ -44,12 +44,12 @@
 BEGIN;
 
 -- ------------------------------------------------------------------------------
--- 1. attempt_number on resume_analyses — monotonic per row, assigned atomically
+-- 1. attempt_number on public.resume_analyses — monotonic per row, assigned atomically
 --    by upsert_resume_analysis() on every successful claim acquisition (never on
 --    a rejected claim attempt — the two existing early-return guards are
 --    untouched by this migration and never write to this column).
 -- ------------------------------------------------------------------------------
-ALTER TABLE resume_analyses
+ALTER TABLE public.resume_analyses
   ADD COLUMN IF NOT EXISTS attempt_number INT NOT NULL DEFAULT 1
     CHECK (attempt_number >= 1);
 
@@ -71,15 +71,15 @@ COMMENT ON COLUMN resume_analyses.attempt_number IS
 --    spend ledger, which stays entirely separate (ai_call_events/ai_spend_ledger,
 --    untouched by this migration).
 -- ------------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS resume_quota_events (
+CREATE TABLE IF NOT EXISTS public.resume_quota_events (
   id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   -- ON DELETE CASCADE (found via Stage 3 live validation, 2026-11-02): resume_analyses itself
-  -- cascades from resume_versions, which cascades from profiles -- an account or resume-version
+  -- cascades from public.resume_versions, which cascades from public.profiles -- an account or resume-version
   -- deletion already deletes resume_analyses rows today. Without this cascade, that SAME delete
   -- would start failing (FK violation) the moment any analysis ever reached quota reservation,
   -- which is every analysis that gets past the entitlement check. Matches the existing cascade
   -- chain rather than introducing a new, inconsistent retention policy for this one child table.
-  analysis_id     uuid NOT NULL REFERENCES resume_analyses(id) ON DELETE CASCADE,
+  analysis_id     uuid NOT NULL REFERENCES public.resume_analyses(id) ON DELETE CASCADE,
   attempt_number  int NOT NULL CHECK (attempt_number >= 1),
   event_type      text NOT NULL CHECK (event_type IN ('reserved', 'refunded')),
   -- The usage_date active on the user's profile AT THE MOMENT this event was
@@ -104,9 +104,9 @@ CREATE TABLE IF NOT EXISTS resume_quota_events (
 );
 
 CREATE INDEX IF NOT EXISTS resume_quota_events_analysis_idx
-  ON resume_quota_events (analysis_id, attempt_number);
+  ON public.resume_quota_events (analysis_id, attempt_number);
 
-COMMENT ON TABLE resume_quota_events IS
+COMMENT ON TABLE public.resume_quota_events IS
   'Append-only per-attempt quota audit trail (reservation + refund), separate '
   'from ai_call_events (provider execution) and ai_spend_ledger (provider '
   'dollar cost). Rows are never updated or deleted by application code -- a '
@@ -116,15 +116,15 @@ COMMENT ON TABLE resume_quota_events IS
 -- RLS: same discipline as migration 022's ai_call_events -- no client access at
 -- all. Both RPCs below are SECURITY DEFINER and write via the function owner,
 -- never via a client-held authenticated/anon grant.
-ALTER TABLE resume_quota_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE resume_quota_events FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_quota_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.resume_quota_events FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY "resume_quota_events_service_role_all" ON resume_quota_events FOR ALL
+CREATE POLICY "resume_quota_events_service_role_all" ON public.resume_quota_events FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
-REVOKE ALL ON resume_quota_events FROM PUBLIC, anon, authenticated;
-GRANT ALL ON resume_quota_events TO service_role;
+REVOKE ALL ON public.resume_quota_events FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.resume_quota_events TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE resume_quota_events_id_seq TO service_role;
 
 -- ------------------------------------------------------------------------------
@@ -155,7 +155,7 @@ CREATE FUNCTION public.upsert_resume_analysis(
 RETURNS TABLE (id UUID, wrote BOOLEAN, attempt_number INT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -173,13 +173,13 @@ BEGIN
     RAISE EXCEPTION 'invalid status' USING ERRCODE = '23514';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
+    SELECT 1 FROM public.resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'resume_version_id does not belong to caller' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_existing
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE profile_id = v_uid
     AND resume_version_id = p_resume_version_id
     AND mode = p_mode
@@ -206,7 +206,7 @@ BEGIN
   -- recovery -- all three reach here identically, same as migration 039).
   -- attempt_number/created_at are refreshed ONLY here, never on a rejection
   -- above.
-  INSERT INTO resume_analyses (
+  INSERT INTO public.resume_analyses (
     profile_id, resume_version_id, mode, opportunity_id, job_content_hash, analysis_version,
     status, result, source_ai, model, prompt_tokens, completion_tokens, cost_usd,
     created_at, updated_at, attempt_number
@@ -241,7 +241,7 @@ BEGIN
     -- this exact key between our SELECT ... FOR UPDATE (which found nothing, on a brand-new
     -- key) and our INSERT. Re-read the now-genuinely-existing row (same shape as migration 039).
     SELECT ra.id, ra.attempt_number INTO v_id, v_attempt
-    FROM resume_analyses ra
+    FROM public.resume_analyses ra
     WHERE ra.profile_id = v_uid
       AND ra.resume_version_id = p_resume_version_id
       AND ra.mode = p_mode
@@ -274,7 +274,7 @@ CREATE FUNCTION public.reserve_resume_analysis(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -288,7 +288,7 @@ BEGIN
     RAISE EXCEPTION 'unauthenticated' USING ERRCODE = '28000';
   END IF;
 
-  SELECT * INTO v_row FROM profiles WHERE id = v_uid FOR UPDATE;
+  SELECT * INTO v_row FROM public.profiles WHERE id = v_uid FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'profile_not_found';
   END IF;
@@ -303,7 +303,7 @@ BEGIN
   -- never locks profiles, so these two functions never acquire the two locks
   -- in opposite orders.
   SELECT id, profile_id, attempt_number INTO v_analysis
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE id = p_analysis_id
   FOR UPDATE;
 
@@ -335,10 +335,10 @@ BEGIN
   -- Idempotency check FIRST (per the finalized ordering) -- a duplicate
   -- reservation call for the exact same attempt must never increment twice.
   SELECT * INTO v_existing_reserved
-  FROM resume_quota_events
+  FROM public.resume_quota_events
   WHERE analysis_id = p_analysis_id AND attempt_number = p_attempt_number AND event_type = 'reserved';
   IF FOUND THEN
-    UPDATE profiles SET
+    UPDATE public.profiles SET
       usage_date = v_row.usage_date,
       daily_right_swipes_count = v_row.daily_right_swipes_count,
       daily_proposals_count = v_row.daily_proposals_count,
@@ -357,7 +357,7 @@ BEGIN
     -- still persisted here, same as the original reserve_resume_analysis() --
     -- this is pure day-rollover bookkeeping, unrelated to this attempt's own
     -- outcome.
-    UPDATE profiles SET
+    UPDATE public.profiles SET
       usage_date = v_row.usage_date,
       daily_right_swipes_count = v_row.daily_right_swipes_count,
       daily_proposals_count = v_row.daily_proposals_count,
@@ -369,7 +369,7 @@ BEGIN
 
   v_row.daily_resume_analyses_count := v_row.daily_resume_analyses_count + 1;
 
-  UPDATE profiles SET
+  UPDATE public.profiles SET
     usage_date = v_row.usage_date,
     daily_right_swipes_count = v_row.daily_right_swipes_count,
     daily_proposals_count = v_row.daily_proposals_count,
@@ -377,7 +377,7 @@ BEGIN
     daily_resume_analyses_count = v_row.daily_resume_analyses_count
     WHERE id = v_uid;
 
-  INSERT INTO resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
+  INSERT INTO public.resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
     VALUES (p_analysis_id, p_attempt_number, 'reserved', v_row.usage_date, NULL);
 
   RETURN jsonb_build_object(
@@ -410,7 +410,7 @@ CREATE FUNCTION public.refund_resume_analysis(
 RETURNS JSONB
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -426,7 +426,7 @@ BEGIN
     RAISE EXCEPTION 'reason is required for a refund event' USING ERRCODE = '23514';
   END IF;
 
-  SELECT * INTO v_row FROM profiles WHERE id = v_uid FOR UPDATE;
+  SELECT * INTO v_row FROM public.profiles WHERE id = v_uid FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'profile_not_found';
   END IF;
@@ -441,13 +441,13 @@ BEGIN
   -- concurrent upsert_resume_analysis() reclaim of the same row. Does not
   -- change WHICH attempts are refundable (refund still never checks currency)
   -- -- only ensures the ownership check itself observes a committed row.
-  SELECT id, profile_id INTO v_analysis FROM resume_analyses WHERE id = p_analysis_id FOR UPDATE;
+  SELECT id, profile_id INTO v_analysis FROM public.resume_analyses WHERE id = p_analysis_id FOR UPDATE;
   IF v_analysis.id IS NULL OR v_analysis.profile_id <> v_uid THEN
     RETURN jsonb_build_object('result', 'invalid_attempt');
   END IF;
 
   SELECT * INTO v_reserved
-  FROM resume_quota_events
+  FROM public.resume_quota_events
   WHERE analysis_id = p_analysis_id AND attempt_number = p_attempt_number AND event_type = 'reserved';
   IF NOT FOUND THEN
     -- No matching reservation exists for this exact attempt -- a refund must
@@ -456,7 +456,7 @@ BEGIN
   END IF;
 
   SELECT * INTO v_existing_refund
-  FROM resume_quota_events
+  FROM public.resume_quota_events
   WHERE analysis_id = p_analysis_id AND attempt_number = p_attempt_number AND event_type = 'refunded';
   IF FOUND THEN
     RETURN jsonb_build_object('result', 'already_refunded');
@@ -469,7 +469,7 @@ BEGIN
     -- detected case, the next reserve_resume_analysis() call will reset this
     -- counter to 0 regardless, making this decrement's effect moot once that
     -- happens).
-    UPDATE profiles SET daily_resume_analyses_count = GREATEST(0, daily_resume_analyses_count - 1)
+    UPDATE public.profiles SET daily_resume_analyses_count = GREATEST(0, daily_resume_analyses_count - 1)
       WHERE id = v_uid;
   END IF;
   -- Else: the live counter already belongs to a later period (a reserve call
@@ -478,7 +478,7 @@ BEGIN
   -- below is still recorded, preserving the historical accounting record
   -- without inflating the new period's allowance.
 
-  INSERT INTO resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
+  INSERT INTO public.resume_quota_events (analysis_id, attempt_number, event_type, usage_date, reason)
     VALUES (p_analysis_id, p_attempt_number, 'refunded', v_reserved.usage_date, p_reason);
 
   RETURN jsonb_build_object('result', 'refunded');
@@ -502,5 +502,5 @@ COMMIT;
 --   DROP FUNCTION IF EXISTS public.upsert_resume_analysis(uuid, text, text, text, text, text, jsonb, boolean, text, integer, integer, numeric);
 --   -- Restore migration 039's 2-column RETURNS TABLE (id, wrote) version if rolling back.
 --   DROP TABLE IF EXISTS resume_quota_events;
---   ALTER TABLE resume_analyses DROP COLUMN IF EXISTS attempt_number;
+--   ALTER TABLE public.resume_analyses DROP COLUMN IF EXISTS attempt_number;
 -- ==============================================================================
