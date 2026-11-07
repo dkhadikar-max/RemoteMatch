@@ -2,8 +2,27 @@
 
 **Branch:** `feat/swipe-limits-rolling-24h` (isolated worktree, based on `origin/main` @ `675092d`)
 **PR:** [#51](https://github.com/dkhadikar-max/RemoteMatch/pull/51)
-**Commits:** `b6b10dd` (implementation) → `e452819` (first review package) → `3564330` (closing the first independent review's findings) → one further commit renumbering the migration (§0a below).
-**Status:** implementation + verification complete, two rounds of independent review completed and closed. Still stopping here per instruction — no merge, migration apply, or deployment.
+**Commits:** `b6b10dd` (implementation) → `e452819` (first review package) → `3564330` (closing the first independent review's findings) → `80b4cb2` (renumbering the migration, §0a) → one further commit recording the live-tier concurrency proof (§0b, this revision).
+**Status:** implementation + verification complete, two rounds of independent review completed and closed, **and the live multi-connection concurrency proof completed** against a verified isolated project. Still stopping here per instruction — no merge to `main`, no migration apply to production, no deployment.
+
+---
+
+## 0b. Live-tier concurrency proof — the last disclosed gap, now closed
+
+Every prior revision of this package was explicit that items 4, 5, and 29 (the actual concurrent-transaction races, as opposed to sequential-boundary behavior) could not be proven by the PGlite suite, because PGlite is structurally single-connection. That gap is now closed for real: against the explicitly-authorized isolated project **`xyahktsgdigutxartafb`** ("remotematch-paidtest"), with migrations `035` and `046` applied there (the only two this branch's migration set was missing — `036`–`045` belong to other, unrelated PRs and this migration depends on none of them), a disposable real test user was created via the Auth admin API and used to fire genuinely concurrent HTTP requests — via `Promise.all`, each landing on PostgREST as its own real Postgres connection/transaction — at the exact boundaries the plan names:
+
+| Test | Scenario | Result |
+|---|---|---|
+| A | Two concurrent requests at `right_count = 14`, both attempting the 15th right swipe | Exactly one succeeded, one got `RIGHT_LIMIT_REACHED`; final `right_count` = 15, never 16 |
+| B | Two concurrent requests at `total_count = 49`, both attempting the 50th swipe | Exactly one succeeded, one got `TOTAL_LIMIT_REACHED`; final `total_count` = 50, never 51 |
+| C | Two concurrent retries racing to claim the same incomplete swipe | Exactly one won the claim, one was told to stand down — no double claim |
+| D | `attach_right_swipe_decision` raced directly against `rewind_last_decision` on the same row | No split state: rewind won this run (fenced out the attach, `attached: false` + `reason: 'stale_claim'`, no decision ever written, claim cleared) — one of the two consistent outcomes the design allows, verified directly against the row afterward, not inferred |
+
+**13 passed, 0 failed.** This is the genuine multi-connection proof the `SELECT ... FOR UPDATE` design was always argued to support by reading the SQL control flow (confirmed correct by two prior independent reviewers) — now actually exercised, not just reasoned about.
+
+**Cleanup:** every swipe/application row for the test user, every seeded test opportunity, and the auth user itself were deleted immediately after. Per this project's own standing norm ("a suite's own cleanup assertion is not proof cleanup happened"), this was independently re-verified with a fresh, separately-constructed query afterward (not the script's own built-in check, which had a harmless query-syntax bug and needed a redo) — confirmed zero rows remaining.
+
+**Credential handling:** the isolated project's database password had to be reset (the original value in `.env.paidtest.local` no longer worked — Supabase never displays a password after creation, and whatever the original reset-check was can't be recovered). The reset and a one-time `DATABASE_URL`/connection-string lookup were done via the Supabase dashboard (session login required in Chrome), with the new value written directly to `.env.paidtest.local` and never displayed in chat, consistent with this project's blind-secret-handling norm.
 
 ---
 
@@ -76,8 +95,8 @@ No file outside this list changed. Still no Razorpay, billing, or employer-accou
 
 ## 4. Outstanding, honestly stated
 
-- Items 4, 5, and a true multi-connection version of 29 remain provable only via the LIVE tier (a verified isolated Supabase project) or a dedicated real-Postgres multi-client harness — neither run here, per the standing boundary.
+- ~~Items 4, 5, and a true multi-connection version of 29 remain provable only via the LIVE tier~~ — **closed, §0b.** Run against the explicitly-named isolated project `xyahktsgdigutxartafb`, 13/13 passed, test data cleaned up and independently re-verified.
 - The "28 vs 29 test items" note from the first review package stands; not re-litigated here.
 - The plan document's revision-9 text itself (not this implementation) still says "no index exists" in §1, which is wrong per migration 003 — a documentation correction for the plan file, not a code issue.
 
-Awaiting separate authorization for PR, merge, migration apply, and deployment.
+**Nothing is outstanding from the implementation/verification side anymore.** Awaiting separate authorization for PR merge, production migration apply, and deployment — none of which this package or the live test performed.
