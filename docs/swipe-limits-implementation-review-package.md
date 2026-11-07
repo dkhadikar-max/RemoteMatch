@@ -9,7 +9,7 @@
 
 ## 0b. Live-tier concurrency proof — the last disclosed gap, now closed
 
-Every prior revision of this package was explicit that items 4, 5, and 29 (the actual concurrent-transaction races, as opposed to sequential-boundary behavior) could not be proven by the PGlite suite, because PGlite is structurally single-connection. That gap is now closed for real: against the explicitly-authorized isolated project **`xyahktsgdigutxartafb`** ("remotematch-paidtest"), with migrations `035` and `046` applied there (the only two this branch's migration set was missing — `036`–`045` belong to other, unrelated PRs and this migration depends on none of them), a disposable real test user was created via the Auth admin API and used to fire genuinely concurrent HTTP requests — via `Promise.all`, each landing on PostgREST as its own real Postgres connection/transaction — at the exact boundaries the plan names:
+Every prior revision of this package was explicit that items 4, 5, and 29 (the actual concurrent-transaction races, as opposed to sequential-boundary behavior) could not be proven by the PGlite suite, because PGlite is structurally single-connection. That gap is now closed for real: against the explicitly-authorized isolated test project (identified in the session record, not named here since this repo is public), with migrations `035` and `046` applied there (the only two this branch's migration set was missing — `036`–`045` belong to other, unrelated PRs and this migration depends on none of them), a disposable real test user was created via the Auth admin API and used to fire genuinely concurrent HTTP requests — via `Promise.all`, each landing on PostgREST as its own real Postgres connection/transaction — at the exact boundaries the plan names:
 
 | Test | Scenario | Result |
 |---|---|---|
@@ -95,7 +95,7 @@ No file outside this list changed. Still no Razorpay, billing, or employer-accou
 
 ## 4. Outstanding, honestly stated
 
-- ~~Items 4, 5, and a true multi-connection version of 29 remain provable only via the LIVE tier~~ — **closed, §0b.** Run against the explicitly-named isolated project `xyahktsgdigutxartafb`, 13/13 passed, test data cleaned up and independently re-verified.
+- ~~Items 4, 5, and a true multi-connection version of 29 remain provable only via the LIVE tier~~ — **closed, §0b.** Run against the separately-authorized isolated test project, 13/13 passed, test data cleaned up and independently re-verified.
 - The "28 vs 29 test items" note from the first review package stands; not re-litigated here.
 - The plan document's revision-9 text itself (not this implementation) still says "no index exists" in §1, which is wrong per migration 003 — a documentation correction for the plan file, not a code issue.
 
