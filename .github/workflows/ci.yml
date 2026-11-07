@@ -1,15 +1,26 @@
 name: CI
 
-# This repo has no existing CI (confirmed during PR #51's review: the only
-# check on open PRs is "Supabase Preview", which reports SKIPPED and runs no
-# tests). This workflow is intentionally narrow in scope — it typechecks the
-# whole repo and runs ONE self-contained test suite that needs no external
-# credentials (PGlite, an embedded Postgres — no live Supabase/Razorpay
-# access required, nothing here can touch production or any isolated
-# project). It does not run the rest of test/, most of which expects live
-# credentials this CI runner does not have and was never authorized to
-# receive. Broader CI coverage (the full test/ directory, live-tier gates,
-# per-PR suites for #48/#49/#50) is a separate decision, not made here.
+# This repo has no existing CI (confirmed during the PR #51 review: the only
+# check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
+# tests). This workflow is intentionally narrow and generic, so it's safe to
+# land on `main` on its own, independent of any other open PR's merge order:
+#
+#   - Typecheck always runs (repo-wide, no external credentials, nothing to
+#     be missing).
+#   - The self-contained PGlite test suites run only if their files exist in
+#     the checkout at the time this runs — so this workflow works correctly
+#     whether it merges before or after the PRs that introduce those files
+#     (e.g. PR #51's test/swipe-limits-rolling-24h-suite.ts). It does not
+#     hardcode an assumption that any particular branch/PR has already
+#     landed.
+#   - It does not run the rest of test/, most of which expects live
+#     Supabase/Razorpay credentials this CI runner does not have and was
+#     never authorized to receive. Broader CI coverage (the full test/
+#     directory, live-tier gates, per-PR suites for other open PRs) is a
+#     separate decision, not made here.
+#
+# Opened as its own PR, deliberately isolated from any product/migration
+# change — kept unmerged pending explicit authorization.
 
 on:
   pull_request:
@@ -34,5 +45,23 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Swipe-limits suite (self-contained, no external credentials)
-        run: npx tsx test/swipe-limits-rolling-24h-suite.ts
+      - name: Self-contained suites (PGlite, no external credentials) -- only those present in this checkout
+        run: |
+          shopt -s nullglob
+          suites=(
+            test/swipe-limits-rolling-24h-suite.ts
+          )
+          ran_any=false
+          for f in "${suites[@]}"; do
+            if [ -f "$f" ]; then
+              echo "::group::$f"
+              npx tsx "$f"
+              echo "::endgroup::"
+              ran_any=true
+            else
+              echo "Skipping $f -- not present in this checkout (expected before its introducing PR merges)."
+            fi
+          done
+          if [ "$ran_any" = false ]; then
+            echo "No known self-contained suite files present yet -- nothing to run, not a failure."
+          fi
