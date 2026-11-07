@@ -69,7 +69,7 @@ CREATE OR REPLACE FUNCTION public.upsert_resume_analysis(
 RETURNS TABLE (id UUID, wrote BOOLEAN)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -86,13 +86,13 @@ BEGIN
     RAISE EXCEPTION 'invalid status' USING ERRCODE = '23514';
   END IF;
   IF NOT EXISTS (
-    SELECT 1 FROM resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
+    SELECT 1 FROM public.resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'resume_version_id does not belong to caller' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_existing
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE profile_id = v_uid
     AND resume_version_id = p_resume_version_id
     AND mode = p_mode
@@ -121,7 +121,7 @@ BEGIN
   -- the exact gap the early-return checks already closed for the "row existed before this
   -- transaction started" case, but which an unconditional DO UPDATE left open for "a row was
   -- created by a sibling transaction that committed between this transaction's SELECT and INSERT".
-  INSERT INTO resume_analyses (
+  INSERT INTO public.resume_analyses (
     profile_id, resume_version_id, mode, opportunity_id, job_content_hash, analysis_version,
     status, result, source_ai, model, prompt_tokens, completion_tokens, cost_usd, updated_at
   )
@@ -153,7 +153,7 @@ BEGIN
     -- the now-genuinely-existing row and report it the same way every other "someone else already
     -- has this" path in this function does: the real id, wrote = false.
     SELECT ra.id INTO v_id
-    FROM resume_analyses ra
+    FROM public.resume_analyses ra
     WHERE ra.profile_id = v_uid
       AND ra.resume_version_id = p_resume_version_id
       AND ra.mode = p_mode
