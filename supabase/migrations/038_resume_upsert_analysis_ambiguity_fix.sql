@@ -14,7 +14,7 @@
 -- entire function body — so the bare identifier `id` is no longer just a possible column name, it
 -- is ALSO a variable. The function's own ownership check —
 --     IF NOT EXISTS (
---       SELECT 1 FROM resume_versions WHERE id = p_resume_version_id AND profile_id = v_uid
+--       SELECT 1 FROM public.resume_versions WHERE id = p_resume_version_id AND profile_id = v_uid
 --     ) THEN
 -- (036:276-278) — references `id` unqualified inside that subquery. Postgres cannot tell whether
 -- that `id` means `resume_versions.id` (the column) or the function's own `id` OUT variable, and
@@ -67,7 +67,7 @@ CREATE OR REPLACE FUNCTION public.upsert_resume_analysis(
 RETURNS TABLE (id UUID, wrote BOOLEAN)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_uid      UUID := auth.uid();
@@ -83,17 +83,17 @@ BEGIN
   IF p_status NOT IN ('pending', 'success', 'insufficient_input', 'unavailable') THEN
     RAISE EXCEPTION 'invalid status' USING ERRCODE = '23514';
   END IF;
-  -- FIXED (was: `SELECT 1 FROM resume_versions WHERE id = p_resume_version_id AND profile_id =
+  -- FIXED (was: `SELECT 1 FROM public.resume_versions WHERE id = p_resume_version_id AND profile_id =
   -- v_uid` — ambiguous against this function's own `id` OUT variable). Explicit alias `rv`
   -- removes the ambiguity; behavior is otherwise identical.
   IF NOT EXISTS (
-    SELECT 1 FROM resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
+    SELECT 1 FROM public.resume_versions rv WHERE rv.id = p_resume_version_id AND rv.profile_id = v_uid
   ) THEN
     RAISE EXCEPTION 'resume_version_id does not belong to caller' USING ERRCODE = '42501';
   END IF;
 
   SELECT * INTO v_existing
-  FROM resume_analyses
+  FROM public.resume_analyses
   WHERE profile_id = v_uid
     AND resume_version_id = p_resume_version_id
     AND mode = p_mode
@@ -115,7 +115,7 @@ BEGIN
     RETURN;
   END IF;
 
-  INSERT INTO resume_analyses (
+  INSERT INTO public.resume_analyses (
     profile_id, resume_version_id, mode, opportunity_id, job_content_hash, analysis_version,
     status, result, source_ai, model, prompt_tokens, completion_tokens, cost_usd, updated_at
   )
