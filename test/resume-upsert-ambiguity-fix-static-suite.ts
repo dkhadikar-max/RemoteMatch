@@ -79,7 +79,7 @@ async function main() {
   assert(!/GRANT|REVOKE/.test(sqlBody038), 'migration 038\'s executable SQL contains no GRANT/REVOKE — CREATE OR REPLACE on the same signature preserves the ACL state migration 037 already established');
 
   console.log('\n6. Transactional safety, matching 037\'s established pattern');
-  assert(/\\set ON_ERROR_STOP on/.test(migration038), 'ON_ERROR_STOP is set');
+  assert(!migration038.includes('\\set ON_ERROR_STOP on'), 'no psql-only ON_ERROR_STOP directive is present — migration remains compatible with Supabase SQL Editor');
   assert(/^BEGIN;/m.test(migration038) && /^COMMIT;/m.test(migration038), 'wrapped in an explicit top-level BEGIN/COMMIT');
 
   console.log('\n7. Exhaustive-check claim is backed by evidence in the file’s own header');
