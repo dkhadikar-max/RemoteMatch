@@ -35,7 +35,7 @@
 --   public.upsert_resume_analysis(uuid, text, text, text, text, text, jsonb, boolean, text, integer, integer, numeric)
 --   public.record_resume_suggestion_decision(uuid, text, text, text)
 
-\set ON_ERROR_STOP on
+-- Supabase SQL Editor does not support psql meta-commands; execution errors stop the submitted statement batch.
 BEGIN;
 
 REVOKE ALL ON FUNCTION public.create_resume_version(text, text, text, uuid) FROM PUBLIC, anon;
