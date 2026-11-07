@@ -60,8 +60,8 @@ function main() {
 
   console.log('\n4. lock ordering matches reserve_resume_analysis()/refund_resume_analysis() exactly (profiles first)');
   {
-    const idxProfileLock = sql.indexOf('FROM profiles WHERE id = v_orphan.profile_id FOR UPDATE');
-    const idxAnalysisLock = sql.indexOf('FROM resume_analyses WHERE id = v_orphan.analysis_id FOR UPDATE');
+    const idxProfileLock = sql.search(/FROM (?:public\.)?profiles WHERE id = v_orphan\.profile_id FOR UPDATE/);
+    const idxAnalysisLock = sql.search(/FROM (?:public\.)?resume_analyses WHERE id = v_orphan\.analysis_id FOR UPDATE/);
     assert(idxProfileLock > -1 && idxAnalysisLock > -1 && idxProfileLock < idxAnalysisLock,
       'profiles is locked BEFORE resume_analyses, matching every other quota RPC in this project -- avoids a deadlock against a live request on the same row',
       `profileLock@${idxProfileLock}, analysisLock@${idxAnalysisLock}`);
@@ -70,7 +70,7 @@ function main() {
   console.log('\n5. idempotency re-checked under lock (not just trusted from the unlocked detection read)');
   {
     const perCandidateBody = sql.slice(sql.indexOf('BEGIN\n      -- Lock order'), sql.indexOf('EXCEPTION WHEN OTHERS THEN'));
-    assert(/SELECT EXISTS \(\s*\n\s*SELECT 1 FROM resume_quota_events rqe\s*\n\s*WHERE rqe\.analysis_id = v_orphan\.analysis_id AND rqe\.attempt_number = v_orphan\.attempt_number AND rqe\.event_type = 'refunded'\s*\n\s*\) INTO v_already_refunded;/.test(perCandidateBody),
+    assert(/SELECT EXISTS \(\s*\n\s*SELECT 1 FROM (?:public\.)?resume_quota_events rqe\s*\n\s*WHERE rqe\.analysis_id = v_orphan\.analysis_id AND rqe\.attempt_number = v_orphan\.attempt_number AND rqe\.event_type = 'refunded'\s*\n\s*\) INTO v_already_refunded;/.test(perCandidateBody),
       'a fresh already-refunded check runs AFTER acquiring the locks, not relying on the earlier unlocked cursor snapshot');
     assert(/IF v_already_refunded THEN\s*\n\s*RETURN QUERY SELECT v_orphan\.analysis_id, v_orphan\.attempt_number, false, 'already_refunded'::text;/.test(perCandidateBody),
       'an already-refunded candidate is reported, not silently skipped or double-refunded');

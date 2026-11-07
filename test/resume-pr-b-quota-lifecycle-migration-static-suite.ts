@@ -41,12 +41,12 @@ function main() {
 
   console.log('\n2. resume_quota_events table shape');
   {
-    assert(/CREATE TABLE IF NOT EXISTS resume_quota_events/.test(sql), 'resume_quota_events table is created');
+    assert(/CREATE TABLE IF NOT EXISTS (?:public\.)?resume_quota_events/.test(sql), 'resume_quota_events table is created');
     assert(/event_type\s+text NOT NULL CHECK \(event_type IN \('reserved', 'refunded'\)\)/.test(sql),
       'event_type is constrained to exactly reserved|refunded');
     assert(/CONSTRAINT resume_quota_events_unique_attempt_event UNIQUE \(analysis_id, attempt_number, event_type\)/.test(sql),
       'the (analysis_id, attempt_number, event_type) UNIQUE constraint exists — the actual idempotency backstop');
-    assert(/analysis_id\s+uuid NOT NULL REFERENCES resume_analyses\(id\) ON DELETE CASCADE/.test(sql),
+    assert(/analysis_id\s+uuid NOT NULL REFERENCES (?:public\.)?resume_analyses\(id\) ON DELETE CASCADE/.test(sql),
       'analysis_id cascades on delete, matching the existing resume_analyses→resume_versions→profiles cascade chain — found via Stage 3 live validation: without this, deleting an account/resume-version would start failing (FK violation) the moment any analysis ever reached quota reservation');
     assert(/CONSTRAINT resume_quota_events_reason_shape CHECK/.test(sql) && /event_type = 'reserved' AND reason IS NULL/.test(sql) && /event_type = 'refunded' AND reason IS NOT NULL AND reason <> ''/.test(sql),
       'a reserved event always has a NULL reason, a refunded event always has a non-empty one');
@@ -54,11 +54,11 @@ function main() {
 
   console.log('\n3. resume_quota_events lockdown (RLS, same discipline as ai_call_events)');
   {
-    assert(/ALTER TABLE resume_quota_events ENABLE ROW LEVEL SECURITY/.test(sql), 'RLS enabled on resume_quota_events');
-    assert(/ALTER TABLE resume_quota_events FORCE ROW LEVEL SECURITY/.test(sql), 'RLS forced on resume_quota_events (applies even to the table owner)');
+    assert(/ALTER TABLE (?:public\.)?resume_quota_events ENABLE ROW LEVEL SECURITY/.test(sql), 'RLS enabled on resume_quota_events');
+    assert(/ALTER TABLE (?:public\.)?resume_quota_events FORCE ROW LEVEL SECURITY/.test(sql), 'RLS forced on resume_quota_events (applies even to the table owner)');
     assert(/USING \(auth\.role\(\) = 'service_role'\)/.test(sql) && /WITH CHECK \(auth\.role\(\) = 'service_role'\)/.test(sql),
       'the only policy restricts all access to service_role');
-    assert(/REVOKE ALL ON resume_quota_events FROM PUBLIC, anon, authenticated/.test(sql),
+    assert(/REVOKE ALL ON (?:public\.)?resume_quota_events FROM PUBLIC, anon, authenticated/.test(sql),
       'no client role (PUBLIC/anon/authenticated) is granted direct table access — writes only via the SECURITY DEFINER RPCs');
   }
 
@@ -77,7 +77,7 @@ function main() {
     assert(/created_at\s*=\s*now\(\)/.test(doUpdateBody),
       'the DO UPDATE refreshes created_at on a successful reclaim (bundled per the spec)');
 
-    const insertValuesMatch = sql.match(/INSERT INTO resume_analyses \([\s\S]*?\)\s*VALUES\s*\(([\s\S]*?)\)\s*\n\s*ON CONFLICT/);
+    const insertValuesMatch = sql.match(/INSERT INTO (?:public\.)?resume_analyses \([\s\S]*?\)\s*VALUES\s*\(([\s\S]*?)\)\s*\n\s*ON CONFLICT/);
     assert(!!insertValuesMatch, 'the fresh-row INSERT VALUES clause is present');
     assert(/,\s*1\s*\)?\s*$/.test((insertValuesMatch?.[1] ?? '').trim()) || /,\s*1\s*$/.test((insertValuesMatch?.[1] ?? '').trim()),
       'a brand-new key is inserted with attempt_number = 1 (the VALUES list ends with the literal 1)',
@@ -121,13 +121,13 @@ function main() {
       'reservation requires the attempt to be CURRENT (stale_attempt rejects an old attempt number)');
 
     // Stage 5 independent-review fixes (2026-11-02).
-    assert(/FROM resume_analyses\s*\n\s*WHERE id = p_analysis_id\s*\n\s*FOR UPDATE;/.test(reserveBody),
+    assert(/FROM (?:public\.)?resume_analyses\s*\n\s*WHERE id = p_analysis_id\s*\n\s*FOR UPDATE;/.test(reserveBody),
       'finding #1 fix: the resume_analyses ownership/currency read in reserve_resume_analysis is now FOR UPDATE, serializing against a concurrent upsert_resume_analysis() reclaim');
     // Anchored on the literal result-returning occurrence ('result', 'already_reserved'), not any
     // earlier comment mentioning the word -- the body now mentions "already_reserved" twice.
     const alreadyReservedIdx = reserveBody.indexOf("'result', 'already_reserved'");
     const alreadyReservedBlock = reserveBody.slice(alreadyReservedIdx - 400, alreadyReservedIdx + 200);
-    assert(/UPDATE profiles SET/.test(alreadyReservedBlock),
+    assert(/UPDATE (?:public\.)?profiles SET/.test(alreadyReservedBlock),
       'finding #4 fix: the already_reserved path now persists the lazy day-rollover to profiles, not just the reserved/limit_reached paths');
     assert(/'remaining', GREATEST\(0, v_limit - v_row\.daily_resume_analyses_count\)/.test(reserveBody),
       'finding #4 fix: already_reserved\'s response now includes remaining, matching the reserved/limit_reached responses');
@@ -150,7 +150,7 @@ function main() {
     assert(/no_reservation/.test(refundBody), 'a refund with no matching reserved event is rejected, not silently accepted');
     assert(/p_reason IS NULL OR p_reason = ''/.test(refundBody), 'an empty/missing reason is rejected before any write');
 
-    assert(/SELECT id, profile_id INTO v_analysis FROM resume_analyses WHERE id = p_analysis_id FOR UPDATE;/.test(refundBody),
+    assert(/SELECT id, profile_id INTO v_analysis FROM (?:public\.)?resume_analyses WHERE id = p_analysis_id FOR UPDATE;/.test(refundBody),
       'finding #1 fix: the resume_analyses ownership read in refund_resume_analysis is also FOR UPDATE, for the same lock-ordering reason as reserve');
 
     const rolloverMatch = refundBody.match(/IF v_row\.usage_date = v_reserved\.usage_date THEN([\s\S]*?)END IF;/);

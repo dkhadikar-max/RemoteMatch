@@ -86,19 +86,21 @@ function main() {
       'a mismatch returns stale_attempt with the REAL row id, never a fabricated one, and writes nothing');
 
     console.log('  Finalize never claims, never increments attempt_number');
-    assert(!/attempt_number\s*=/.test(finalizeBody.slice(finalizeBody.indexOf('UPDATE resume_analyses SET'), finalizeBody.indexOf('WHERE id = p_analysis_id'))),
+    const finalizeUpdateIdx = finalizeBody.search(/UPDATE (?:public\.)?resume_analyses SET/);
+    assert(finalizeUpdateIdx > -1, 'the UPDATE statement itself is present (schema-qualification tolerant)');
+    assert(!/attempt_number\s*=/.test(finalizeBody.slice(finalizeUpdateIdx, finalizeBody.indexOf('WHERE id = p_analysis_id'))),
       'the UPDATE statement itself never assigns attempt_number — structurally impossible for finalize to advance it, not just by convention');
     assert(!/ON CONFLICT/.test(finalizeBody), 'finalize_resume_analysis has no ON CONFLICT clause at all — it can never reclaim/insert a row, only update an existing one it already owns');
 
     console.log('  Safeguard B: result/accounting write scope + ACL');
-    assert(/UPDATE resume_analyses SET\s*\n\s*status\s*=\s*p_status,\s*\n\s*result\s*=\s*p_result,\s*\n\s*source_ai\s*=\s*p_source_ai,\s*\n\s*model\s*=\s*p_model,\s*\n\s*prompt_tokens\s*=\s*p_prompt_tokens,\s*\n\s*completion_tokens\s*=\s*p_completion_tokens,\s*\n\s*cost_usd\s*=\s*p_cost_usd,/.test(finalizeBody),
+    assert(/UPDATE (?:public\.)?resume_analyses SET\s*\n\s*status\s*=\s*p_status,\s*\n\s*result\s*=\s*p_result,\s*\n\s*source_ai\s*=\s*p_source_ai,\s*\n\s*model\s*=\s*p_model,\s*\n\s*prompt_tokens\s*=\s*p_prompt_tokens,\s*\n\s*completion_tokens\s*=\s*p_completion_tokens,\s*\n\s*cost_usd\s*=\s*p_cost_usd,/.test(finalizeBody),
       'the result/model/token/cost write happens in the SAME UPDATE statement guarded by the ownership check above — a stale caller never reaches this statement at all');
     assert(!/ai_call_events|ai_spend_ledger/.test(sqlNoComments),
       'Safeguard B: this migration never references ai_call_events/ai_spend_ledger in any EXECUTABLE statement (only in explanatory comments) — provider-spend accounting is untouched, confirming it stays structurally independent of finalize\'s outcome');
     assert(/REVOKE ALL ON FUNCTION public\.finalize_resume_analysis\(uuid, int, text, jsonb, boolean, text, integer, integer, numeric\) FROM PUBLIC, anon/.test(sql) &&
       /GRANT EXECUTE ON FUNCTION public\.finalize_resume_analysis\(uuid, int, text, jsonb, boolean, text, integer, integer, numeric\) TO authenticated/.test(sql),
       'ACL matches every other RPC in this project: no PUBLIC/anon, authenticated only');
-    assert(/SECURITY DEFINER/.test(finalizeBody) && /SET search_path = public/.test(finalizeBody),
+    assert(/SECURITY DEFINER/.test(finalizeBody) && /SET search_path = (?:public|pg_catalog, public, pg_temp)/.test(finalizeBody),
       'SECURITY DEFINER with a locked search_path, matching every other RPC\'s injection-hardening in this project');
   }
 
