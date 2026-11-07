@@ -1,8 +1,8 @@
 # Resume Intelligence (PR B) — Quota Lifecycle, Ownership-Aware Finalization, and Reconciliation Sweep
 
-**PR-ready delivery package.** Status: locally implemented, live-verified, independently and consolidated-audited. **Not committed, not pushed, no PR opened.** `git rev-parse HEAD` in the worktree is unchanged at `e128f3f` throughout all of this work.
+**PR #48 delivery package.** Status: implementation committed and pushed; PR #48 is open against `main`. The current PR head is `94f39c3b1a9903b42768c446b94d0d120c5c6bef`. Historical implementation-stage notes below describe work completed before the PR was committed; they are not a statement of current Git status.
 
-This package covers three new, sequential migrations (040, 041, 042) and their application-layer integration, built and verified across Stages 2–6 of this workstream (2026-11-01/02). Nothing here has been applied to any shared, persistent, or production database.
+This package covers three new, sequential migrations (040, 041, 042) and their application-layer integration, built and verified across Stages 2–6 of this workstream (2026-11-01/02). The PR package's live-PostgreSQL evidence refers to the disposable local instance described in the original test record; no shared or production database application is claimed.
 
 ---
 
@@ -142,7 +142,7 @@ Migration ordering — Pass. SQL security/privileges — Pass. Cron authenticati
 
 ## 5. Deployment checklist (none of this has been executed)
 
-1. Coordinate the migration-036 numbering collision with the billing branch (see §4.7) **before** either branch merges — decide which branch renumbers, if either.
+1. Migration-number check: current PR #48 / PR #50 file lists do not collide (PR #50 uses migration 043). Re-check `main` and both PR file lists immediately before merge.
 2. **Verify `RESUME_INTELLIGENCE_ENABLED` is not `'true'` in the target environment** — this is what makes the rest of this sequence a dark launch rather than a live-traffic-sensitive one (see §4.4).
 3. Apply migrations **040 → 041 → 042, in that exact order**, to the target database. Each is independently idempotent-safe to re-run only in the sense that re-applying an already-applied migration will error (`DROP FUNCTION IF EXISTS` guards the function-replacement statements, but the `ALTER TABLE ADD COLUMN IF NOT EXISTS`/`CREATE TABLE IF NOT EXISTS` in 040 are the only truly re-run-safe statements) — treat each as a normal one-time forward migration.
 4. Deploy the matching application code (the `resume-intelligence-service.ts` changes, `quota-reconciliation.ts`, the new route, the `admin.ts` allowlist entry). With the flag confirmed off in step 2, this does not need to happen within a tight window of step 3 — see §4.4.
@@ -167,3 +167,12 @@ Each migration's own file ends with a manual (not automated) `DOWN` section:
 ---
 
 **End of package. Commit, push, PR, merge, and deployment all remain separately gated — none authorized by this document.**
+
+
+## 7. PR status and verification update (2026-11-07)
+
+- PR #48 is open; current head: `94f39c3b1a9903b42768c446b94d0d120c5c6bef`.
+- GitHub Actions workflow tree: no `.github/workflows/` files are present at this commit. Therefore no repository-owned CI workflow is configured to run for this PR head. The Supabase Preview check was skipped because the branch is not associated with a Supabase Branch; this is not a migration pass/fail result.
+- GitHub commit status reports zero status contexts; there is no green CI result to cite. Local test evidence remains separate from GitHub CI.
+- Signed-in browser verification remains outstanding and must be completed by an operator with an authenticated browser session. It has not been represented as passed.
+- No migration has been applied to a shared or production database, and no deployment or feature-flag enablement is authorized by this document.
