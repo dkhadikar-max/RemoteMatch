@@ -115,6 +115,23 @@ export interface RazorpayPaymentEntity {
   status: string;
 }
 
+/** The subset of Razorpay's Refund entity billing_transactions needs
+ *  (2026-11-07 round-3 review fix, P1 items 1+2). Present on
+ *  `payload.refund.entity` for `refund.created`/`refund.processed`/
+ *  `refund.failed` — a DISTINCT entity from the parent payment, with its own
+ *  id and its own amount (the amount of THIS refund, never the parent
+ *  payment's total amount — a payment can have multiple partial refunds,
+ *  each a separate Refund entity). `payment_id` is the refund's own claim of
+ *  which payment it refunds — the authoritative association, preferred over
+ *  reading `payload.payment.entity.id` for this purpose. */
+export interface RazorpayRefundEntity {
+  id: string;
+  amount: number;
+  currency: string;
+  payment_id: string;
+  status: string;
+}
+
 /**
  * THE entitlement rule — the only place a Razorpay subscription is mapped to
  * a tier; /verify and the webhook both call it. It reads the whole record, not

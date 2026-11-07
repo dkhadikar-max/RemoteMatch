@@ -7,8 +7,18 @@
  * below. Every currency not active, and every unlisted/undetectable country,
  * resolves to the existing INR plan — today's behavior is the default, not a
  * special case. This module is pure config/lookup; nothing here creates a
- * Razorpay Plan or changes what /api/razorpay/subscription does until that
- * route is wired to call `resolvePlan()` (not done — see the plan doc).
+ * Razorpay Plan.
+ *
+ * `/api/razorpay/subscription` (src/app/api/razorpay/subscription/route.ts)
+ * IS wired to call `resolvePlan()` — has been since this module's original
+ * PR — reading an optional `currency` hint off the request body and
+ * resolving it through this module before creating or reusing a
+ * subscription. (2026-11-07 round-3 review fix, P3: this header previously
+ * still said "not done — see the plan doc," left over from before that
+ * wiring landed and never updated — stale documentation, corrected here.)
+ * What is NOT wired in is a country/currency *picker* — no caller passes
+ * anything other than `DEFAULT_CURRENCY` today; see `currencyForCountry`'s
+ * own doc comment below for that distinction.
  */
 
 import { formatCurrency } from './currency-format';
