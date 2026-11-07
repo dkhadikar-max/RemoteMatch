@@ -57,7 +57,7 @@ async function main() {
     .split('\n')
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n');
-  assert(/FROM resume_versions rv WHERE rv\.id = p_resume_version_id AND rv\.profile_id = v_uid/.test(sqlBody038),
+  assert(/FROM (?:public\.)?resume_versions rv WHERE rv\.id = p_resume_version_id AND rv\.profile_id = v_uid/.test(sqlBody038),
     'the ownership-check subquery uses an explicit "rv" alias for both id and profile_id, removing the ambiguity against the RETURNS TABLE id variable');
   assert(!/SELECT 1 FROM resume_versions WHERE id = p_resume_version_id/.test(sqlBody038),
     'the original unqualified (ambiguous) form is gone from the executable SQL (it is only quoted, for documentation, in the header comment)');
