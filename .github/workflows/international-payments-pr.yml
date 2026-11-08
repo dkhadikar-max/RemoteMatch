@@ -1,0 +1,56 @@
+name: International Payments PR checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/international-payments]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: international-payments-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  international-payments:
+    name: International payments static and pure-unit regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Run self-contained billing regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          suites=(
+            test/currency-config-suite.ts
+            test/razorpay-subscription-reuse-suite.ts
+            test/razorpay-webhook-parse-suite.ts
+            test/razorpay-refund-ledger-suite.ts
+            test/billing-transactions-migration-pglite-suite.ts
+            test/verification-suite.ts
+          )
+          for suite in "${suites[@]}"; do
+            echo "::group::${suite}"
+            npx --yes tsx@4.20.6 "${suite}"
+            echo "::endgroup::"
+          done
+
+      - name: Check patch whitespace
+        run: git diff --check
