@@ -311,7 +311,7 @@ function aiBodyIsEmpty(body: Awaited<ReturnType<typeof validateModelOutput>>['bo
  *  same consume-not-refund-on-any-response invariant, same observability events. The one real
  *  behavior addition is MODEL_CALL_TIMEOUT_MS, enforced inside the adapter — previously no
  *  timeout existed at all. */
-const MODEL_CALL_TIMEOUT_MS = Number(process.env.RESUME_INTELLIGENCE_TIMEOUT_MS) || 30000;
+const MODEL_CALL_TIMEOUT_MS = Number(process.env.RESUME_INTELLIGENCE_TIMEOUT_MS) || 120000;
 
 async function callModel(req: AnalyzeRequest, det: ReturnType<typeof runDeterministicAnalysis>): Promise<{ raw: RawModelResumeAnalysis; model: string } | null> {
   return runModelCall(req, det, getResumeIntelligenceProvider(), getResumeIntelligenceLedger());
