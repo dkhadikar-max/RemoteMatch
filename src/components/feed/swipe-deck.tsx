@@ -18,8 +18,7 @@ interface SwipeDeckProps {
   onRewind: () => Promise<string | null>;
   canRewind: boolean;
   planTier?: 'free' | 'pro';
-  dailyRightSwipesCount?: number;
-  onRequireUpgrade?: (reason: 'rewind' | 'swipes') => void;
+  onRequireUpgrade?: (reason: 'rewind' | 'rightSwipeLimit' | 'totalSwipeLimit') => void;
   /** True while a modal rendered over the feed (filter, upgrade, …) is open: the keyboard shortcuts must not act. */
   paused?: boolean;
 }
@@ -30,7 +29,6 @@ export function SwipeDeck({
   onRewind,
   canRewind,
   planTier = 'free',
-  dailyRightSwipesCount = 0,
   onRequireUpgrade,
   paused = false,
 }: SwipeDeckProps) {
@@ -69,12 +67,24 @@ export function SwipeDeck({
       if (!currentOpp) return;
       const swiped = currentOpp;
 
+      // No client-side blocking pre-check here, deliberately. An earlier
+      // version short-circuited on cached dailyRightSwipesCount/
+      // totalSwipesCount without consulting the server — but those counts
+      // are a rolling-24h window that only ever DECREASES on its own as
+      // swipes age out (never increases except via the user's own actions,
+      // which the client already tracks). A cache that's gone stale while
+      // the user sits on the feed can therefore only ever show a FALSE
+      // block (a cap the user has actually fallen back under), never a
+      // false allow — and nothing here was refreshing that cache on any
+      // schedule. The server (migration 046 /
+      // src/app/api/opportunities/swipe/route.ts) is the only authority
+      // that can see the real, current window; onSwipe below always
+      // reaches it, and feed/page.tsx's existing rejection handling
+      // (branching on the server's RIGHT_LIMIT_REACHED / TOTAL_LIMIT_
+      // REACHED code) is what shows the correct upgrade modal when the
+      // server actually says no.
+
       if (action === 'interested') {
-        if (planTier === 'free' && dailyRightSwipesCount >= 15) {
-          x.set(0);
-          onRequireUpgrade?.('swipes');
-          return;
-        }
         setLastInterestedOpp(swiped);
         setShowToast(true);
         setTimeout(() => setShowToast(false), 6000);
@@ -84,7 +94,7 @@ export function SwipeDeck({
       setDeck((prev) => prev.slice(1));
       x.set(0);
     },
-    [currentOpp, onSwipe, x, planTier, dailyRightSwipesCount, onRequireUpgrade]
+    [currentOpp, onSwipe, x]
   );
 
   const handleRewind = useCallback(async () => {

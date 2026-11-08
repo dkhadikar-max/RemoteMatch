@@ -7,6 +7,7 @@ import {
   RequirementCheckItem,
 } from '@/types/byn';
 import { skillMatches } from './skill-match';
+import { filterAmbiguousTitleTags } from './ambiguous-title-tags';
 
 // ==============================================================================
 // 1. HARD ELIGIBILITY GATE
@@ -98,7 +99,10 @@ export function checkHardEligibility(
     ]);
 
     const titleLower = opportunity.title.toLowerCase();
-    const oppSkillsLower = (opportunity.requiredSkills || []).map((s) => s.toLowerCase());
+    // Spec 1 (taxonomy fixes): ambiguous title-shaped tags (e.g.
+    // "Account-Executive" on an unrelated sales posting) are excluded here,
+    // before any skill-match comparison — see ambiguous-title-tags.ts.
+    const oppSkillsLower = filterAmbiguousTitleTags(opportunity.requiredSkills).map((s) => s.toLowerCase());
     const oppText = `${titleLower} ${oppSkillsLower.join(' ')}`;
     const candidateSkillNames = (profile.skills || []).map((s) => s.skillName.toLowerCase());
 
@@ -160,7 +164,8 @@ export function computeScreeningFit(
   }
 
   const candidateSkills = profile.skills;
-  const oppSkills = opportunity.requiredSkills.map((s) => s.toLowerCase());
+  // Spec 1 (taxonomy fixes): see the import-site comment above.
+  const oppSkills = filterAmbiguousTitleTags(opportunity.requiredSkills).map((s) => s.toLowerCase());
   const oppText = `${opportunity.title} ${opportunity.description} ${oppSkills.join(' ')}`.toLowerCase();
 
   const overlapSkills: string[] = [];
@@ -258,7 +263,9 @@ export function generateRuleBasedMatchAnalysis(
   const screening = computeScreeningFit(profile, opportunity);
 
   const candidateSkills = profile.skills;
-  const oppSkills = opportunity.requiredSkills.length > 0 ? opportunity.requiredSkills : ['Remote Collaboration', 'Communication'];
+  // Spec 1 (taxonomy fixes): see the import-site comment above.
+  const filteredRequiredSkills = filterAmbiguousTitleTags(opportunity.requiredSkills);
+  const oppSkills = filteredRequiredSkills.length > 0 ? filteredRequiredSkills : ['Remote Collaboration', 'Communication'];
 
   const checklist: RequirementCheckItem[] = [];
   const strengths: string[] = [];
