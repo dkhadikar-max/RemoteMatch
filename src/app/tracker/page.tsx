@@ -17,7 +17,8 @@ import {
 
 // Shape returned by GET /api/applications — the server-authoritative
 // lifecycle state, joined with the fit-score-at-decision-time snapshot
-// recorded by finalize_interested_swipe(). Deliberately does not carry the
+// recorded by reserve_and_record_right_swipe()/attach_right_swipe_decision()
+// (migration 046; formerly finalize_interested_swipe()). Deliberately does not carry the
 // full `opportunity`/`match` objects ApplicationRecord allows for — those
 // are resolved separately, in bulk, via GET /api/applications/opportunities
 // (Tracker Opportunity Resolution) below. This USED to say the opportunity

@@ -41,6 +41,14 @@ let adminClient: SupabaseClient | null = null;
  *     satisfy; it's the intended sole write path behind a route that has
  *     already validated event_type/fields against a fixed allow-list and
  *     derived profile_id from the caller's own session (never the body).
+ *   - `src/lib/auth/get-authenticated-employer.ts` (Direct Employer Supply,
+ *     Phase 1) and the `/api/employer/*` + `/api/admin/company-verifications/*`
+ *     routes it backs. Same shape as `admin_users`: `companies` /
+ *     `company_members` have RLS enabled with ZERO client policies
+ *     (migration 044) — no `anon` or `authenticated` role can read or write
+ *     either table, ever. `companyId` always comes from the route's own
+ *     path segment, and membership is re-checked against this client on
+ *     every call — never a client-trusted claim.
  *   - `src/lib/ingestion/employer-registry.ts` (Supply Discovery gate C3),
  *     used only by the ATS provider classes (Greenhouse/Lever/Ashby) inside
  *     the same ingestion pipeline `catalog-sync.ts` itself already writes

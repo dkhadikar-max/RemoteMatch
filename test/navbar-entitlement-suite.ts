@@ -64,7 +64,8 @@ async function run() {
   {
     const free = (over: Partial<ServerEntitlement> = {}): ServerEntitlement => ({
       planTier: 'free', dailyRightSwipesCount: 0, dailyProposalsCount: 0, usageDate: '2026-09-11',
-      rightSwipeLimit: 15, proposalLimit: 5, email: 'alex.chen@example.com', isAnonymous: false,
+      rightSwipeLimit: 15, proposalLimit: 5, totalSwipesCount: 0, totalSwipeLimit: 50,
+      email: 'alex.chen@example.com', isAnonymous: false,
       linkedinUrl: null, githubUrl: null, careerDirection: 'continue', ...over,
     });
 

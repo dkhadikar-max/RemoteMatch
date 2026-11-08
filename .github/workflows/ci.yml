@@ -1,0 +1,147 @@
+name: CI
+
+# This repo has no existing CI (confirmed during the PR #51 review: the only
+# check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
+# tests). This workflow is intentionally narrow and generic, so it's safe to
+# land on `main` on its own, independent of any other open PR's merge order:
+#
+#   - Typecheck always runs (repo-wide, no external credentials, nothing to
+#     be missing).
+#   - The self-contained PGlite test suites run only if their files exist in
+#     the checkout at the time this runs — so this workflow works correctly
+#     whether it merges before or after the PRs that introduce those files
+#     (e.g. PR #51's test/swipe-limits-rolling-24h-suite.ts). It does not
+#     hardcode an assumption that any particular branch/PR has already
+#     landed.
+#   - It does not run the rest of test/, most of which expects live
+#     Supabase/Razorpay credentials this CI runner does not have and was
+#     never authorized to receive. Broader CI coverage (the full test/
+#     directory, live-tier gates, per-PR suites for other open PRs) is a
+#     separate decision, not made here.
+#
+# Opened as its own PR, deliberately isolated from any product/migration
+# change — kept unmerged pending explicit authorization.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  typecheck-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build (Next.js route-module validation)
+        run: npm run build
+
+      - name: Self-contained suites (PGlite, no external credentials) -- only those present in this checkout
+        run: |
+          shopt -s nullglob
+          suites=(
+            test/swipe-limits-rolling-24h-suite.ts
+          )
+          ran_any=false
+          for f in "${suites[@]}"; do
+            if [ -f "$f" ]; then
+              echo "::group::$f"
+              npx tsx "$f"
+              echo "::endgroup::"
+              ran_any=true
+            else
+              echo "Skipping $f -- not present in this checkout (expected before its introducing PR merges)."
+            fi
+          done
+          if [ "$ran_any" = false ]; then
+            echo "No known self-contained suite files present yet -- nothing to run, not a failure."
+          fi
+
+      - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
+        if: hashFiles('test/employer-company-accounts-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+  # ----------------------------------------------------------------------------
+  # Direct Employer Supply (migrations 044/045/047) -- LIVE integration tier.
+  #
+  # The job above only runs employer-company-accounts-suite.ts's static/unit
+  # section: without TEST_BASE_URL it silently skips its entire live section
+  # (found live, 2026-11-08 -- "0 skipped" was printed even though the whole
+  # live section never ran, which is exactly the failure mode this job
+  # exists to close). This job runs BOTH the live section of that suite AND
+  # test/employer-company-accounts-concurrency-isolated-suite.ts (true
+  # concurrent-registration race, registration atomicity under a genuine
+  # second-insert failure, multi-admin transition race) against a real,
+  # EXPLICITLY ISOLATED Supabase test project -- never production. The
+  # project's URL/keys are repo secrets (CI_ISOLATED_*), named distinctly
+  # from any production credential so they can never be confused with one.
+  #
+  # The static job now runs a real production build, so Next.js route-module
+  # shape validation is enforced on every PR. The live tier uses `next dev`
+  # only because it needs an isolated test server with CI credentials.
+  employer-live-integration:
+    runs-on: ubuntu-latest
+    # Job-level `if:` cannot reference the secrets context at all -- GitHub
+    # Actions rejects the ENTIRE workflow file at parse time if it does
+    # (confirmed live, 2026-11-08: the push that first tried `if: secrets.X
+    # != ''` here failed in 0s with no job logs at all -- "workflow file
+    # issue"). CI_ISOLATED_PROJECT_CONFIGURED is a plain repo VARIABLE (not a
+    # secret) set alongside the three real CI_ISOLATED_* secrets, used only
+    # to gate this job; it carries no credential value itself.
+    if: ${{ vars.CI_ISOLATED_PROJECT_CONFIGURED == 'true' }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CI_ISOLATED_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      ADMIN_HOST_OVERRIDE: admin.ci.local:3100
+      TEST_BASE_URL: http://localhost:3100
+      TEST_ADMIN_HOST: admin.ci.local:3100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start dev server against the isolated test project
+        run: |
+          npx next dev -p 3100 > /tmp/ci-dev-server.log 2>&1 &
+          echo $! > /tmp/ci-dev-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3100/api/health > /dev/null; then
+              echo "Server ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become healthy in time:"
+          cat /tmp/ci-dev-server.log
+          exit 1
+
+      - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+      - name: Live integration -- concurrency/atomicity suite
+        if: hashFiles('test/employer-company-accounts-concurrency-isolated-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-concurrency-isolated-suite.ts
+
+      - name: Stop dev server
+        if: always()
+        run: kill "$(cat /tmp/ci-dev-server.pid)" 2>/dev/null || true
