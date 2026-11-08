@@ -18,20 +18,16 @@ const isSupabaseConfigured = Boolean(
 //   ONBOARDING_PREFIXES — verified account required, onboarding NOT required
 //                          (this is where an un-onboarded user is sent).
 //   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
-// Resume Intelligence (PR B) joins /onboarding here, not PRODUCT_PREFIXES: it's linked from
-// onboarding's own review step, before onboarding_completed_at is set — requiring completed
-// onboarding would bounce that link straight back to /onboarding.
-const ONBOARDING_PREFIXES = ['/onboarding', '/resume-intelligence'];
+//   VERIFIED_ONLY_PREFIXES — verified account required, independent of onboarding state.
+// Resume Intelligence must be reachable both during onboarding and afterwards. It is
+// therefore verified-only: putting it in ONBOARDING_PREFIXES would also send completed
+// candidates to /feed via the onboarding-completion redirect below.
+const ONBOARDING_PREFIXES = ['/onboarding'];
 const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings', '/linkedin-jobs'];
-// VERIFIED_ONLY_PREFIXES — verified account required, like ONBOARDING_PREFIXES,
-// but deliberately kept OUT of the onboarding-completion gate below: that gate's
-// "inOnboarding && onboarded -> redirect to /feed" rule exists so a candidate who
-// already finished onboarding never revisits /onboarding itself, but Direct
-// Employer Supply (docs/direct-employer-supply-phase1-implementation-plan.md)
-// has nothing to do with candidate onboarding status either way — an onboarded
-// candidate registering their company must not get bounced to /feed, and an
-// un-onboarded one must not get force-redirected to /onboarding.
-const VERIFIED_ONLY_PREFIXES = ['/employer'];
+// VERIFIED_ONLY_PREFIXES — verified account required, but deliberately kept OUT of
+// the onboarding-completion gate. Employer registration and Resume Intelligence are
+// available regardless of whether candidate onboarding has been completed.
+const VERIFIED_ONLY_PREFIXES = ['/employer', '/resume-intelligence'];
 
 // Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
 // Static assets are covered separately by the matcher below, not listed here.
