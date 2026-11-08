@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, Radar, Building2, Server, Briefcase,
+  LayoutDashboard, Radar, Building2, BadgeCheck, Server, Briefcase,
   Languages, Users, CreditCard, Activity, ScrollText, Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/discovery', label: 'Discovery', icon: Radar },
   { href: '/admin/employers', label: 'Employers', icon: Building2 },
+  { href: '/admin/company-verifications', label: 'Company Verifications', icon: BadgeCheck },
   { href: '/admin/sources', label: 'Sources', icon: Server },
   { href: '/admin/opportunities', label: 'Opportunities', icon: Briefcase },
   { href: '/admin/translation', label: 'Translation', icon: Languages },

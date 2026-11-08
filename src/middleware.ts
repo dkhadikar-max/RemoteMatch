@@ -20,6 +20,15 @@ const isSupabaseConfigured = Boolean(
 //   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
 const ONBOARDING_PREFIXES = ['/onboarding'];
 const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings', '/linkedin-jobs'];
+// VERIFIED_ONLY_PREFIXES — verified account required, like ONBOARDING_PREFIXES,
+// but deliberately kept OUT of the onboarding-completion gate below: that gate's
+// "inOnboarding && onboarded -> redirect to /feed" rule exists so a candidate who
+// already finished onboarding never revisits /onboarding itself, but Direct
+// Employer Supply (docs/direct-employer-supply-phase1-implementation-plan.md)
+// has nothing to do with candidate onboarding status either way — an onboarded
+// candidate registering their company must not get bounced to /feed, and an
+// un-onboarded one must not get force-redirected to /onboarding.
+const VERIFIED_ONLY_PREFIXES = ['/employer'];
 
 // Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
 // Static assets are covered separately by the matcher below, not listed here.
@@ -67,6 +76,7 @@ export async function middleware(request: NextRequest) {
 
   const inOnboarding = matchesAny(pathname, ONBOARDING_PREFIXES);
   const inProduct = matchesAny(pathname, PRODUCT_PREFIXES);
+  const inVerifiedOnly = matchesAny(pathname, VERIFIED_ONLY_PREFIXES);
 
   // --- Refresh the Supabase auth session cookie on every request ---
   let response = NextResponse.next({ request });
@@ -159,7 +169,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // --- Private-route boundary (verified) ---
-  if ((inProduct || inOnboarding) && !verified) {
+  if ((inProduct || inOnboarding || inVerifiedOnly) && !verified) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);

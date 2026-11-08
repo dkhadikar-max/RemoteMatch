@@ -2,10 +2,10 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
 /**
  * Closed vocabulary, matching admin_audit_log's CHECK constraints exactly
- * (migrations 029, 033) — extend both together, never widen either to free
- * text. The purchase_access_* rows are written only by the transactional
- * functions in migration 033 (together with the access change itself),
- * never through recordAdminAction().
+ * (migrations 029, 033, 044) — extend both together, never widen either to
+ * free text. The purchase_access_* rows are written only by the
+ * transactional functions in migration 033 (together with the access change
+ * itself), never through recordAdminAction().
  */
 export type AdminAuditAction =
   | 'c6_promote'
@@ -14,9 +14,14 @@ export type AdminAuditAction =
   | 'admin_grant'
   | 'admin_revoke'
   | 'purchase_access_grant'
-  | 'purchase_access_revoke';
+  | 'purchase_access_revoke'
+  | 'company_verify'
+  | 'company_reject'
+  | 'company_suspend'
+  | 'company_reinstate'
+  | 'company_mark_under_review';
 
-export type AdminAuditTargetType = 'discovered_company' | 'opportunity' | 'admin_user' | 'purchase_access';
+export type AdminAuditTargetType = 'discovered_company' | 'opportunity' | 'admin_user' | 'purchase_access' | 'company';
 
 export interface RecordAdminActionParams {
   adminId: string;
