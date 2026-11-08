@@ -277,6 +277,39 @@ export async function processWebhookEvent(
     reconcile = outcome.kind === 'reconcile';
   }
 
+  // Only write a billing row when the payment/refund belongs to one of our
+  // Pro plans and can be attributed to the profile in the server-created notes.
+  // Never fabricate ownership from an unverified payment or refund payload.
+  let ledgerRow: BillingTransactionRow | null = null;
+  if (event.subscription) {
+    const profileId = subscriptionUserId(event.subscription);
+    if (profileId && isProPlanSubscription(event.subscription)) {
+      if (event.refund) {
+        ledgerRow = {
+          profile_id: profileId,
+          razorpay_payment_id: event.refund.payment_id,
+          razorpay_refund_id: event.refund.id,
+          razorpay_subscription_id: event.subscription.id,
+          amount_minor: event.refund.amount,
+          currency: event.refund.currency,
+          status: 'refunded',
+          razorpay_event_id: event.eventId,
+        };
+      } else if (event.payment) {
+        ledgerRow = {
+          profile_id: profileId,
+          razorpay_payment_id: event.payment.id,
+          razorpay_refund_id: NOT_A_REFUND,
+          razorpay_subscription_id: event.subscription.id,
+          amount_minor: event.payment.amount,
+          currency: event.payment.currency,
+          status: event.payment.status,
+          razorpay_event_id: event.eventId,
+        };
+      }
+    }
+  }
+
   // Persist the billing row before marking the webhook event handled. If this
   // write fails, leaving the event unrecorded lets Razorpay retry; otherwise a
   // successful event record would make the next delivery short-circuit and
