@@ -65,3 +65,66 @@ jobs:
 
       - name: Check patch whitespace
         run: git diff --check
+
+  # ----------------------------------------------------------------------------
+  # LIVE integration tier — authenticated application smoke test against a
+  # real running server + a real, EXPLICITLY ISOLATED Supabase test project
+  # (never production). Proves resume upload, the real reserve/refund/
+  # finalize RPC path (both Free's upgrade_required and Pro's ai_unavailable
+  # branches), ownership boundaries (RLS, not just route filtering), a true
+  # concurrent duplicate-claim race, and genuine quota consumption on a
+  # finalized success -- everything except the literal outbound HTTP call to
+  # the AI provider, which needs real Gemini/OpenAI credentials this
+  # workflow does not have and is not authorized to add (that's a separate,
+  # settled cost-policy decision). See the suite's own header comment for
+  # the full, honest scope of what is and isn't covered.
+  #
+  # Reuses the same CI_ISOLATED_* secrets and CI_ISOLATED_PROJECT_CONFIGURED
+  # repo variable already set up for PR #49's employer-live-integration job
+  # -- same isolated project (xyahktsgdigutxartafb), named consistently so
+  # it can never be confused with a production credential.
+  resume-live-integration:
+    name: Resume Intelligence live integration (isolated project)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ vars.CI_ISOLATED_PROJECT_CONFIGURED == 'true' }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CI_ISOLATED_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      RESUME_INTELLIGENCE_ENABLED: 'true'
+      TEST_BASE_URL: http://localhost:3100
+      TEST_SERVER_SUPABASE_PROJECT_REF: xyahktsgdigutxartafb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start dev server against the isolated test project
+        run: |
+          npx next dev -p 3100 > /tmp/ci-dev-server.log 2>&1 &
+          echo $! > /tmp/ci-dev-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3100/api/health > /dev/null; then
+              echo "Server ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become healthy in time:"
+          cat /tmp/ci-dev-server.log
+          exit 1
+
+      - name: Live integration -- resume-intelligence-app-smoke-isolated-suite.ts
+        run: npx tsx test/resume-intelligence-app-smoke-isolated-suite.ts
+
+      - name: Stop dev server
+        if: always()
+        run: kill "$(cat /tmp/ci-dev-server.pid)" 2>/dev/null || true
