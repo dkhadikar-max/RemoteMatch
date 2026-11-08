@@ -3,6 +3,7 @@ import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { AdminAuditAction } from '@/lib/admin/audit-log';
+import { TRANSITIONS, type VerificationAction } from '@/lib/admin/company-verification-transitions';
 import { must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
 
@@ -41,16 +42,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
-
-type VerificationAction = 'mark_under_review' | 'verify' | 'reject' | 'suspend' | 'reinstate';
-
-export const TRANSITIONS: Record<VerificationAction, { from: string[]; to: string }> = {
-  mark_under_review: { from: ['pending'], to: 'under_review' },
-  verify: { from: ['pending', 'under_review'], to: 'verified' },
-  reject: { from: ['pending', 'under_review'], to: 'rejected' },
-  suspend: { from: ['verified'], to: 'suspended' },
-  reinstate: { from: ['suspended'], to: 'verified' },
-};
 
 const AUDIT_ACTION: Record<VerificationAction, AdminAuditAction> = {
   mark_under_review: 'company_mark_under_review',
