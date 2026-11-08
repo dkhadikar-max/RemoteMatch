@@ -43,6 +43,7 @@ jobs:
             test/razorpay-subscription-reuse-suite.ts
             test/razorpay-webhook-parse-suite.ts
             test/razorpay-refund-ledger-suite.ts
+            test/billing-transactions-migration-pglite-suite.ts
             test/verification-suite.ts
           )
           for suite in "${suites[@]}"; do
