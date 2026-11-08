@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedAdmin } from '@/lib/auth/get-authenticated-admin';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { escapeLikeWildcards } from '@/lib/admin/escape-like-wildcards';
 
 const PAGE_SIZE = 30;
 
