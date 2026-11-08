@@ -231,6 +231,22 @@ async function run() {
     assert(captured.length === 0, 'with no subscription to attribute to (e.g. the upstream fetch failed), no row is constructed — the refund is never silently fabricated against a guess', captured);
   }
 
+  console.log('\\nA failed billing-ledger write must leave the webhook event unhandled so Razorpay can retry');
+  {
+    let eventRecordAttempts = 0;
+    const result = await processWebhookEvent(FAKE_ADMIN, {
+      eventId: 'evt_ledger_write_failure',
+      eventType: 'payment.captured',
+      subscription: ourSub,
+      payment: { id: 'pay_ledger_write_failure', amount: 49900, currency: 'INR', status: 'captured' },
+    }, {
+      recordBillingTransaction: async () => ({ error: new Error('simulated transient database failure') }),
+      recordLedgerRow: async () => { eventRecordAttempts++; return { error: null }; },
+    });
+    assert(result.status === 503, 'billing-ledger write failure returns retryable 503', result);
+    assert(eventRecordAttempts === 0, 'webhook event is NOT marked handled when its billing row failed', eventRecordAttempts);
+  }
+
   console.log(`\n${passed} passed, ${failed} failed.`);
   process.exitCode = failed > 0 ? 1 : 0;
 }
