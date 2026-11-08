@@ -125,8 +125,9 @@ async function main() {
 
     console.log('\nACCESS CONTROL: client roles denied, service_role permitted');
     let anonDenied = false;
+    await db.exec('SET ROLE anon;');
     try {
-      await db.exec(`SET ROLE anon; SELECT count(*) FROM billing_transactions;`);
+      await db.query('SELECT count(*) FROM billing_transactions');
     } catch {
       anonDenied = true;
     } finally {
@@ -135,8 +136,9 @@ async function main() {
     assert(anonDenied, 'anon cannot SELECT from billing_transactions');
 
     let authenticatedDenied = false;
+    await db.exec('SET ROLE authenticated;');
     try {
-      await db.exec(`SET ROLE authenticated; SELECT count(*) FROM billing_transactions;`);
+      await db.query('SELECT count(*) FROM billing_transactions');
     } catch {
       authenticatedDenied = true;
     } finally {
