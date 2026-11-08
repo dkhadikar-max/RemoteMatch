@@ -6,14 +6,6 @@ import { escapeLikeWildcards } from '@/lib/admin/escape-like-wildcards';
 
 const PAGE_SIZE = 30;
 
-/** Escapes `\`, `%`, and `_` so a caller-supplied search term is matched
- *  literally by Postgres ILIKE rather than having `%`/`_` read as its
- *  wildcard characters (`\` must be escaped first, or escaping `%`/`_`
- *  into `\%`/`\_` would itself introduce new unescaped backslashes). */
-export function escapeLikeWildcards(raw: string): string {
-  return raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
-
 /**
  * GET /api/admin/company-verifications — Direct Employer Supply, Phase 1
  * admin review queue. Deliberately not named "/api/admin/employers" — that
