@@ -329,16 +329,16 @@ async function run() {
       );
       assert(r3.status === 200 && !calledWithNoPayment, 'an event with no payment entity never attempts a ledger write, and still returns 200', r3);
 
-      console.log('\nF3.4: a ledger-write failure never blocks or fails the primary webhook response');
+      console.log('\nF3.4: a ledger-write failure returns retryable 503 and leaves the event unhandled');
       const eventId4 = `evt_ledger_fails_${Date.now()}`;
       const r4 = await processWebhookEvent(
         admin,
         { eventId: eventId4, eventType: 'subscription.charged', subscription: sub, payment },
         { recordBillingTransaction: async () => ({ error: { message: 'simulated ledger failure' } }) }
       );
-      assert(r4.status === 200, 'webhook still returns 200 even when the ledger write itself fails', r4);
+      assert(r4.status === 503, 'webhook returns retryable 503 when the billing-ledger write fails', r4);
       const { data: eventRow } = await admin.from('razorpay_webhook_events').select('event_id').eq('event_id', eventId4).maybeSingle();
-      assert(Boolean(eventRow), 'the webhook event is still recorded as handled despite the ledger-write failure (primary flow unaffected)');
+      assert(!eventRow, 'the webhook event remains unhandled so Razorpay can redeliver after the ledger failure');
     } finally {
       await admin.auth.admin.deleteUser(user.userId).catch(() => {});
     }
