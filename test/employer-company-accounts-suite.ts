@@ -17,9 +17,9 @@ import * as path from 'path';
 import ws from 'ws';
 import { createClient } from '@supabase/supabase-js';
 import { hasRequiredEnv, adminClient, anonKeyClient, newVerifiedSession, uniqueEmail } from './helpers/verified-session';
-import { normalizeDomain } from '../src/app/api/employer/register/route';
-import { escapeLikeWildcards } from '../src/app/api/admin/company-verifications/route';
-import { TRANSITIONS } from '../src/app/api/admin/company-verifications/[id]/route';
+import { normalizeDomain } from '../src/lib/employer/normalize-domain';
+import { escapeLikeWildcards } from '../src/lib/admin/escape-like-wildcards';
+import { TRANSITIONS } from '../src/lib/admin/company-verification-transitions';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
 // src/middleware.ts enforces host-based separation between the admin surface
