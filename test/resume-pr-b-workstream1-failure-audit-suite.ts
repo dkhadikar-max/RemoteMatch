@@ -178,6 +178,7 @@ async function main() {
   console.log('\n=== Check 4: production event wiring — cost/tokens captured correctly, telemetry-failure-safe, billing invariants preserved ===');
   {
     const SERVICE_SOURCE = readFileSync(join(__dirname, '..', 'src', 'lib', 'ai', 'resume-intelligence-service.ts'), 'utf8');
+    assert(/const MODEL_CALL_TIMEOUT_MS = Number\(process\.env\.RESUME_INTELLIGENCE_TIMEOUT_MS\) \|\| 120000;/.test(SERVICE_SOURCE), '[timeout] default model-call timeout is 120 seconds, with RESUME_INTELLIGENCE_TIMEOUT_MS still overriding it');
     const callModelBody = SERVICE_SOURCE.match(/async function callModel\(req[\s\S]*?\nexport async function runModelCall/)?.[0]
       ?? SERVICE_SOURCE.match(/export async function runModelCall[\s\S]*?\n}\n/)?.[0] ?? '';
     // recordAiCallEvent() is a real, fire-and-forget module-level import (no DI), so its call
