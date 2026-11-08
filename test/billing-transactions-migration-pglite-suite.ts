@@ -70,11 +70,11 @@ async function main() {
     `;
     await db.query(captureSql, [profileId, paymentId, subscriptionId, 'evt_subscription_charged']);
     await db.query(captureSql, [profileId, paymentId, subscriptionId, 'evt_payment_captured']);
-    const captures = await db.query(
+    const captures = await db.query<{ id: string; razorpay_event_id: string | null }>(
       `SELECT id, razorpay_event_id FROM billing_transactions WHERE razorpay_payment_id = $1 AND status = 'captured'`,
       [paymentId]
     );
-    const captureRows = captures.rows as Array<{ id: string; razorpay_event_id: string | null }>;
+    const captureRows = captures.rows;
     assert(captureRows.length === 1, 'same payment + captured status + empty refund sentinel yields exactly one row');
     assert(captureRows[0]?.razorpay_event_id === 'evt_payment_captured', 'duplicate delivery updates the audit event id on the existing row');
 
@@ -90,11 +90,11 @@ async function main() {
     await db.query(refundSql, [profileId, paymentId, 'rfnd_partial_1', subscriptionId, 10000, 'evt_refund_1']);
     await db.query(refundSql, [profileId, paymentId, 'rfnd_partial_2', subscriptionId, 15000, 'evt_refund_2']);
     await db.query(refundSql, [profileId, paymentId, 'rfnd_partial_1', subscriptionId, 10000, 'evt_refund_1_redelivery']);
-    const refunds = await db.query(
+    const refunds = await db.query<{ razorpay_refund_id: string; amount_minor: number | string; razorpay_event_id: string | null }>(
       `SELECT razorpay_refund_id, amount_minor, razorpay_event_id FROM billing_transactions WHERE razorpay_payment_id = $1 AND status = 'refunded' ORDER BY razorpay_refund_id`,
       [paymentId]
     );
-    const refundRows = refunds.rows as Array<{ razorpay_refund_id: string; amount_minor: number | string; razorpay_event_id: string | null }>;
+    const refundRows = refunds.rows;
     assert(refundRows.length === 2, 'two different partial refund ids create two rows for the same parent payment');
     assert(
       refundRows[0]?.razorpay_refund_id === 'rfnd_partial_1' &&
@@ -149,17 +149,17 @@ async function main() {
     assert(authenticatedDenied, 'authenticated cannot SELECT from billing_transactions');
 
     await db.exec(`SET ROLE service_role; SET request.jwt.claim.role = 'service_role';`);
-    const serviceRows = await db.query('SELECT count(*)::int AS count FROM billing_transactions');
-    const serviceCount = serviceRows.rows[0] as { count: number | string } | undefined;
+    const serviceRows = await db.query<{ count: number | string }>('SELECT count(*)::int AS count FROM billing_transactions');
+    const serviceCount = serviceRows.rows[0];
     assert(Number(serviceCount?.count) === 4, 'service_role can read ledger rows under the service_role-only RLS policy');
     await db.exec('RESET ROLE;');
 
     console.log('\nFOREIGN KEY: deleting a profile preserves billing history');
     await db.query('DELETE FROM profiles WHERE id = $1', [profileId]);
-    const orphanRows = await db.query(
+    const orphanRows = await db.query<{ count: number | string }>(
       'SELECT count(*)::int AS count FROM billing_transactions WHERE profile_id IS NULL'
     );
-    const orphanCount = orphanRows.rows[0] as { count: number | string } | undefined;
+    const orphanCount = orphanRows.rows[0];
     assert(Number(orphanCount?.count) === 4, 'profile deletion sets profile_id NULL without deleting financial history');
 
     console.log(`\n${passed} passed, ${failed} failed.`);
