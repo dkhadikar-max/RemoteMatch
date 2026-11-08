@@ -18,12 +18,11 @@
 -- finding; this is NOT the narrower finish_reason-specific refund policy that
 -- was originally proposed and explicitly rejected).
 --
--- Billing migration 036 (Razorpay international billing, 036_billing_transactions.sql,
--- a DIFFERENT, unrelated branch's untracked file in the main checkout) is a
--- known, separate, harmless-while-unmerged numbering collision with THIS
--- worktree's own pre-existing 036_resume_intelligence.sql. Neither is touched
--- by this migration; resolving that collision is a merge-coordination decision,
--- not something this migration does.
+-- Razorpay billing ledger migration 043 (PR #50) is a separate workstream.
+-- Migration 036 belongs to this Resume Intelligence workstream
+-- (036_resume_intelligence.sql); the former billing migration number was
+-- renumbered to 043 to avoid the collision. This migration does not reference
+-- billing_transactions or depend on PR #50.
 --
 -- Revision history (same file, never re-numbered -- this migration has not been
 -- applied anywhere real yet):
