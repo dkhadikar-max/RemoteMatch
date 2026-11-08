@@ -65,3 +65,78 @@ jobs:
           if [ "$ran_any" = false ]; then
             echo "No known self-contained suite files present yet -- nothing to run, not a failure."
           fi
+
+      - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
+        if: hashFiles('test/employer-company-accounts-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+  # ----------------------------------------------------------------------------
+  # Direct Employer Supply (migrations 044/045/047) -- LIVE integration tier.
+  #
+  # The job above only runs employer-company-accounts-suite.ts's static/unit
+  # section: without TEST_BASE_URL it silently skips its entire live section
+  # (found live, 2026-11-08 -- "0 skipped" was printed even though the whole
+  # live section never ran, which is exactly the failure mode this job
+  # exists to close). This job runs BOTH the live section of that suite AND
+  # test/employer-company-accounts-concurrency-isolated-suite.ts (true
+  # concurrent-registration race, registration atomicity under a genuine
+  # second-insert failure, multi-admin transition race) against a real,
+  # EXPLICITLY ISOLATED Supabase test project -- never production. The
+  # project's URL/keys are repo secrets (CI_ISOLATED_*), named distinctly
+  # from any production credential so they can never be confused with one.
+  #
+  # Runs `next dev`, not `next build` + `next start`: a pre-existing, separate
+  # issue (the `[id]/route.ts` TRANSITIONS export, needed by this suite's own
+  # static checks, fails Next's production route-type validation) currently
+  # makes `next build` fail on this branch. That is a real blocker for an
+  # actual deployment and is reported separately -- it is not this workflow's
+  # job to silently route around it by skipping build checks for everyone;
+  # `next dev` is used here only so this live-tier job isn't blocked on an
+  # unrelated, already-flagged issue while that gets its own decision.
+  employer-live-integration:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_URL != '' }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CI_ISOLATED_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      ADMIN_HOST_OVERRIDE: admin.ci.local:3100
+      TEST_BASE_URL: http://localhost:3100
+      TEST_ADMIN_HOST: admin.ci.local:3100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start dev server against the isolated test project
+        run: |
+          npx next dev -p 3100 > /tmp/ci-dev-server.log 2>&1 &
+          echo $! > /tmp/ci-dev-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3100/api/health > /dev/null; then
+              echo "Server ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become healthy in time:"
+          cat /tmp/ci-dev-server.log
+          exit 1
+
+      - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+      - name: Live integration -- concurrency/atomicity suite
+        if: hashFiles('test/employer-company-accounts-concurrency-isolated-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-concurrency-isolated-suite.ts
+
+      - name: Stop dev server
+        if: always()
+        run: kill "$(cat /tmp/ci-dev-server.pid)" 2>/dev/null || true

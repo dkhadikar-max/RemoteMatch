@@ -22,6 +22,47 @@ import { escapeLikeWildcards } from '../src/app/api/admin/company-verifications/
 import { TRANSITIONS } from '../src/app/api/admin/company-verifications/[id]/route';
 
 const BASE_URL = process.env.TEST_BASE_URL || 'http://localhost:3000';
+// src/middleware.ts enforces host-based separation between the admin surface
+// (admin.remotematch.online in production) and the consumer app: a request to
+// an /api/admin/** path on any other host is answered with a plain-text 404
+// before it ever reaches the route handler (see src/lib/auth/admin-host.ts).
+// Hitting BASE_URL directly for admin routes therefore always 404s here —
+// this ADMIN_HOST must match whatever ADMIN_HOST_OVERRIDE the server under
+// test was started with (see test/helpers/verified-session.ts / CI workflow)
+// so these requests are actually routed to the admin handlers instead of
+// silently 404ing (found live, 2026-11-08 — the admin-HTTP section of this
+// suite had never actually been run before this).
+const ADMIN_HOST = process.env.TEST_ADMIN_HOST || new URL(BASE_URL).host;
+// The WHATWG fetch spec (and Node's undici implementation of global fetch)
+// treats `Host` as a forbidden request header and silently drops it —
+// confirmed live here: a `fetch(..., { headers: { Host: ... } })` call still
+// sends the connection's own host, not the override, so the middleware gate
+// above would 404 it exactly as if no override were attempted at all.
+// node:http has no such restriction, so admin-route calls go through it
+// instead, while every other call in this suite keeps using plain fetch.
+import * as http from 'http';
+function adminFetch(reqPath: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<{ status: number; json: () => Promise<any> }> { // eslint-disable-line @typescript-eslint/no-explicit-any -- matches global fetch()'s own Response.json() typing, which this replaces only for admin-prefixed calls
+  const url = new URL(`${BASE_URL}${reqPath}`);
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
+        method: init.method ?? 'GET',
+        headers: { ...(init.headers ?? {}), Host: ADMIN_HOST },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, json: async () => JSON.parse(data) }));
+      }
+    );
+    req.on('error', reject);
+    if (init.body) req.write(init.body);
+    req.end();
+  });
+}
 let passed = 0, failed = 0, skipped = 0;
 function assert(c: boolean, m: string) { if (c) { passed++; console.log(`  ✓ ${m}`); } else { failed++; console.error(`  ✗ ${m}`); } }
 function skip(m: string) { skipped++; console.log(`  – SKIP: ${m}`); }
@@ -296,7 +337,7 @@ async function main() {
     if (!adminToken) {
       skip('could not derive a live admin session token — skipping the admin-HTTP checks (RLS/audit-log checks below still run)');
     } else {
-      const listRes = await fetch(`${BASE_URL}/api/admin/company-verifications?verificationStatus=pending`, {
+      const listRes = await adminFetch(`/api/admin/company-verifications?verificationStatus=pending`, {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
       const listBody = await listRes.json();
@@ -307,12 +348,12 @@ async function main() {
       // concurrently (Promise.all, not sequentially) and assert the
       // compare-and-swap lets exactly one win, never both.
       const [concurrentVerifyRes, concurrentRejectRes] = await Promise.all([
-        fetch(`${BASE_URL}/api/admin/company-verifications/${companyId}`, {
+        adminFetch(`/api/admin/company-verifications/${companyId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
           body: JSON.stringify({ action: 'verify', reason: 'Suite: concurrency race — verify side' }),
         }),
-        fetch(`${BASE_URL}/api/admin/company-verifications/${companyId}`, {
+        adminFetch(`/api/admin/company-verifications/${companyId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
           body: JSON.stringify({ action: 'reject', reason: 'Suite: concurrency race — reject side' }),
@@ -335,14 +376,14 @@ async function main() {
       // section's scripted sequence (which assumes pending) still holds.
       await admin.from('companies').update({ verification_status: 'pending' }).eq('id', companyId);
 
-      const noReasonRes = await fetch(`${BASE_URL}/api/admin/company-verifications/${companyId}`, {
+      const noReasonRes = await adminFetch(`/api/admin/company-verifications/${companyId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({ action: 'verify' }),
       });
       assert(noReasonRes.status === 400, `admin verify without a reason is rejected 400 (got ${noReasonRes.status})`);
 
-      const verifyRes = await fetch(`${BASE_URL}/api/admin/company-verifications/${companyId}`, {
+      const verifyRes = await adminFetch(`/api/admin/company-verifications/${companyId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({ action: 'verify', reason: 'Suite: manually verified for test' }),
@@ -360,7 +401,7 @@ async function main() {
       assert((auditRows ?? []).length > 0, 'the verify action is recorded in admin_audit_log with target_type=company');
 
       // An already-verified company cannot be re-verified from the same action.
-      const reVerifyRes = await fetch(`${BASE_URL}/api/admin/company-verifications/${companyId}`, {
+      const reVerifyRes = await adminFetch(`/api/admin/company-verifications/${companyId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({ action: 'verify', reason: 'should not apply twice' }),
