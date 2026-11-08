@@ -74,8 +74,9 @@ async function main() {
       `SELECT id, razorpay_event_id FROM billing_transactions WHERE razorpay_payment_id = $1 AND status = 'captured'`,
       [paymentId]
     );
-    assert(captures.rows.length === 1, 'same payment + captured status + empty refund sentinel yields exactly one row');
-    assert(captures.rows[0]?.razorpay_event_id === 'evt_payment_captured', 'duplicate delivery updates the audit event id on the existing row');
+    const captureRows = captures.rows as Array<{ id: string; razorpay_event_id: string | null }>;
+    assert(captureRows.length === 1, 'same payment + captured status + empty refund sentinel yields exactly one row');
+    assert(captureRows[0]?.razorpay_event_id === 'evt_payment_captured', 'duplicate delivery updates the audit event id on the existing row');
 
     console.log('\nPARTIAL REFUNDS: distinct refunds remain distinct; redelivery is idempotent');
     const refundSql = `
@@ -93,18 +94,19 @@ async function main() {
       `SELECT razorpay_refund_id, amount_minor, razorpay_event_id FROM billing_transactions WHERE razorpay_payment_id = $1 AND status = 'refunded' ORDER BY razorpay_refund_id`,
       [paymentId]
     );
-    assert(refunds.rows.length === 2, 'two different partial refund ids create two rows for the same parent payment');
+    const refundRows = refunds.rows as Array<{ razorpay_refund_id: string; amount_minor: number | string; razorpay_event_id: string | null }>;
+    assert(refundRows.length === 2, 'two different partial refund ids create two rows for the same parent payment');
     assert(
-      refunds.rows[0]?.razorpay_refund_id === 'rfnd_partial_1' &&
-      refunds.rows[1]?.razorpay_refund_id === 'rfnd_partial_2',
+      refundRows[0]?.razorpay_refund_id === 'rfnd_partial_1' &&
+      refundRows[1]?.razorpay_refund_id === 'rfnd_partial_2',
       'each partial refund retains its own refund id'
     );
     assert(
-      refunds.rows[0]?.razorpay_event_id === 'evt_refund_1_redelivery',
+      refundRows[0]?.razorpay_event_id === 'evt_refund_1_redelivery',
       'redelivery of the same refund id upserts its existing row'
     );
     assert(
-      Number(refunds.rows[0]?.amount_minor) === 10000 && Number(refunds.rows[1]?.amount_minor) === 15000,
+      Number(refundRows[0]?.amount_minor) === 10000 && Number(refundRows[1]?.amount_minor) === 15000,
       'each partial refund retains its own amount'
     );
 
@@ -148,7 +150,8 @@ async function main() {
 
     await db.exec(`SET ROLE service_role; SET request.jwt.claim.role = 'service_role';`);
     const serviceRows = await db.query('SELECT count(*)::int AS count FROM billing_transactions');
-    assert(Number(serviceRows.rows[0]?.count) === 4, 'service_role can read ledger rows under the service_role-only RLS policy');
+    const serviceCount = serviceRows.rows[0] as { count: number | string } | undefined;
+    assert(Number(serviceCount?.count) === 4, 'service_role can read ledger rows under the service_role-only RLS policy');
     await db.exec('RESET ROLE;');
 
     console.log('\nFOREIGN KEY: deleting a profile preserves billing history');
@@ -156,7 +159,8 @@ async function main() {
     const orphanRows = await db.query(
       'SELECT count(*)::int AS count FROM billing_transactions WHERE profile_id IS NULL'
     );
-    assert(Number(orphanRows.rows[0]?.count) === 4, 'profile deletion sets profile_id NULL without deleting financial history');
+    const orphanCount = orphanRows.rows[0] as { count: number | string } | undefined;
+    assert(Number(orphanCount?.count) === 4, 'profile deletion sets profile_id NULL without deleting financial history');
 
     console.log(`\n${passed} passed, ${failed} failed.`);
     if (failed > 0) process.exitCode = 1;
