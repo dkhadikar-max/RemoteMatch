@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
   let body: unknown;
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid request.' }, { status: 400 }); }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 });
-  const { opportunityId, coverNote } = body as Record<string, unknown>;
-  if (typeof opportunityId !== 'string' || !/^[0-9a-f-]{36}$/i.test(opportunityId) ||
+  const { sourceId, coverNote } = body as Record<string, unknown>;
+  if (typeof sourceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(sourceId) ||
       (coverNote !== undefined && (typeof coverNote !== 'string' || coverNote.length > 10000))) {
     return NextResponse.json({ error: 'Provide a valid job and cover note.' }, { status: 400 });
   }
@@ -21,20 +21,20 @@ export async function POST(req: NextRequest) {
   if (!db) return NextResponse.json({ error: 'Applications are temporarily unavailable.' }, { status: 503 });
 
   const { data: opportunity, error: opportunityError } = await db.from('opportunities')
-    .select('id,source,status').eq('id', opportunityId).maybeSingle();
+    .select('id,source,status').eq('source', 'employerdirect').eq('source_id', sourceId).maybeSingle();
   if (opportunityError) return NextResponse.json({ error: 'Could not verify this job.' }, { status: 500 });
-  if (!opportunity || opportunity.source !== 'employerdirect' || opportunity.status !== 'active') {
+  if (!opportunity || opportunity.status !== 'active') {
     return NextResponse.json({ error: 'This job is not accepting applications through RemoteMatch.' }, { status: 404 });
   }
 
   const { data: submission, error: submissionError } = await db.from('employer_job_submissions')
-    .select('id').eq('published_opportunity_id', opportunityId).eq('status', 'published').maybeSingle();
+    .select('id').eq('published_opportunity_id', opportunity.id).eq('status', 'published').maybeSingle();
   if (submissionError) return NextResponse.json({ error: 'Could not verify this job.' }, { status: 500 });
   if (!submission) return NextResponse.json({ error: 'This job is no longer accepting applications.' }, { status: 410 });
 
   const { data, error } = await db.from('employer_job_applications').insert({
     submission_id: submission.id,
-    opportunity_id: opportunityId,
+    opportunity_id: opportunity.id,
     candidate_profile_id: auth.user.id,
     cover_note: typeof coverNote === 'string' ? coverNote.trim() : '',
   }).select('id,status,submitted_at').single();
