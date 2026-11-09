@@ -909,7 +909,9 @@ export async function reconcileCrossProviderDuplicates(): Promise<Reconciliation
   const { data, error } = await admin
     .from('opportunities')
     .select('id, source, company, title, canonical_url_hash, content_hash, source_quality, first_seen_at, superseded_by_opportunity_id')
-    .eq('status', 'active');
+    .eq('status', 'active')
+    // Employer-direct listings are manually verified and must not be superseded by an aggregator's lower-trust duplicate.
+    .neq('source', 'employerdirect');
   if (error) throw new Error(`Could not read active opportunities for reconciliation: ${error.message}`);
 
   const rows = (data ?? []) as ReconciliationRow[];
