@@ -91,7 +91,7 @@ async function main() {
 
     process.stdout.write(`DEBUG search response: ${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}\n`);
     const job = result.opportunities.find((item) => item.id === `opp-remotive-${sourceId}`);
-    assert.ok(job, 'the fixture must match the combined search filters');
+    if (!job) throw new Error(`ChatGPT search did not return seeded fixture ${sourceId}; response=${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}`);
     process.stdout.write(`DEBUG fixture row: ${JSON.stringify({ id: job.id, title: job.title, company: job.company })}\n`);
     assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
