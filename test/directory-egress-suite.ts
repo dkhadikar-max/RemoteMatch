@@ -435,7 +435,7 @@ async function main() {
     // database semantics over the full read rather than asserting false
     // parity with that documented legacy difference.
     const multiTerms = ['senior', 'engineer'];
-    const expectedMulti = full.filter((job) => multiTerms.every((term) => {
+    const expectedMulti = fullRun.r.filter((job) => multiTerms.every((term) => {
       const cap = term.charAt(0).toUpperCase() + term.slice(1);
       const upper = term.toUpperCase();
       return [job.title, job.company, job.description, job.remoteType]
