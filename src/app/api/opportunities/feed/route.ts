@@ -160,7 +160,9 @@ async function loadActiveCatalog() {
 
 export async function GET() {
   try {
+    const catalogStartedAt = performance.now();
     const opportunities = await loadActiveCatalog();
+    recordFeedPerf('catalog', catalogStartedAt, { rowCount: opportunities?.length ?? 0, scored: false });
     if (!opportunities) {
       return NextResponse.json({ success: false, error: 'Service temporarily unavailable.' }, { status: 503 });
     }
