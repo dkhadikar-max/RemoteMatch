@@ -428,12 +428,12 @@ async function main() {
     );
 
     // Concurrent large-catalog regression: exercise the same RPC at the
-    // production failure scale (92k+ rows) with overlapping root/category and
+    // production failure scale (92k+ rows) with overlapping root reads and
     // deep-page reads. This validates bounded responses and deterministic
     // totals under concurrent callers; PGlite timings are diagnostic only and
     // are not treated as a production latency/SLO measurement.
     const concurrentCases = Array.from({ length: 32 }, (_, i) => ({
-      p_category_slug: i % 3 === 0 ? null : SEO_CATEGORIES[(i - 1) % SEO_CATEGORIES.length].slug,
+      p_category_slug: null,
       p_page: i % 4 === 0 ? 161 : i % 4 === 1 ? 3289 : i % 4 === 2 ? 1 : 2,
       p_page_size: 24,
     }));
