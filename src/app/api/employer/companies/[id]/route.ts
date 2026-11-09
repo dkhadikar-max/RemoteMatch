@@ -4,6 +4,7 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
+import { EMPLOYER_INDUSTRIES, EMPLOYER_COMPANY_SIZES } from '@/lib/employer/taxonomy';
 
 const COMPANY_COLUMNS =
   'id, legal_name, official_website, official_domain, business_email, country_of_registration, ' +
@@ -67,8 +68,8 @@ function isValidPatchBody(body: unknown): body is PatchBody {
   return (
     isOptionalNullableString(b.description, MAX_LONG_TEXT) &&
     isOptionalNullableString(b.headquarters, MAX_TEXT) &&
-    isOptionalNullableString(b.industry, MAX_TEXT) &&
-    isOptionalNullableString(b.companySize, MAX_TEXT) &&
+    isOptionalNullableString(b.industry, MAX_TEXT) && (b.industry === undefined || b.industry === null || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
+    isOptionalNullableString(b.companySize, MAX_TEXT) && (b.companySize === undefined || b.companySize === null || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
     isOptionalNullableString(b.linkedinUrl, MAX_TEXT)
   );
 }
