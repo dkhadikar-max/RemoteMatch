@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { cache } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -26,6 +26,11 @@ import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
 import { DirectEmployerApplyButton } from '@/components/employer/direct-employer-apply-button';
 import { SITE_URL } from '@/lib/site';
 import { jobHref, jobUrl, findJobByRouteParam } from '@/lib/seo/job-href';
+import { recordRouteMetric } from '@/lib/observability/route-metrics';
+
+// Next renders generateMetadata and the page in one server request. React cache
+// deduplicates the identical source_id lookup across those two render phases.
+const getJobByIdForRender = cache(getJobById);
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -49,7 +54,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const job = await findJobByRouteParam(id, getJobById);
+  const job = await findJobByRouteParam(id, getJobByIdForRender);
   if (!job) return {};
 
   const isLive = isJobIndexable(job);
@@ -76,7 +81,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function PublicJobDetailPage({ params }: Props) {
   const { id } = await params;
-  const job = await findJobByRouteParam(id, getJobById);
+  const job = await findJobByRouteParam(id, getJobByIdForRender);
   if (!job) notFound();
 
   const isLive = isJobIndexable(job);
@@ -96,7 +101,26 @@ export default async function PublicJobDetailPage({ params }: Props) {
   const supabase = createSupabasePublicClient();
   // Bounded read: 3 rows from the database, NOT the whole catalog filtered in
   // memory (that cost ~21 MB of Supabase egress per page view).
-  const relatedJobs = supabase ? await getRelatedJobs(supabase, job.sourceId, 3) : [];
+  const relatedStartedAt = performance.now();
+  let relatedJobs;
+  try {
+    relatedJobs = supabase ? await getRelatedJobs(supabase, job.sourceId, 3) : [];
+    recordRouteMetric({
+      route: 'public_job_detail',
+      stage: 'related_jobs',
+      durationMs: performance.now() - relatedStartedAt,
+      outcome: 'success',
+      resultCount: relatedJobs.length,
+    });
+  } catch (error) {
+    recordRouteMetric({
+      route: 'public_job_detail',
+      stage: 'related_jobs',
+      durationMs: performance.now() - relatedStartedAt,
+      outcome: 'error',
+    });
+    throw error;
+  }
 
   // Match relevant category for breadcrumb trail
   const matchedCategory = SEO_CATEGORIES.find((cat) => {
