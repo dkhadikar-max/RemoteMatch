@@ -245,11 +245,12 @@ export function scoreOpportunitiesForFeed(
   opportunities: CanonicalOpportunity[]
 ): Array<CanonicalOpportunity & { fitScore: number; fitBadge: string }> {
   return opportunities
-    .map((opp) => {
+    .map((opp, inputOrder) => {
       const fit = computeScreeningFit(profile, opp);
-      return { ...opp, fitScore: fit.fitScore, fitBadge: fit.fitBadge };
+      return { opportunity: { ...opp, fitScore: fit.fitScore, fitBadge: fit.fitBadge }, inputOrder };
     })
-    .sort((a, b) => b.fitScore - a.fitScore);
+    .sort((a, b) => b.opportunity.fitScore - a.opportunity.fitScore || a.inputOrder - b.inputOrder)
+    .map(({ opportunity }) => opportunity);
 }
 
 // ==============================================================================
