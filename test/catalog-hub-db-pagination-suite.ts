@@ -9,6 +9,7 @@
  */
 import { PGlite } from '@electric-sql/pglite';
 import { SEO_CATEGORIES, matchesCategory } from '../src/lib/seo/data';
+import { CatalogHubTimeoutError, getCatalogHubPage } from '../src/lib/ingestion/catalog-read';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -266,6 +267,82 @@ async function main() {
       p_category_slug: null, p_page: 1, p_page_size: 24,
     });
     assert(afterDelete.total === visible.length - 1, 'directory total reflects committed trigger maintenance without a manual refresh');
+
+    // Exercise the same catalog size that exposed the production failure. The
+    // function must count the whole projection but return only a page, even if
+    // a caller asks for an oversized page size.
+    await setRole(db, 'service_role');
+    await db.exec(`
+      INSERT INTO public.opportunities (
+        id, source, source_id, title, posted_at, required_skills,
+        remote_type, eligible_countries, experience_requirement,
+        status, source_language, translation_status,
+        canonical_url_hash, content_hash
+      )
+      SELECT
+        gen_random_uuid(),
+        'scale',
+        'scale-' || g::text,
+        'Scale role ' || g::text,
+        timestamptz '2026-01-01 00:00:00+00' + g * interval '1 second',
+        ARRAY[]::text[],
+        'APAC',
+        ARRAY[]::text[],
+        NULL,
+        'active',
+        'en',
+        NULL,
+        'scale-h-' || g::text,
+        'scale-c-' || g::text
+      FROM generate_series(1, 92357) AS g;
+    `);
+
+    await setRole(db, 'anon');
+    const largePage1 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+      p_category_slug: null, p_page: 1, p_page_size: 1000,
+    });
+    const largePage2 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+      p_category_slug: null, p_page: 2, p_page_size: 24,
+    });
+    const largeIds1 = new Set(largePage1.jobs.map((j) => j.source_id));
+    assert(
+      largePage1.total === visible.length - 1 + 92357 && largePage1.jobs.length === 24,
+      '92,357-row catalog returns an exact total but clamps every response to 24 full rows'
+    );
+    assert(
+      largePage2.total === largePage1.total &&
+      largePage2.jobs.length === 24 &&
+      largePage2.jobs.every((j) => !largeIds1.has(j.source_id)),
+      'large-catalog page 2 is bounded and does not repeat page 1 listings'
+    );
+
+    const timeoutClient = {
+      rpc: async () => ({
+        data: null,
+        error: { code: '57014', message: 'canceling statement due to statement timeout' },
+      }),
+    } as any;
+    let timeoutClassified = false;
+    try {
+      await getCatalogHubPage(timeoutClient, null, 1, 24);
+    } catch (error) {
+      timeoutClassified = error instanceof CatalogHubTimeoutError;
+    }
+    assert(timeoutClassified, 'catalog RPC SQLSTATE 57014 is classified as CatalogHubTimeoutError');
+
+    const unexpectedClient = {
+      rpc: async () => ({
+        data: null,
+        error: { code: '42601', message: 'syntax error' },
+      }),
+    } as any;
+    let unexpectedPropagated = false;
+    try {
+      await getCatalogHubPage(unexpectedClient, null, 1, 24);
+    } catch (error) {
+      unexpectedPropagated = error instanceof Error && error.message.includes('syntax error');
+    }
+    assert(unexpectedPropagated, 'unexpected RPC errors still propagate rather than becoming empty results');
 
   } finally {
     await db.close();
