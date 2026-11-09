@@ -11,7 +11,7 @@ function valid(body: unknown): body is Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const b = body as Record<string, unknown>;
   if (Object.keys(b).some(k => !allowed.includes(k))) return false;
-  const str = (k: string, max: number, required = false) => b[k] === undefined || (typeof b[k] === 'string' && (b[k] as string).length <= max && (!required || Boolean((b[k] as string).trim())));
+  const str = (k: string, max: number, required = false) => b[k] === undefined ? !required : (typeof b[k] === 'string' && (b[k] as string).length <= max && (!required || Boolean((b[k] as string).trim())));
   const arr = (k: string) => b[k] === undefined || (Array.isArray(b[k]) && (b[k] as unknown[]).length <= 50 && (b[k] as unknown[]).every(x => typeof x === 'string' && x.length <= 80));
   const num = (k: string) => b[k] === undefined || b[k] === null || (typeof b[k] === 'number' && Number.isFinite(b[k]) && (b[k] as number) >= 0);
   return str('title',180,true) && str('description',20000,true) && (String(b.description ?? '').trim().length >= 30) && str('responsibilities',10000) &&
