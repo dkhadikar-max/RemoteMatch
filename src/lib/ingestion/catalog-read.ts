@@ -394,6 +394,13 @@ export async function getCatalogIndexEntries(supabase: SupabaseClient): Promise<
  * under the caller's RLS policies. Its SQL predicate is kept in sync with
  * matchesCategory() by the catalog-hub integration suite.
  */
+export class CatalogHubTimeoutError extends Error {
+  constructor() {
+    super('Directory page query took too long and was canceled by the database.');
+    this.name = 'CatalogHubTimeoutError';
+  }
+}
+
 export async function getCatalogHubPage(
   supabase: SupabaseClient,
   categorySlug: string | null,
@@ -405,7 +412,10 @@ export async function getCatalogHubPage(
     p_page: page,
     p_page_size: pageSize,
   });
-  if (error) throw new Error(`Could not read directory page: ${error.message}`);
+  if (error) {
+    if (isStatementTimeout(error)) throw new CatalogHubTimeoutError();
+    throw new Error(`Could not read directory page: ${error.message}`);
+  }
 
   const payload = data as { total?: number; jobs?: OpportunityRow[] } | null;
   if (
