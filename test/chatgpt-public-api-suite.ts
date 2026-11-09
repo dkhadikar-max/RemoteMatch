@@ -14,6 +14,7 @@ const admin = createClient(supabaseUrl!, serviceRoleKey!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 const sourceId = `chatgpt-api/${randomUUID()}`;
+const excludedSourceId = `${sourceId}-excluded`;
 const postedAt = new Date(Date.now() - 60_000).toISOString();
 
 async function get(path: string) {
@@ -70,6 +71,49 @@ async function main() {
   });
   assert.equal(seedError, null, `isolated job fixture must seed successfully: ${seedError?.message ?? ''}`);
 
+  // This second matching job is eligible in both India and the US, but its
+  // explicit exclusion for India must be applied without a negative array
+  // predicate on the full opportunities table.
+  const { error: excludedSeedError } = await admin.from('opportunities').insert({
+    source: 'remotive',
+    source_id: excludedSourceId,
+    type: 'job',
+    title: 'ChatGPT API Test — Senior TypeScript Engineer (US only)',
+    company: 'RemoteMatch Integration Test',
+    company_logo: null,
+    description: 'Synthetic isolated fixture with an India country exclusion.',
+    source_url: 'https://example.com/source-excluded',
+    official_url: 'https://example.com/apply-excluded',
+    canonical_url_hash: `chatgpt-api-excluded-${excludedSourceId}`,
+    content_hash: `chatgpt-content-excluded-${excludedSourceId}`,
+    employment_type: 'Full-time',
+    remote_type: 'Specific countries',
+    eligible_countries: ['IN', 'US'],
+    excluded_countries: ['IN'],
+    timezone_requirements: [],
+    salary_min: 100000,
+    salary_max: 120000,
+    salary_currency: 'USD',
+    salary_period: 'yearly',
+    required_skills: ['TypeScript'],
+    preferred_skills: ['Node.js'],
+    experience_requirement: '2-3',
+    quality_score: 80,
+    source_quality: 80,
+    description_completeness: 'high',
+    salary_quality: 'verified',
+    remote_policy_confidence: 'high',
+    explicit_remote_scope: 'explicit_worldwide',
+    status: 'active',
+    posted_at: postedAt,
+    first_seen_at: postedAt,
+    last_seen_in_feed_at: postedAt,
+    consecutive_absences: 0,
+    is_permanently_removed: false,
+    link_checked_at: postedAt,
+  });
+  assert.equal(excludedSeedError, null, `excluded-country fixture must seed successfully: ${excludedSeedError?.message ?? ''}`);
+
   try {
     const filterCases = [
       ['text', 'q=ChatGPT%20API%20Test'],
@@ -87,6 +131,19 @@ async function main() {
       const filterResult = await filterResponse.json() as { total: number };
       assert.ok(filterResult.total >= 1, `${name} filter must retain the seeded fixture`);
     }
+
+    const indiaResponse = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&country=India&limit=5');
+    assert.equal(indiaResponse.status, 200, 'India search should succeed with country exclusions');
+    const indiaResult = await indiaResponse.json() as { opportunities: Array<{ id: string }> };
+    assert.ok(indiaResult.opportunities.some((job) => job.id === `opp-remotive-${sourceId}`));
+    assert.equal(indiaResult.opportunities.some((job) => job.id === `opp-remotive-${excludedSourceId}`), false,
+      'jobs explicitly excluding India must not appear in India search');
+
+    const usResponse = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&country=United%20States&limit=5');
+    assert.equal(usResponse.status, 200, 'US search should succeed when a job excludes India only');
+    const usResult = await usResponse.json() as { opportunities: Array<{ id: string }> };
+    assert.ok(usResult.opportunities.some((job) => job.id === `opp-remotive-${excludedSourceId}`),
+      'a job excluding India must remain visible in the US search');
 
     const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&skills=TypeScript&country=India&remoteType=Specific%20countries&employmentType=Full-time&experience=2-3&minSalary=90000&salaryCurrency=USD&limit=5');
     assert.equal(response.status, 200, 'public job search should be available');
@@ -126,7 +183,7 @@ async function main() {
 
     console.log('ChatGPT public API suite passed: filter validation, combined text/country/skill/salary filters, public-field allowlist, and job details.');
   } finally {
-    const { error: cleanupError } = await admin.from('opportunities').delete().eq('source', 'remotive').eq('source_id', sourceId);
+    const { error: cleanupError } = await admin.from('opportunities').delete().eq('source', 'remotive').in('source_id', [sourceId, excludedSourceId]);
     assert.equal(cleanupError, null, `isolated job fixture must be cleaned up: ${cleanupError?.message ?? ''}`);
   }
 }
