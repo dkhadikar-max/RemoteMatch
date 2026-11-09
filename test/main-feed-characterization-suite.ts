@@ -7,6 +7,7 @@
  */
 import { PersonProfile, CanonicalOpportunity } from '../src/types/byn';
 import { checkHardEligibility, computeScreeningFit, scoreOpportunitiesForFeed } from '../src/lib/matching/engine';
+import { filterAmbiguousTitleTags } from '../src/lib/matching/ambiguous-title-tags';
 
 let passed = 0;
 let failed = 0;
@@ -76,7 +77,64 @@ function run() {
   assert(!checkHardEligibility(candidate, contract).employmentTypeCompatible,
     'employment-type mismatch remains ineligible');
 
-  console.log(`\n${passed} passed, ${failed} failed.`);
+  // Taxonomy collision fixtures: denylisted sales-title fragments must not
+  // erase genuine accounting, technical-account, or technical-skill tags.
+  const taxonomy = filterAmbiguousTitleTags([
+    'Account-Executive', 'Senior-Strategic-Account-Executive',
+    'Accounts-Receivable-Manager', 'Technical-Account-Manager',
+    'Account-Based-Marketing-Manager', 'Senior-Python-Engineer',
+  ]);
+  assert(taxonomy.join('|') === [
+    'Accounts-Receivable-Manager', 'Technical-Account-Manager',
+    'Account-Based-Marketing-Manager', 'Senior-Python-Engineer',
+  ].join('|'), 'ambiguous account-title tags are removed while finance, TAM, ABM and technical skill tags survive');
+
+  // Remote-scope characterization for every currently declared RemoteType.
+  const remoteCases: Array<[string, boolean]> = [
+    ['Worldwide', true], ['India', true], ['US', false], ['EU/EEA', false],
+    // These scopes have no additional country rule in the current matcher;
+    // this records the existing contract, not a product-policy endorsement.
+    ['Specific countries', true], ['Regional', true],
+    ['Timezone restricted', true], ['Contractor only', true],
+  ];
+  for (const [scope, expectedEligible] of remoteCases) {
+    const result = checkHardEligibility(candidate, job(`remote-${scope}`, 'Frontend Engineer', ['React'], scope));
+    assert(result.isEligible === expectedEligible, `remote scope ${scope} eligibility remains characterized`,
+      `expected ${expectedEligible}, got ${result.isEligible}`);
+  }
+
+  // Null/default behavior: absent optional intent/location and job metadata
+  // uses the matcher defaults (Worldwide candidate, Full-time, 2-3 years).
+  const defaultsProfile = {
+    ...candidate, intent: undefined, location: undefined,
+  } as unknown as PersonProfile;
+  const defaultsJob = {
+    ...job('defaults', 'General Role', []),
+    remoteType: 'Worldwide', employmentType: undefined, experienceRequirement: undefined,
+  } as unknown as CanonicalOpportunity;
+  const defaultsGate = checkHardEligibility(defaultsProfile, defaultsJob);
+  assert(defaultsGate.isEligible && defaultsGate.countryEligible && defaultsGate.employmentTypeCompatible,
+    'missing profile intent/location and missing job employment/experience fields use safe matcher defaults');
+
+  // Supersession is a retrieval concern, not a matcher concern. The engine
+  // deliberately scores the supplied row; feed retrieval owns filtering it.
+  const superseded = {
+    ...job('superseded-row', 'Frontend Engineer', ['React']),
+    supersededByOpportunityId: 'survivor-row',
+  } as CanonicalOpportunity;
+  assert(scoreOpportunitiesForFeed(candidate, [superseded]).some((o) => o.id === 'superseded-row'),
+    'matcher scores supplied superseded rows; caller owns discoverability filtering');
+
+  // Generic and specific target roles are both represented in a mixed intent.
+  const mixedRoleProfile = profile(['React'], ['Software Engineer', 'Frontend Engineer']);
+  const frontendSpecific = job('frontend-specific', 'Frontend Engineer', []);
+  const unrelatedRole = job('unrelated-role', 'Finance Manager', ['Excel']);
+  assert(checkHardEligibility(mixedRoleProfile, frontendSpecific).roleRelevant,
+    'a specific target role matches its corresponding title');
+  assert(!checkHardEligibility(mixedRoleProfile, unrelatedRole).roleRelevant,
+    'generic target role does not admit an unrelated role without skill overlap');
+
+  console.log(`\\n${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exitCode = 1;
 }
 run();
