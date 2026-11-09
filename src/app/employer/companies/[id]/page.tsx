@@ -99,9 +99,10 @@ export default function EmployerCompanyPage() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-[var(--ink)]">{company.legal_name}</h1>
-        <p className="text-sm text-[var(--muted)]">{company.official_domain}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h1 className="text-xl font-bold text-[var(--ink)]">{company.legal_name}</h1>
+        <p className="text-sm text-[var(--muted)]">{company.official_domain}</p></div>
+        <a href={"/employer/jobs/new?companyId=" + id} className="soft-button primary inline-flex">Create job draft</a>
       </div>
 
       <div className="soft-card border border-[var(--line)] p-4">
