@@ -158,11 +158,11 @@ jobs:
           console.log(`Verified isolated test project: ${actual}`);
           NODE
 
-      - name: Live directory egress + HTTP integration
-        run: npx tsx test/directory-egress-suite.ts
-
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts
+
+      - name: Live directory egress + HTTP integration
+        run: npx tsx test/directory-egress-suite.ts
 
       - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
         run: npx tsx test/employer-company-accounts-suite.ts
