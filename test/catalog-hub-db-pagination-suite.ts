@@ -103,6 +103,13 @@ function finish() {
 
 async function main() {
   console.log('\nCATALOG HUB PAGINATION (PGlite): migration, RLS, trigger, category parity');
+  const directorySource = read('src/lib/seo/directory.ts');
+  const sitemapReaderSource = read('src/lib/ingestion/catalog-read.ts');
+  assert(directorySource.includes('MAX_DIRECTORY_REQUEST_PAGE = 100') &&
+    directorySource.includes('if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();'),
+    'directory and search reject crawler pages above 100 before querying Postgres');
+  assert(/const pageSize = 1000;/.test(sitemapReaderSource),
+    'sitemap reads use 1,000-row batches to stay below the anon 3s statement timeout');
   const db = new PGlite();
 
   try {
@@ -472,19 +479,19 @@ async function main() {
     );
 
     const largeSitemapBatch1 = await sitemapJsonRpc(db, {
-      p_after_source: null, p_after_source_id: null, p_page_size: 5000,
+      p_after_source: null, p_after_source_id: null, p_page_size: 1000,
     });
     const lastLargeSitemapRow = largeSitemapBatch1[largeSitemapBatch1.length - 1];
     const largeSitemapBatch2 = await sitemapJsonRpc(db, {
       p_after_source: lastLargeSitemapRow.source,
       p_after_source_id: lastLargeSitemapRow.source_id,
-      p_page_size: 5000,
+      p_page_size: 1000,
     });
     const largeSitemapIds = new Set(largeSitemapBatch1.map((row) => `${row.source}:${row.source_id}`));
     assert(
-      largeSitemapBatch1.length === 5000 && largeSitemapBatch2.length === 5000 &&
+      largeSitemapBatch1.length === 1000 && largeSitemapBatch2.length === 1000 &&
       largeSitemapBatch2.every((row) => !largeSitemapIds.has(`${row.source}:${row.source_id}`)),
-      '92k+ catalog sitemap RPC returns bounded 5,000-row JSON batches with a non-overlapping next cursor'
+      '92k+ catalog sitemap RPC returns bounded 1,000-row JSON batches with a non-overlapping next cursor'
     );
     const sitemapCoveringIndex = await db.query(`
       SELECT indexdef FROM pg_indexes
