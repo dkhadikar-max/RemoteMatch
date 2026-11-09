@@ -266,40 +266,33 @@ export interface SitemapJobEntry {
 }
 
 /** Every active, translation-safe listing, reduced to the four fields the
- *  sitemap uses. Replaces getActiveJobs() (the whole catalog, descriptions
- *  and all) for sitemap.xml — same visibility rules, a fraction of the bytes.
- *
- *  Same gates as getActiveJobs(): RLS limits an anon/public client to
- *  status = 'active', and the multilingual gate (translationSafe) is applied
- *  so an untranslated non-English listing is never indexed.
- *
- *  Unlike the full read, this pages over a DETERMINISTIC order
- *  (source, source_id — the table's natural key). `.range()` without an
- *  ORDER BY gives no guarantee that pages don't overlap or skip rows while the
- *  catalog is being written to, which for a sitemap means missing or repeated
- *  URLs; the sort is on ~23k narrow keys, cheap next to the bytes it saves. */
+ *  sitemap uses. Uses a stable composite cursor over (source, source_id) so
+ *  later pages seek from the last key instead of rescanning every prior row
+ *  with OFFSET. The database RPC runs under the caller's RLS policies. */
 export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
   const entries: SitemapJobEntry[] = [];
   const pageSize = 1000;
-  let from = 0;
+  let afterSource: string | null = null;
+  let afterSourceId: string | null = null;
 
   while (true) {
-    const { data, error } = await supabase
-      .from('opportunities')
-      .select(SITEMAP_COLUMNS)
-      .or(TRANSLATION_SAFE_OR)
-      .or(TRANSLATION_NOT_ERROR_OR)
-      .order('source', { ascending: true })
-      .order('source_id', { ascending: true })
-      .range(from, from + pageSize - 1);
+    const { data, error } = await supabase.rpc('get_remote_job_sitemap_page', {
+      p_after_source: afterSource,
+      p_after_source_id: afterSourceId,
+      p_page_size: pageSize,
+    });
     if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
     if (!data || data.length === 0) break;
-    for (const row of data as unknown as Array<{
+
+    const rows = data as Array<{
+      source: string;
       source_id: string;
       title: string;
       posted_at: string;
       required_skills: string[] | null;
-    }>) {
+    }>;
+
+    for (const row of rows) {
       entries.push({
         sourceId: row.source_id,
         title: row.title,
@@ -307,8 +300,11 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
         requiredSkills: row.required_skills ?? [],
       });
     }
-    if (data.length < pageSize) break;
-    from += pageSize;
+
+    const last = rows[rows.length - 1];
+    afterSource = last.source;
+    afterSourceId = last.source_id;
+    if (rows.length < pageSize) break;
   }
 
   return entries;
