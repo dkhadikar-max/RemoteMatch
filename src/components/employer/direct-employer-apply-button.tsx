@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export function DirectEmployerApplyButton({ opportunityId }: { opportunityId: string }) {
+export function DirectEmployerApplyButton({ sourceId }: { sourceId: string }) {
   const [coverNote, setCoverNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -11,10 +11,10 @@ export function DirectEmployerApplyButton({ opportunityId }: { opportunityId: st
   const apply = async () => {
     setBusy(true); setError(''); setMessage('');
     try {
-      const response = await fetch('/api/employer-jobs/' + opportunityId + '/apply', {
+      const response = await fetch('/api/employer-jobs/' + sourceId + '/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId, coverNote }),
+        body: JSON.stringify({ sourceId, coverNote }),
       });
       const data = await response.json();
       if (response.status === 401) {
