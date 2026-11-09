@@ -29,6 +29,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CanonicalOpportunity } from '@/types/byn';
 import {
+  CatalogHubTimeoutError,
   getCatalogHubPage,
   searchActiveOpportunitiesPage,
   SearchTimeoutError,
@@ -195,12 +196,30 @@ export async function loadHubPage(slug: string | null, rawPage: unknown): Promis
   const cached = hubPageCache.get(cacheKey);
   if (cached) return cached;
 
-  const { jobs, total } = await getCatalogHubPage(
-    supabase,
-    cat?.slug ?? null,
-    requestedPage,
-    DIRECTORY_PAGE_SIZE
-  );
+  let jobs: CanonicalOpportunity[];
+  let total: number;
+  try {
+    ({ jobs, total } = await getCatalogHubPage(
+      supabase,
+      cat?.slug ?? null,
+      requestedPage,
+      DIRECTORY_PAGE_SIZE
+    ));
+  } catch (err) {
+    if (err instanceof CatalogHubTimeoutError) {
+      try {
+        console.error(JSON.stringify({
+          event: 'hub_page_timeout',
+          at: new Date().toISOString(),
+          category: cat?.slug ?? '*',
+          page: requestedPage,
+        }));
+      } catch {
+        // Best-effort telemetry must not replace the original timeout.
+      }
+    }
+    throw err;
+  }
   const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
   const outOfRange = total > 0 && requestedPage > totalPages;
   const result: DirectoryPage = {
