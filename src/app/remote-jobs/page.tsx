@@ -67,7 +67,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   // projection and return only one page; ?q= search remains database-paginated.
   // See src/lib/seo/directory.ts.
   const directoryStartedAt = performance.now();
-  let hub: DirectoryPage;
+  let hub: DirectoryPage | null;
   try {
     hub = searchQuery
       ? await loadSearchPage(searchQuery, resolvedParams.page)
