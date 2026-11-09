@@ -1,4 +1,5 @@
 name: CI
+# PR #65: rerun validation for concurrent large-catalog regression coverage.
 
 # The live integration job uses one isolated Supabase project. Serialize runs
 # without cancelling an in-progress run: a newer PR must not kill another PR's
