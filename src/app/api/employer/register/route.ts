@@ -48,8 +48,8 @@ function isValidBody(body: unknown): body is RegisterBody {
     isNonEmptyString(b.representativeRelationship, MAX_TEXT) &&
     isOptionalString(b.registrationNumber, MAX_TEXT) &&
     isOptionalString(b.linkedinUrl, MAX_TEXT) &&
-    isOptionalString(b.industry, MAX_TEXT) && (b.industry === undefined || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
-    isOptionalString(b.companySize, MAX_TEXT) && (b.companySize === undefined || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
+    isOptionalString(b.industry, MAX_TEXT) && (b.industry === undefined || b.industry === '' || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
+    isOptionalString(b.companySize, MAX_TEXT) && (b.companySize === undefined || b.companySize === '' || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
     isOptionalString(b.description, MAX_LONG_TEXT) &&
     isOptionalString(b.headquarters, MAX_TEXT)
   );
