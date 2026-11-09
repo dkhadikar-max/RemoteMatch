@@ -243,6 +243,9 @@ export function Navbar() {
           {/* Right Controls — omitted entirely on auth pages; brand/header only */}
           {!isAuthPage && (
           <div className="flex items-center gap-3">
+            <Link href="/employer" aria-label="Post a job" className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-2.5 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors sm:px-3.5">
+              <BriefcaseBusiness size={15} /> <span>Post a job</span>
+            </Link>
             {showMarketingNav ? (
               <>
                 {/* Hidden below sm: on a narrow viewport this pair wrapped
