@@ -5,11 +5,11 @@ import { jobUrl } from '@/lib/seo/job-href';
 export const dynamic = 'force-dynamic';
 
 interface RouteContext {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
-  const { id } = await context.params;
+  const { id } = context.params;
   if (!id || id.length > 240 || !/^opp-[a-z0-9_-]+-[^/]+$/i.test(id)) {
     return NextResponse.json({ success: false, error: 'Invalid opportunity ID.' }, { status: 400 });
   }
