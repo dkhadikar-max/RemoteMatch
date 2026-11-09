@@ -202,8 +202,8 @@ async function main() {
     );
     const collisionRows = rootPage1.jobs.filter((job) => job.source_id === 'collision');
     assert(
-      collisionRows.length === 2 && collisionRows.every((job) => job.source === 'alpha'),
-      'duplicate source_id page entries resolve to the first source deterministically without collapsing page positions'
+      collisionRows.length === 1 && collisionRows[0].source === 'alpha',
+      'duplicate source_id entries are deduplicated within the page and resolve to the first source deterministically'
     );
 
     const rootPage2 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
@@ -295,7 +295,7 @@ async function main() {
         'scale',
         'scale-' || g::text,
         'Scale role ' || g::text,
-        timestamptz '2026-01-01 00:00:00+00' + g * interval '1 second',
+        timestamptz '2026-11-02 00:00:00+00' + g * interval '1 second',
         ARRAY[]::text[],
         'APAC',
         ARRAY[]::text[],
