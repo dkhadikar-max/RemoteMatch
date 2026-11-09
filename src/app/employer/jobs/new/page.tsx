@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 
 const inputClass='soft-input w-full px-3 py-2.5 text-sm';
 const initial={title:'',description:'',responsibilities:'',employmentType:'Full-time',remoteType:'Remote',location:'Worldwide',eligibleCountries:'',salaryMin:'',salaryMax:'',salaryCurrency:'USD',requiredSkills:'',preferredSkills:'',experienceRequirement:'',applicationUrl:''};
 
 export default function NewEmployerJobPage(){
-  const params=useSearchParams(); const router=useRouter();
-  const companyId=params.get('companyId')||''; const jobId=params.get('jobId');
+  const router=useRouter();
+  const [companyId,setCompanyId]=useState(''); const [jobId,setJobId]=useState<string|null>(null);
+  useEffect(()=>{ const query=new URLSearchParams(window.location.search); setCompanyId(query.get('companyId')||''); setJobId(query.get('jobId')); },[]);
   const [form,setForm]=useState(initial); const [companyStatus,setCompanyStatus]=useState(''); const [busy,setBusy]=useState(false); const [error,setError]=useState(''); const [message,setMessage]=useState('');
   const set=(k:keyof typeof initial,v:string)=>setForm(p=>({...p,[k]:v}));
   useEffect(()=>{
