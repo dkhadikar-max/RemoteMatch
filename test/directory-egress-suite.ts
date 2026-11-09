@@ -366,6 +366,13 @@ async function main() {
     const fullRun = await measure(() => getActiveOpportunities(anon, { translationSafe: true }));
     const full = mine(fullRun.r);
     console.log(`  · OLD full-catalog read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
+    if (full.length !== visibleIds.size) {
+      const indexIds = new Set(idxMine.map((e) => e.sourceId));
+      const fullIds = new Set(full.map((j) => j.sourceId));
+      console.error('  · parity diagnostic: full-only IDs', Array.from(fullIds).filter((id) => !indexIds.has(id)).slice(0, 20));
+      console.error('  · parity diagnostic: duplicate full IDs', full.filter((j, i) => full.findIndex((x) => x.sourceId === j.sourceId) !== i).map((j) => j.sourceId).slice(0, 20));
+      console.error('  · parity diagnostic: full/index counts', { full: full.length, fullUnique: fullIds.size, index: idxMine.length, expected: visibleIds.size });
+    }
     assert(full.length === visibleIds.size, `old full read sees the same ${full.length} listings`);
     let membersEqual = true; const bad: string[] = [];
     for (const cat of SEO_CATEGORIES) {
@@ -429,6 +436,12 @@ async function main() {
     assert(eng.total > 0 && oldEng.length > 0, `?q=engineer still returns results in both existing search paths (${eng.total} DB, ${oldEng.length} legacy)`);
     const multi = (await loadSearchPage('senior engineer', '1'))!;
     const oldMulti = await searchJobs('senior engineer', undefined, anon);
+    if (multi.total !== oldMulti.length) {
+      const dbIds = new Set(multi.jobs.map((j) => j.sourceId));
+      const oldIds = new Set(oldMulti.map((j) => j.sourceId));
+      console.error('  · multi-term parity diagnostic: old-only sample', Array.from(oldIds).filter((id) => !dbIds.has(id)).slice(0, 20));
+      console.error('  · multi-term parity diagnostic: DB total vs legacy unique', { db: multi.total, legacy: oldMulti.length, legacyUnique: oldIds.size });
+    }
     assert(multi.total === oldMulti.length, `multi-term search ANDs the terms like the old path (${multi.total} vs ${oldMulti.length})`);
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
