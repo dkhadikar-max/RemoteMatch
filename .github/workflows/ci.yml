@@ -62,6 +62,7 @@ jobs:
             test/swipe-limits-rolling-24h-suite.ts
             test/catalog-hub-db-pagination-suite.ts
             test/job-filter-data-quality-suite.ts
+            test/ttl-cache-stale-invalidation-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
