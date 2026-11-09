@@ -12,6 +12,11 @@ function check(condition: boolean, label: string) {
 }
 
 const migration = read('supabase/migrations/049_employer_job_submissions_and_publish.sql');
+const applicationsMigration = read('supabase/migrations/050_employer_direct_applications.sql');
+const applyRoute = read('src/app/api/employer-jobs/[opportunityId]/apply/route.ts');
+const employerApplicationsRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
+const applyButton = read('src/components/employer/direct-employer-apply-button.tsx');
+const taxonomy = read('src/lib/employer/taxonomy.ts');
 const createRoute = read('src/app/api/employer/companies/[id]/jobs/route.ts');
 const jobRoute = read('src/app/api/employer/companies/[id]/jobs/[jobId]/route.ts');
 const adminRoute = read('src/app/api/admin/employer-jobs/route.ts');
@@ -30,13 +35,13 @@ check(/v_company\.verification_status <> 'verified'/.test(migration), 'publicati
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');
-check(/https:/.test(createRoute), 'application destinations must use HTTPS');
+check(!/required\('applicationUrl'/.test(createRoute) && /application_url: typeof b\.applicationUrl/.test(createRoute), 'external application URL is optional');
 check(/company\.verification_status !== 'verified'/.test(jobRoute), 'employers cannot submit drafts before company verification');
 check(/eq\('status', 'draft'\)/.test(jobRoute), 'only drafts can be edited or submitted');
 check(/getAuthenticatedAdmin\(req\)/.test(adminRoute) && /review_employer_job_submission/.test(adminRoute), 'review actions require admin authentication and the atomic RPC');
 check(/Post a job/.test(navbar), 'public navigation exposes the Post a Job entry point');
 check(/employer-jobs/.test(sidebar), 'admin navigation exposes vacancy moderation');
-check(/Create a job vacancy/.test(formPage) && /Application URL/.test(formPage), 'employers can complete a detailed vacancy form');
+check(/Create a job vacancy/.test(formPage) && !/Application URL/.test(formPage), 'employers can complete a detailed vacancy form without an external application URL');
 check(/Submit for review/.test(employerPage), 'employer workspace supports submitting saved drafts after verification');
 check(/Approve & publish/.test(adminPage), 'admin review queue supports approve and publish');
 check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider deduplication does not suppress verified employer-direct listings');
