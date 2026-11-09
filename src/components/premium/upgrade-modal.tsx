@@ -232,7 +232,7 @@ export function UpgradeModal({
             disabled={isUpgrading}
             className="w-full soft-button primary text-xs font-semibold py-3.5 min-h-[46px] flex items-center justify-center gap-2 shadow-md"
           >
-            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro — {PRO_CURRENCY_PRICES[currency]}'}</span>
+            <span>{isUpgrading ? 'Connecting to Checkout...' : `Upgrade to Pro — ${PRO_CURRENCY_PRICES[currency]}`}</span>
             <ArrowRight size={14} />
           </button>
           {upgradeError && (
