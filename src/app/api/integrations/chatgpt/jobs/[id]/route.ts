@@ -62,7 +62,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         applicationMethod: isEmployerDirect ? 'RemoteMatch in-platform application' : 'Employer website',
       },
     }, {
-      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+      headers: { 'Cache-Control': 'no-store' },
     });
   } catch {
     return NextResponse.json({ success: false, error: 'Could not retrieve the job.' }, { status: 503 });
