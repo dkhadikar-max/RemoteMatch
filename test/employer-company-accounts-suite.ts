@@ -470,7 +470,7 @@ async function main() {
       const applyRes = await fetch(`${BASE_URL}/api/employer-jobs/${publishBody.opportunityId}/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
-        body: JSON.stringify({ opportunityId: publishBody.opportunityId, coverNote: 'I am interested in this role and have relevant experience.' }),
+        body: JSON.stringify({ sourceId: jobDraftId, coverNote: 'I am interested in this role and have relevant experience.' }),
       });
       const applyBody = await applyRes.json();
       assert(applyRes.status === 201 && applyBody.application?.status === 'submitted', `candidate can apply directly on RemoteMatch (got ${applyRes.status})`);
