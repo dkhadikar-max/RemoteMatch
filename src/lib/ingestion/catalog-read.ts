@@ -214,6 +214,11 @@ export async function getActiveOpportunities(
     if (options?.translationSafe) {
       query = applyTranslationSafe(query);
     }
+    // Offset pagination is only correct when every page uses the same total
+    // order. Without this unique tie-break, concurrent catalog writes and
+    // planner changes can reshuffle rows between requests, duplicating some
+    // rows and omitting others across the full read.
+    query = query.order('source', { ascending: true }).order('source_id', { ascending: true });
     query = query.range(from, from + pageSize - 1);
     const { data, error } = await query;
     if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
