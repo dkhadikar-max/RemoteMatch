@@ -115,6 +115,12 @@ export async function POST(req: NextRequest) {
   const requestedCurrency = location?.current_country?.trim().toUpperCase() === 'IN' ? 'INR'
     : location?.current_country ? 'USD' : DEFAULT_CURRENCY;
   const { planId: resolvedPlanId, currency: resolvedCurrency } = resolvePlan(requestedCurrency);
+  // Never silently downgrade a non-Indian account to an INR plan. If the USD
+  // plan is not configured, stop checkout rather than charging the wrong currency.
+  if (requestedCurrency === 'USD' && resolvedCurrency !== 'USD') {
+    console.error('[razorpay] USD plan is not configured for a non-Indian account');
+    return NextResponse.json({ error: "USD checkout isn't available right now. Please try again later." }, { status: 503 });
+  }
 
   // F1 (2026-11-05 audit): `currency` here MUST reflect the currency of
   // whatever subscription is actually being checked out — never just the
