@@ -125,7 +125,9 @@ async function main() {
   const relSrc = noComments(read('src/app/remote-jobs/view/[id]/page.tsx'));
   assert(/getRelatedJobs\(/.test(relSrc) && !/getActiveJobs/.test(relSrc), 'related-job reads are still the bounded LIMIT-3 read (preserved)');
   const sm = noComments(read('src/lib/seo/sitemap-data.ts'));
-  assert(/getSitemapJobEntries/.test(sm) && /createAsyncTtlCache/.test(sm) && /get_remote_job_sitemap_page/.test(read('src/lib/ingestion/catalog-read.ts')) && !/\.range\(from, from \+ pageSize - 1\)/.test(read('src/lib/ingestion/catalog-read.ts')), 'sitemap uses its slim TTL-cached keyset RPC instead of OFFSET pagination');
+  const catalogRead = read('src/lib/ingestion/catalog-read.ts');
+  const sitemapReader = catalogRead.slice(catalogRead.indexOf('export async function getSitemapJobEntries'), catalogRead.indexOf('/** The columns the directory'));
+  assert(/getSitemapJobEntries/.test(sm) && /createAsyncTtlCache/.test(sm) && /get_remote_job_sitemap_page/.test(sitemapReader) && !/\.range\(/.test(sitemapReader), 'sitemap uses its slim TTL-cached keyset RPC instead of OFFSET pagination');
 
   // ===========================================================================
   console.log('\n2. UNIT');
