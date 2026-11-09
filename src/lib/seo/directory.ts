@@ -122,7 +122,8 @@ function membersOf(index: CatalogIndexEntry[], cat: SeoCategory | null): string[
   return ids;
 }
 
-/** One page of a category hub (`cat`) or of the whole directory (`cat` = null). */
+/** Reference implementation for unit/equivalence tests. Production loadHubPage()
+ *  uses the database-side projection RPC below, not this in-memory full-index path. */
 export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, requestedPage: number): Promise<DirectoryPage> {
   const index = await deps.getIndex();
   const ids = membersOf(index, cat);
