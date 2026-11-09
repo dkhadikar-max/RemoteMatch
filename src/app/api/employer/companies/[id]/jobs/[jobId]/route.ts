@@ -31,7 +31,7 @@ function toRow(b: Record<string, unknown>) {
     salary_min: b.salaryMin ?? null, salary_max: b.salaryMax ?? null,
     salary_currency: typeof b.salaryCurrency === 'string' ? b.salaryCurrency.toUpperCase() : 'USD',
     required_skills: b.requiredSkills ?? [], preferred_skills: b.preferredSkills ?? [],
-    experience_requirement: b.experienceRequirement ?? null, application_url: typeof b.applicationUrl === 'string' && b.applicationUrl.trim() ? b.applicationUrl.trim() : null,
+    experience_requirement: b.experienceRequirement ?? null
   };
 }
 
