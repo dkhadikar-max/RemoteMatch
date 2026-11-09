@@ -126,9 +126,10 @@ async function main() {
 
   const fnStart = catalog.indexOf('export async function getSitemapJobEntries');
   const fnBody = catalog.slice(fnStart, catalog.indexOf('\n}\n', fnStart) + 3);
+  assert(/\.from\('opportunity_catalog_index'\)/.test(fnBody), 'sitemap reads the transactionally maintained active/translation-safe projection, not the full opportunities table');
   assert(/\.select\(SITEMAP_COLUMNS\)/.test(fnBody), 'getSitemapJobEntries selects only SITEMAP_COLUMNS');
-  assert(/\.or\(TRANSLATION_SAFE_OR\)\s*\.or\(TRANSLATION_NOT_ERROR_OR\)/.test(fnBody), 'it applies the shared multilingual gate — both clauses, including hiding translation errors — like the full read');
-  assert(/\.order\('source'/.test(fnBody) && /\.order\('source_id'/.test(fnBody), 'it pages over a deterministic order (source, source_id)');
+  assert(!/\.or\(TRANSLATION_SAFE_OR\)|\.or\(TRANSLATION_NOT_ERROR_OR\)/.test(fnBody), 'projection enforces the active + translation-safe gate without repeating expensive row filters');
+  assert(/\.order\('source_id'/.test(fnBody) && /\.order\('source'/.test(fnBody), 'it follows the projection composite index order (source_id, source)');
   assert(/\.range\(/.test(fnBody) && /while \(true\)/.test(fnBody), 'it pages past the 1,000-row PostgREST cap');
   assert(!/OPPORTUNITY_COLUMNS/.test(fnBody), 'it does not use the full column list');
 
@@ -238,7 +239,7 @@ async function main() {
   let restOpportunityCalls = 0;
   globalThis.fetch = ((input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
-    if (u.includes('/rest/v1/opportunities')) restOpportunityCalls++;
+    if (u.includes('/rest/v1/opportunity_catalog_index')) restOpportunityCalls++;
     return realFetch(input, init);
   }) as typeof fetch;
 
@@ -312,7 +313,7 @@ async function main() {
     restOpportunityCalls = 0;
     const s2 = await sitemap();
     const s3 = await sitemap();
-    assert(firstCalls >= 2, `first sitemap() read the catalog in pages (${firstCalls} REST calls for >1,000 rows)`);
+    assert(firstCalls >= 2, `first sitemap() read the indexed projection in pages (${firstCalls} REST calls for >1,000 rows)`);
     assert(restOpportunityCalls === 0, `the next two sitemap() calls made ${restOpportunityCalls} REST calls to opportunities (cache hit)`);
     assert(JSON.stringify(s1) === JSON.stringify(s2) && JSON.stringify(s2) === JSON.stringify(s3), 'cached calls return the identical sitemap');
     const jobUrls = s1.filter((e) => e.url.includes('/remote-jobs/view/')).map((e) => e.url);

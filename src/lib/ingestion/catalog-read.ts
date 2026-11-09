@@ -284,13 +284,15 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
   let from = 0;
 
   while (true) {
+    // Migration 048 maintains this narrow, RLS-readable projection transactionally
+    // for every active + translation-safe opportunity. Reading it avoids sorting
+    // the full opportunities table on every cold sitemap-cache refresh. Its
+    // (source_id, source) index matches this keyset's stable ordering.
     const { data, error } = await supabase
-      .from('opportunities')
+      .from('opportunity_catalog_index')
       .select(SITEMAP_COLUMNS)
-      .or(TRANSLATION_SAFE_OR)
-      .or(TRANSLATION_NOT_ERROR_OR)
-      .order('source', { ascending: true })
       .order('source_id', { ascending: true })
+      .order('source', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
     if (!data || data.length === 0) break;

@@ -13,6 +13,10 @@ import { SITE_URL } from '@/lib/site';
 const figtree = Figtree({ subsets: ['latin'], display: 'swap', variable: '--font-body' });
 
 export const metadata: Metadata = {
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.ico',
+  },
   metadataBase: new URL(SITE_URL),
   title: {
     default: 'RemoteMatch — Find Remote Jobs Worth Applying To | Know Your Chances',
