@@ -1,5 +1,11 @@
 name: CI
 
+# The live integration job uses one isolated Supabase project; serialize runs per PR
+# so overlapping pushes cannot race over the same synthetic test rows.
+concurrency:
+  group: remotematch-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # This repo has no existing CI (confirmed during the PR #51 review: the only
 # check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
 # tests). This workflow is intentionally narrow and generic, so it's safe to
