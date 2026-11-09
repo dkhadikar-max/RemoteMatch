@@ -24,6 +24,7 @@
 import { formatCurrency } from './currency-format';
 
 export const DEFAULT_CURRENCY = 'INR' as const;
+const CHECKOUT_CURRENCIES = new Set(['INR', 'USD']);
 
 /** One Razorpay Subscription Plan per currency — each must be created by hand
  *  in the Razorpay dashboard first; this only names where its id lives. */
@@ -35,23 +36,8 @@ const PLAN_ENV_VAR_BY_CURRENCY: Record<string, string> = {
   EUR: 'RAZORPAY_PRO_PLAN_ID_EUR',
 };
 
-/** ISO 3166-1 alpha-2 country → ISO 4217 currency. Deliberately a short,
- *  explicit, hand-maintained list (task scenarios + obvious EU members) —
- *  not an attempt at exhaustive world coverage. Add entries one at a time,
- *  each backed by a real Razorpay Plan, never speculatively. */
-const CURRENCY_BY_COUNTRY: Record<string, string> = {
-  IN: 'INR',
-  US: 'USD',
-  GB: 'GBP',
-  AE: 'AED',
-  // Eurozone (subset — extend deliberately, not by assuming all 27 EU states use EUR):
-  DE: 'EUR',
-  FR: 'EUR',
-  ES: 'EUR',
-  IT: 'EUR',
-  NL: 'EUR',
-  IE: 'EUR',
-};
+/** Account country policy is intentionally binary: India is INR; every
+ * other known country is USD. Missing country uses the INR default. */
 
 export interface PlanResolution {
   /** The currency actually used — may differ from the detected/requested one
@@ -98,7 +84,7 @@ export function isCurrencyActive(currency: string): boolean {
 }
 
 export function activeCurrencies(): string[] {
-  return Object.keys(PLAN_ENV_VAR_BY_CURRENCY).filter(isCurrencyActive);
+  return Object.keys(PLAN_ENV_VAR_BY_CURRENCY).filter((currency) => CHECKOUT_CURRENCIES.has(currency) && isCurrencyActive(currency));
 }
 
 /**
@@ -195,8 +181,11 @@ export function currencyForPlanId(planId: string): string | null {
  *  2026-10-31.md) — but it is deliberately NOT wired into any route yet;
  *  wiring it in is a product decision outside this fix's scope. */
 export function currencyForCountry(countryCode: string | null | undefined): string {
-  if (!countryCode) return DEFAULT_CURRENCY;
-  return CURRENCY_BY_COUNTRY[countryCode.trim().toUpperCase()] ?? DEFAULT_CURRENCY;
+  if (!countryCode?.trim()) return DEFAULT_CURRENCY;
+  // Onboarding currently stores free-text country names (e.g. "India"),
+  // while older/imported rows may contain ISO-2 codes.
+  const normalized = countryCode.trim().toUpperCase();
+  return normalized === 'IN' || normalized === 'INDIA' ? 'INR' : 'USD';
 }
 
 /**
@@ -209,7 +198,8 @@ export function currencyForCountry(countryCode: string | null | undefined): stri
  * Live, not historical — same reasoning as `isCurrencyActive` above.
  */
 export function resolvePlan(requestedCurrency: string): PlanResolution {
-  const wanted = requestedCurrency.toUpperCase();
+  const candidate = requestedCurrency.toUpperCase();
+  const wanted = CHECKOUT_CURRENCIES.has(candidate) ? candidate : DEFAULT_CURRENCY;
   const planId = configuredPlanId(wanted);
   if (planId) {
     observeCurrentConfig();

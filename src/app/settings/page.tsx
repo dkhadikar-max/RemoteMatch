@@ -92,7 +92,6 @@ function SettingsContent() {
   const [isSaved, setIsSaved] = useState(false);
 
   const [isUpgrading, setIsUpgrading] = useState(false);
-  const [billingCurrency, setBillingCurrency] = useState<ProCurrency>('INR');
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
@@ -269,7 +268,7 @@ function SettingsContent() {
     try {
       // Razorpay Checkout opens as a modal — no redirect. The server verifies
       // the payment with Razorpay before planTier changes.
-      const result = await startProUpgrade(billingCurrency);
+      const result = await startProUpgrade();
       if (result.status === 'upgraded') {
         setUpgradeSuccess(true);
         setActiveTab('billing');
@@ -310,6 +309,8 @@ function SettingsContent() {
   };
 
   // ---- derived, server-only display values (no fixture, no fabrication) ----
+  const billingCountry = srv?.currentCountry?.trim().toUpperCase();
+  const billingCurrency: ProCurrency = !billingCountry || billingCountry === 'IN' || billingCountry === 'INDIA' ? 'INR' : 'USD';
   const planTier = ent?.planTier ?? 'free';
   const rightSwipes = ent?.dailyRightSwipesCount ?? 0;
   const proposals = ent?.dailyProposalsCount ?? 0;
@@ -690,19 +691,7 @@ function SettingsContent() {
               )}
 
               {planTier === 'free' && (
-                <div className="soft-card p-4 border border-[var(--line)] space-y-2">
-                  <label htmlFor="settings-pro-currency" className="block text-xs font-semibold text-[var(--muted)]">Choose billing currency</label>
-                  <select
-                    id="settings-pro-currency"
-                    value={billingCurrency}
-                    onChange={(event) => setBillingCurrency(event.target.value as ProCurrency)}
-                    disabled={isUpgrading}
-                    className="w-full sm:max-w-xs rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] text-xs px-3 py-2.5 min-h-[42px]"
-                  >
-                    <option value="INR">INR — ₹499/month</option>
-                    <option value="USD">USD — $9/month</option>
-                  </select>
-                </div>
+                <p className="text-xs text-[var(--muted)]">Billing currency is based on your saved country: India ₹499/month; all other countries $9/month.</p>
               )}
 
               <div className="soft-card p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[var(--line)]">

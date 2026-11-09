@@ -65,11 +65,13 @@ function run() {
   console.log('\nCOUNTRY → CURRENCY mapping');
   assert(currencyForCountry('IN') === 'INR', 'IN maps to INR');
   assert(currencyForCountry('US') === 'USD', 'US maps to USD');
-  assert(currencyForCountry('GB') === 'GBP', 'GB maps to GBP');
-  assert(currencyForCountry('AE') === 'AED', 'AE maps to AED');
-  assert(currencyForCountry('DE') === 'EUR', 'DE (EU) maps to EUR');
+  assert(currencyForCountry('GB') === 'USD', 'GB maps to USD');
+  assert(currencyForCountry('AE') === 'USD', 'AE maps to USD');
+  assert(currencyForCountry('DE') === 'USD', 'DE maps to USD');
   assert(currencyForCountry('us') === 'USD', 'country code is case-insensitive');
-  assert(currencyForCountry('ZZ') === DEFAULT_CURRENCY, 'unrecognized country code falls back to the default currency, never throws');
+  assert(currencyForCountry('India') === 'INR', 'full country name India maps to INR');
+  assert(currencyForCountry('Germany') === 'USD', 'full non-Indian country name maps to USD');
+  assert(currencyForCountry('ZZ') === 'USD', 'any non-empty non-Indian country value maps to USD, never throws');
   assert(currencyForCountry(null) === DEFAULT_CURRENCY, 'null/undetectable country falls back to the default currency');
   assert(currencyForCountry(undefined) === DEFAULT_CURRENCY, 'undefined country falls back to the default currency');
   assert(currencyForCountry('') === DEFAULT_CURRENCY, 'empty string country falls back to the default currency');
@@ -91,11 +93,11 @@ function run() {
     const usd = resolvePlan('USD');
     assert(usd.currency === 'USD' && usd.planId === 'plan_usd456' && usd.fellBack === false, 'active currency resolves to its own plan, no fallback', usd);
 
-    const gbp = resolvePlan('GBP'); // listed in CURRENCY_BY_COUNTRY but no plan id configured above
-    assert(gbp.currency === 'INR' && gbp.planId === 'plan_inr123' && gbp.fellBack === true, 'inactive currency falls back to INR and reports fellBack=true', gbp);
+    const unsupported = resolvePlan('GBP'); // GBP is not an allowed checkout currency
+    assert(unsupported.currency === 'INR' && unsupported.planId === 'plan_inr123' && unsupported.fellBack === false, 'unsupported currency is normalized to the INR default before plan resolution', unsupported);
 
     const unknown = resolvePlan('ZZZ'); // not a real ISO code at all
-    assert(unknown.currency === 'INR' && unknown.fellBack === true, 'a nonsense/unsupported currency string also falls back to INR rather than throwing', unknown);
+    assert(unknown.currency === 'INR' && unknown.fellBack === false, 'a nonsense/unsupported currency string is normalized to INR rather than throwing', unknown);
 
     const inr = resolvePlan('inr');
     assert(inr.currency === 'INR' && inr.fellBack === false, 'requesting the default currency directly never reports a fallback', inr);
@@ -148,17 +150,11 @@ function run() {
   }
 
   console.log('\nSERVER-SIDE TRUST INVARIANT (by construction, not a runtime check)');
-  // /api/razorpay/subscription (added 2026-11-05) reads an OPTIONAL `currency`
-  // hint from the request body — but it is only ever a ROUTING hint: it goes
-  // straight into resolvePlan(), which never returns anything but a plan id
-  // THIS SERVER configured via its own env vars, falling back to INR for
-  // anything unrecognized (see the resolvePlan block above). No function
-  // anywhere in src/lib/billing or src/lib/razorpay.ts accepts an AMOUNT or
-  // PRICE sourced from request JSON — the real price always comes from
-  // Razorpay's own Plan object, never computed here. This test documents that
-  // narrower invariant so a future change that adds a client-trusted amount
-  // path fails review, not a runtime assertion (there's nothing to call
-  // defensively for an amount path that doesn't exist).
+  // /api/razorpay/subscription derives currency from the authenticated account's
+  // saved profile_locations.current_country. It ignores request-body currency;
+  // India resolves to INR, every other non-empty country to USD, and a missing
+  // country defaults to INR. No amount or price is accepted from request JSON;
+  // Razorpay's configured Plan remains the source of the actual charge.
   assert(true, 'no client-supplied PRICE/amount path exists; currency is a hint only, always resolved through resolvePlan\'s server-side whitelist (structural — see comment)');
 
   console.log('\nPR #50 REMEDIATION (2026-11-06) — requirement #8: invalid plan ids rejected for EVERY currency, not just INR');
@@ -210,7 +206,7 @@ function run() {
   });
 
   console.log('\nPR #50 REMEDIATION (2026-11-06) — requirement #10 (explicit decision): currencyForCountry is kept, not deleted, and remains correct even though it has no production caller today');
-  assert(currencyForCountry('GB') === 'GBP', 'currencyForCountry still correctly maps GB → GBP — ready for the not-yet-built country/currency picker to call; the one WIRED entry point today is the raw currency string in /api/razorpay/subscription, documented on the function itself');
+  assert(currencyForCountry('GB') === 'USD', 'currencyForCountry maps every non-Indian country to USD under the account-country billing policy');
 
   console.log('\nPR #50 REMEDIATION (2026-11-06) — requirement #7 (explicit decision): unused ledger columns were removed, not left silently NULL');
   {

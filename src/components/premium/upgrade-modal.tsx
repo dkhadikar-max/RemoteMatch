@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
-import { startProUpgrade, PRO_CURRENCY_PRICES, type ProCurrency } from '@/lib/razorpay-checkout';
+import { startProUpgrade } from '@/lib/razorpay-checkout';
 
 export type UpgradeReason =
   | 'rewind'
@@ -112,7 +112,6 @@ export function UpgradeModal({
   resetAt = null,
 }: UpgradeModalProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
-  const [currency, setCurrency] = useState<ProCurrency>('INR');
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<string | null>(() => formatCountdown(resetAt));
@@ -140,7 +139,7 @@ export function UpgradeModal({
     setUpgradeError(null);
     setUpgradeNotice(null);
     try {
-      const result = await startProUpgrade(currency);
+      const result = await startProUpgrade();
       if (result.status === 'upgraded') {
         onUpgraded?.();
         onClose();
@@ -209,20 +208,7 @@ export function UpgradeModal({
           ))}
         </div>
 
-        {/* Explicit currency choice; INR remains the default for existing users. */}
-        <div className="space-y-2">
-          <label htmlFor="pro-upgrade-currency" className="block text-[11px] font-semibold text-[var(--muted)]">Billing currency</label>
-          <select
-            id="pro-upgrade-currency"
-            value={currency}
-            onChange={(event) => setCurrency(event.target.value as ProCurrency)}
-            disabled={isUpgrading}
-            className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] text-xs px-3 py-2.5 min-h-[42px]"
-          >
-            <option value="INR">INR — ₹499/month</option>
-            <option value="USD">USD — $9/month</option>
-          </select>
-        </div>
+        <p className="text-[11px] text-[var(--muted)]">India: ₹499/month · All other countries: $9/month. Currency is based on your saved account country.</p>
 
         {/* CTA Button */}
         <div className="pt-1">
@@ -232,7 +218,7 @@ export function UpgradeModal({
             disabled={isUpgrading}
             className="w-full soft-button primary text-xs font-semibold py-3.5 min-h-[46px] flex items-center justify-center gap-2 shadow-md"
           >
-            <span>{isUpgrading ? 'Connecting to Checkout...' : `Upgrade to Pro — ${PRO_CURRENCY_PRICES[currency]}`}</span>
+            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro'}</span>
             <ArrowRight size={14} />
           </button>
           {upgradeError && (
