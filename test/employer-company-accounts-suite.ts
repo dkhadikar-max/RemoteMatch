@@ -462,6 +462,10 @@ async function main() {
       if (publishBody.opportunityId) cleanupOpportunityIds.push(publishBody.opportunityId);
       const published = publishBody.opportunityId ? await admin.from('opportunities').select('id,status,source,source_id').eq('id', publishBody.opportunityId).maybeSingle() : { data: null, error: null };
       assert(!published.error && published.data?.status === 'active' && published.data?.source === 'employerdirect' && published.data?.source_id === jobDraftId, 'published vacancy is active in the existing opportunities catalogue under employerdirect');
+      const { data: publishEvents, error: publishEventsError } = await admin.from('employer_job_review_events')
+        .select('action,to_status,opportunity_id').eq('submission_id', jobDraftId).eq('action', 'approve_publish');
+      assert(!publishEventsError && (publishEvents ?? []).length === 1 && publishEvents?.[0]?.to_status === 'published', 'approval writes exactly one auditable publish event');
+
     }
 
     // --- RLS deny-by-default, directly against the tables ---
@@ -474,6 +478,11 @@ async function main() {
 
     const { data: ownSessionCompanies, error: ownSessionErr } = await sessionA.client.from('companies').select('id').eq('id', companyId).limit(1);
     assert((ownSessionCompanies ?? []).length === 0 || Boolean(ownSessionErr), "the OWNER's own session client (not service-role) still cannot read companies directly — every read goes through getAuthenticatedEmployer()'s service-role lookup, never a client-side RLS self-read");
+    const { data: anonSubmissions, error: anonSubmissionsErr } = await anonClient.from('employer_job_submissions').select('id').limit(1);
+    assert((anonSubmissions ?? []).length === 0 || Boolean(anonSubmissionsErr), 'anon client cannot read private employer vacancy submissions');
+    const { data: ownSessionSubmissions, error: ownSessionSubmissionsErr } = await sessionA.client.from('employer_job_submissions').select('id').limit(1);
+    assert((ownSessionSubmissions ?? []).length === 0 || Boolean(ownSessionSubmissionsErr), 'authenticated employer session cannot bypass server-side vacancy APIs');
+
 
     const { data: serviceCompanies, error: serviceErr } = await admin.from('companies').select('id').eq('id', companyId).limit(1);
     assert(!serviceErr && (serviceCompanies ?? []).length === 1, 'service-role client has full read access');
