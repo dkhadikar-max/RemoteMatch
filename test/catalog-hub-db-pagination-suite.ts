@@ -159,7 +159,8 @@ async function main() {
       base('translated-de', 26, { title: 'Übersetzte Rolle', source_language: 'de', translation_status: 'ok' }),
       base('translation-error', 27, { title: 'Hidden foreign role', source_language: 'de', translation_status: 'error' }),
       base('expired', 28, { title: 'Expired role', status: 'expired' }),
-      base('collision', 29, { title: 'Collision Engineer', required_skills: ['React'], source: 'zeta' }),
+      // Same source_id across providers, but only alpha belongs in software engineering.
+      base('collision', 29, { title: 'Operations Coordinator', required_skills: ['Payroll'], source: 'zeta' }),
       base('collision', 29, { title: 'Collision Engineer', required_skills: ['React'], source: 'alpha' }),
     );
 
@@ -262,9 +263,16 @@ async function main() {
         eligibleCountries: f.eligible_countries,
         experienceRequirement: f.experience_requirement ?? undefined,
       })));
-      const actual = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+      const actual = await rpc<{ total: number; jobs: Array<{ source_id: string; source: string; title: string }> }>(db, {
         p_category_slug: category.slug, p_page: 1, p_page_size: 24,
       });
+      if (category.slug === 'software-engineering') {
+        const categoryCollision = actual.jobs.find((job) => job.source_id === 'collision');
+        assert(
+          categoryCollision?.source === 'alpha' && categoryCollision.title === 'Collision Engineer',
+          'duplicate source IDs resolve only to a row that matches the requested category'
+        );
+      }
       if (
         actual.total !== expected.length ||
         actual.jobs.map((j) => j.source_id).join('|') !== expectedPageJobs(visible.filter((f) => matchesCategory(category, {
