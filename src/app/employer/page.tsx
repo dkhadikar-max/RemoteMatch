@@ -59,7 +59,7 @@ export default function EmployerDashboardPage() {
   return <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold text-[var(--ink)]">Employer workspace</h1><p className="text-sm text-[var(--muted)]">Manage company verification and job vacancies.</p></div>
-      <Link href={'/employer/jobs/new?companyId=' + companyId} className="soft-button primary inline-flex">Create a job</Link>
+      <div className="flex flex-wrap gap-2"><Link href={'/employer/companies/' + companyId + '/applications'} className="soft-button secondary inline-flex">View applicants</Link><Link href={'/employer/jobs/new?companyId=' + companyId} className="soft-button primary inline-flex">Create a job</Link></div>
     </div>
     {error && <p className="rounded-xl border border-[var(--red-soft-border)] p-3 text-sm text-[var(--danger)]">{error}</p>}
     <section className="soft-card border border-[var(--line)] p-5 space-y-3">
@@ -73,7 +73,10 @@ export default function EmployerDashboardPage() {
         {selected.verification_reason && <p className="text-xs text-[var(--danger)]">Review note: {selected.verification_reason}</p>}
         {selected.verification_status !== 'verified' && <p className="text-xs text-[var(--muted)]">You can prepare and save vacancy drafts now. Submission unlocks after company verification.</p>}
       </div>}
-      <Link href={'/employer/companies/' + companyId} className="text-sm font-semibold text-[var(--red)] hover:underline">View company profile →</Link>
+      {selected && <div className="flex flex-wrap gap-3">
+        <Link href={'/employer/companies/' + companyId} className="text-sm font-semibold text-[var(--red)] hover:underline">View company profile →</Link>
+        <Link href={'/employer/companies/' + companyId + '/applications'} className="text-sm font-semibold text-[var(--red)] hover:underline">View applicants →</Link>
+      </div>}
     </section>
     <section className="space-y-3">
       <h2 className="text-lg font-bold text-[var(--ink)]">Your vacancies</h2>

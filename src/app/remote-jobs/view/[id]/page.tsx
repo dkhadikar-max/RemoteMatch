@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ArrowRight,
-  ExternalLink,
   MapPin,
   DollarSign,
   Briefcase,
@@ -24,6 +23,7 @@ import {
 } from '@/lib/seo/data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { TrackedApplyLink } from '@/components/seo/tracked-apply-link';
+import { DirectEmployerApplyButton } from '@/components/employer/direct-employer-apply-button';
 import { SITE_URL } from '@/lib/site';
 import { jobHref, jobUrl, findJobByRouteParam } from '@/lib/seo/job-href';
 
@@ -200,18 +200,16 @@ export default async function PublicJobDetailPage({ params }: Props) {
             </h1>
           </div>
 
-          {isLive && (
+          {isLive && (job.source === 'employerdirect' ? (
+            <DirectEmployerApplyButton sourceId={job.sourceId} />
+          ) : (
             <div className="flex flex-wrap items-center gap-2 self-start">
-              <TrackedApplyLink
-                href={job.officialUrl}
-                opportunityId={job.id}
-                className="soft-button primary text-sm flex items-center gap-1.5"
-              >
+              <TrackedApplyLink href={job.officialUrl} opportunityId={job.id}
+                className="soft-button primary text-sm flex items-center gap-1.5">
                 <span>Apply on employer&apos;s website</span>
-                <ExternalLink size={14} />
               </TrackedApplyLink>
             </div>
-          )}
+          ))}
         </div>
 
         {/* Factual Metadata Grid */}
@@ -326,14 +324,10 @@ export default async function PublicJobDetailPage({ params }: Props) {
           >
             ← Back to all remote jobs
           </Link>
-          {isLive && (
-            <TrackedApplyLink
-              href={job.officialUrl}
-              opportunityId={job.id}
-              className="soft-button primary text-sm flex items-center gap-1.5 w-full sm:w-auto justify-center"
-            >
+          {isLive && job.source !== 'employerdirect' && (
+            <TrackedApplyLink href={job.officialUrl} opportunityId={job.id}
+              className="soft-button primary text-sm flex items-center gap-1.5 w-full sm:w-auto justify-center">
               <span>Apply on {job.company}&apos;s website</span>
-              <ExternalLink size={14} />
             </TrackedApplyLink>
           )}
         </div>

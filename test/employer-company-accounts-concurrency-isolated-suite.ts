@@ -78,7 +78,7 @@ function registerPayload(domain: string) {
     countryOfRegistration: 'US',
     registrationNumber: 'TEST-12345',
     linkedinUrl: 'https://linkedin.com/company/concurrency-test',
-    industry: 'Technology',
+    industry: 'Information Technology & Software',
     companySize: '11-50',
     description: 'Isolated-project concurrency/atomicity test fixture.',
     headquarters: 'Remote',

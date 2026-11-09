@@ -232,6 +232,24 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Employer entry point — deliberately separate from the candidate job-search flow. */}
+      <section className="border-y border-[var(--line)] bg-[var(--surface-soft)] py-12 sm:py-16">
+        <div className="container">
+          <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-6 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm sm:flex-row sm:items-center sm:p-9">
+            <div className="max-w-2xl">
+              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--red)]">For employers</span>
+              <h2 className="mt-2 text-2xl font-bold tracking-tight text-[var(--ink)] sm:text-3xl">Build your remote team on RemoteMatch.</h2>
+              <p className="mt-3 text-sm leading-6 text-[var(--muted)] sm:text-base">
+                Create your company profile, publish verified remote roles, and manage applications from one employer workspace.
+              </p>
+            </div>
+            <Link href="/employer" className="soft-button primary inline-flex min-h-11 shrink-0 items-center justify-center gap-2 px-5 text-sm">
+              Post a job <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* 4. How it works */}
       <section id="how-it-works" className="border-t border-[var(--line)] bg-[var(--bg)] py-16 sm:py-20">
         <div className="container">

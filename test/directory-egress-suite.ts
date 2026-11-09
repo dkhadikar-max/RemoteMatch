@@ -313,6 +313,8 @@ async function main() {
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const anon = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const PREFIX = `dir-egress-${Date.now().toString(36)}-`;
+  const SEARCH_TOKEN = `rmsearch${Date.now().toString(36)}`;
+  const GERMAN_TOKEN = `rmgerman${Date.now().toString(36)}`;
   const N = 2500;
   const rr = mulberry32(777);
   const rp = <T,>(a: readonly T[]) => a[Math.floor(rr() * a.length)];
@@ -329,14 +331,14 @@ async function main() {
   const rows = [
     ...ids.map((id, i) => mk(id, i)),
     mk(`${PREFIX}x-expired`, 1, { status: 'expired' }),
-    mk(`${PREFIX}x-de-error`, 2, { source_language: 'de', translation_status: 'error', title: 'Entwickler zebratitle' }),
-    mk(`${PREFIX}t-de-ok`, 3, { source_language: 'de', translation_status: 'ok', title: 'Translated zebratitle role' }),
+    mk(`${PREFIX}x-de-error`, 2, { source_language: 'de', translation_status: 'error', title: `Entwickler ${GERMAN_TOKEN}` }),
+    mk(`${PREFIX}t-de-ok`, 3, { source_language: 'de', translation_status: 'ok', title: `Translated ${GERMAN_TOKEN} role` }),
     // search fixtures with a unique word only in ONE field each
-    mk(`${PREFIX}s-title`, 4, { title: 'Quokkaword Specialist', company: 'Plain Co', description: desc(4), required_skills: [] }),
-    mk(`${PREFIX}s-company`, 5, { title: 'Plain Role', company: 'Quokkaword Industries', description: desc(5), required_skills: [] }),
-    mk(`${PREFIX}s-desc`, 6, { title: 'Plain Role Two', company: 'Plain Co', description: 'This role involves quokkaword research. ' + desc(6), required_skills: [] }),
-    mk(`${PREFIX}s-skill`, 7, { title: 'Plain Role Three', company: 'Plain Co', description: desc(7), required_skills: ['Quokkaword'] }),
-    mk(`${PREFIX}s-skill-lc`, 8, { title: 'Plain Role Four', company: 'Plain Co', description: desc(8), required_skills: ['quokkaword'] }),
+    mk(`${PREFIX}s-title`, 4, { title: `${SEARCH_TOKEN} Specialist`, company: 'Plain Co', description: desc(4), required_skills: [] }),
+    mk(`${PREFIX}s-company`, 5, { title: 'Plain Role', company: `${SEARCH_TOKEN} Industries`, description: desc(5), required_skills: [] }),
+    mk(`${PREFIX}s-desc`, 6, { title: 'Plain Role Two', company: 'Plain Co', description: `This role involves ${SEARCH_TOKEN} research. ` + desc(6), required_skills: [] }),
+    mk(`${PREFIX}s-skill`, 7, { title: 'Plain Role Three', company: 'Plain Co', description: desc(7), required_skills: [SEARCH_TOKEN] }),
+    mk(`${PREFIX}s-skill-lc`, 8, { title: 'Plain Role Four', company: 'Plain Co', description: desc(8), required_skills: [SEARCH_TOKEN.toLowerCase()] }),
   ];
   const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`]);
   const mine = <T extends { sourceId: string }>(a: T[]) => a.filter((x) => x.sourceId.startsWith(PREFIX));
@@ -408,11 +410,11 @@ async function main() {
     assert(!dup && seen.size === DIRECTORY_PAGE_SIZE * 3, 'consecutive pages do not repeat listings');
 
     // --- 3e. search semantics against the old searchJobs ---
-    const q1 = (await loadSearchPage('quokkaword', '1'))!;
+    const q1 = (await loadSearchPage(SEARCH_TOKEN.toLowerCase(), '1'))!;
     const found = new Set(q1.jobs.map((j) => j.sourceId));
     assert(q1.total === 5 && found.size === 5, `a word present in only one field is found in title / company / description / skill tag / lowercase skill tag (${q1.total} of 5)`);
     assert(!found.has(`${PREFIX}x-expired`) && !found.has(`${PREFIX}x-de-error`), 'search never returns expired or untranslated-German listings');
-    const z = (await loadSearchPage('zebratitle', '1'))!;
+    const z = (await loadSearchPage(GERMAN_TOKEN.toLowerCase(), '1'))!;
     assert(z.jobs.map((j) => j.sourceId).join() === `${PREFIX}t-de-ok`, 'only the TRANSLATED German listing matches its title word (the untranslated one stays hidden)');
     const eng = (await loadSearchPage('engineer', '1'))!;
     // Search is unchanged by this PR. Its pre-existing PostgREST path uses
@@ -463,8 +465,8 @@ async function main() {
       assert(d2.status === 200 && /name="robots" content="[^"]*noindex/.test(d2.text) && /rel="prev"/.test(d2.text), 'GET /remote-jobs?page=2 -> 200, noindex,follow, with a "previous" link');
       assert((await get('/remote-jobs?page=99999')).status === 404, 'an out-of-range page -> 404');
       assert((await get('/remote-jobs?page=abc')).status === 200, 'a garbage page param -> page 1 (200)');
-      const dq = await get('/remote-jobs?q=quokkaword');
-      assert(dq.status === 200 && /Showing 5 verified positions/.test(dq.text) && /Quokkaword/.test(dq.text), 'GET /remote-jobs?q=quokkaword -> the 5 fixtures');
+      const dq = await get('/remote-jobs?q=' + encodeURIComponent(SEARCH_TOKEN.toLowerCase()));
+      assert(dq.status === 200 && /Showing 5 verified positions/.test(dq.text) && dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()), 'GET /remote-jobs with a unique search token -> the 5 fixtures');
       assert((await get('/remote-jobs?q=%25%27%22%2C()')).status === 200, 'hostile ?q= renders (200), no 500');
       const c1 = await get('/remote-jobs/software-engineering');
       assert(c1.status === 200 && (c1.text.match(/<article/g) || []).length === 24 && /Showing 1–24 of \d+ verified active positions/.test(c1.text), 'GET /remote-jobs/software-engineering -> 200 with a 24-card first page');

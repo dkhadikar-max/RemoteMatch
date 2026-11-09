@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2 } from 'lucide-react';
+import { EMPLOYER_INDUSTRIES, EMPLOYER_COMPANY_SIZES } from '@/lib/employer/taxonomy';
 
 interface FormState {
   legalName: string;
@@ -144,8 +145,20 @@ export default function EmployerRegisterPage() {
           <Field label="Country of registration" name="countryOfRegistration" value={form.countryOfRegistration} onChange={update} required />
           <Field label="Company registration number" name="registrationNumber" value={form.registrationNumber} onChange={update} />
           <Field label="LinkedIn company profile" name="linkedinUrl" value={form.linkedinUrl} onChange={update} />
-          <Field label="Industry" name="industry" value={form.industry} onChange={update} />
-          <Field label="Company size" name="companySize" value={form.companySize} onChange={update} placeholder="e.g. 11-50" />
+          <div>
+            <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Industry</label>
+            <select value={form.industry} onChange={(e) => update('industry', e.target.value)} className="soft-input py-2.5 px-3.5 text-sm w-full">
+              <option value="">Select industry</option>
+              {EMPLOYER_INDUSTRIES.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Company size</label>
+            <select value={form.companySize} onChange={(e) => update('companySize', e.target.value)} className="soft-input py-2.5 px-3.5 text-sm w-full">
+              <option value="">Select employee range</option>
+              {EMPLOYER_COMPANY_SIZES.map((item) => <option key={item} value={item}>{item} employees</option>)}
+            </select>
+          </div>
           <Field label="Headquarters" name="headquarters" value={form.headquarters} onChange={update} />
           <div>
             <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">Company description</label>

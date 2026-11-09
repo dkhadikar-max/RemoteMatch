@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 const inputClass='soft-input w-full px-3 py-2.5 text-sm';
-const initial={title:'',description:'',responsibilities:'',employmentType:'Full-time',remoteType:'Remote',location:'Worldwide',eligibleCountries:'',salaryMin:'',salaryMax:'',salaryCurrency:'USD',requiredSkills:'',preferredSkills:'',experienceRequirement:'',applicationUrl:''};
+const initial={title:'',description:'',responsibilities:'',employmentType:'Full-time',remoteType:'Remote',location:'Worldwide',eligibleCountries:'',salaryMin:'',salaryMax:'',salaryCurrency:'USD',requiredSkills:'',preferredSkills:'',experienceRequirement:''};
 
 export default function NewEmployerJobPage(){
   const router=useRouter();
@@ -16,7 +16,7 @@ export default function NewEmployerJobPage(){
   useEffect(()=>{
     if(!companyId)return;
     fetch('/api/employer/companies/'+companyId).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load company');setCompanyStatus(d.company.verification_status);}).catch(e=>setError(e.message));
-    if(jobId)fetch('/api/employer/companies/'+companyId+'/jobs/'+jobId).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load draft');const j=d.job;setForm({title:j.title,description:j.description,responsibilities:j.responsibilities||'',employmentType:j.employment_type,remoteType:j.remote_type,location:j.location,eligibleCountries:(j.eligible_countries||[]).join(', '),salaryMin:j.salary_min==null?'':String(j.salary_min),salaryMax:j.salary_max==null?'':String(j.salary_max),salaryCurrency:j.salary_currency,requiredSkills:(j.required_skills||[]).join(', '),preferredSkills:(j.preferred_skills||[]).join(', '),experienceRequirement:j.experience_requirement||'',applicationUrl:j.application_url});}).catch(e=>setError(e.message));
+    if(jobId)fetch('/api/employer/companies/'+companyId+'/jobs/'+jobId).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load draft');const j=d.job;setForm({title:j.title,description:j.description,responsibilities:j.responsibilities||'',employmentType:j.employment_type,remoteType:j.remote_type,location:j.location,eligibleCountries:(j.eligible_countries||[]).join(', '),salaryMin:j.salary_min==null?'':String(j.salary_min),salaryMax:j.salary_max==null?'':String(j.salary_max),salaryCurrency:j.salary_currency,requiredSkills:(j.required_skills||[]).join(', '),preferredSkills:(j.preferred_skills||[]).join(', '),experienceRequirement:j.experience_requirement||''});}).catch(e=>setError(e.message));
   },[companyId,jobId]);
   const save=async()=>{
     setBusy(true);setError('');setMessage('');
@@ -53,7 +53,6 @@ export default function NewEmployerJobPage(){
       {field('Required skills (comma-separated)','requiredSkills','Product strategy, Figma, UX')}
       {field('Preferred skills (comma-separated)','preferredSkills','SQL, analytics')}
       {field('Experience requirement','experienceRequirement','5+ years')}
-      {field('Application URL *','applicationUrl','https://company.com/careers/role','url')}
       {error&&<p className="text-sm text-[var(--danger)]">{error}</p>}
       {message&&<p className="text-sm text-[var(--muted)]">{message}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4"><Link href="/employer" className="text-sm text-[var(--muted)]">Cancel</Link><button disabled={busy} onClick={save} className="soft-button primary">{busy?'Saving…':companyStatus==='verified'?'Save and submit for review':'Save draft'}</button></div>
