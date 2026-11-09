@@ -27,6 +27,7 @@ import { DirectEmployerApplyButton } from '@/components/employer/direct-employer
 import { SITE_URL } from '@/lib/site';
 import { jobHref, jobUrl, findJobByRouteParam } from '@/lib/seo/job-href';
 import { recordRouteMetric } from '@/lib/observability/route-metrics';
+import type { CanonicalOpportunity } from '@/types/byn';
 
 // Next renders generateMetadata and the page in one server request. React cache
 // deduplicates the identical source_id lookup across those two render phases.
@@ -102,7 +103,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
   // Bounded read: 3 rows from the database, NOT the whole catalog filtered in
   // memory (that cost ~21 MB of Supabase egress per page view).
   const relatedStartedAt = performance.now();
-  let relatedJobs;
+  let relatedJobs: CanonicalOpportunity[];
   try {
     relatedJobs = supabase ? await getRelatedJobs(supabase, job.sourceId, 3) : [];
     recordRouteMetric({
