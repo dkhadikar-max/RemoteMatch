@@ -284,9 +284,9 @@ AS $$
   ),
   resolved AS (
     SELECT
-      page_ids.posted_at AS _index_posted_at,
-      page_ids.source_id AS _index_source_id,
-      page_ids.source AS _index_source,
+      unique_page_ids.posted_at AS _index_posted_at,
+      unique_page_ids.source_id AS _index_source_id,
+      unique_page_ids.source AS _index_source,
       o.*
     FROM unique_page_ids
     JOIN first_match USING (source_id)
