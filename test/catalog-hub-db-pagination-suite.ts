@@ -294,7 +294,7 @@ async function main() {
         NULL,
         'scale-h-' || g::text,
         'scale-c-' || g::text
-      FROM generate_series(1, 92357) AS g;
+      FROM generate_series(1, 92357) AS series(g);
     `);
 
     await setRole(db, 'anon');
