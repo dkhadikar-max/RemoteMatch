@@ -18,10 +18,11 @@ import {
   formatSalaryRange,
   SeoFaqItem,
 } from '@/lib/seo/data';
-import { loadHubPage, loadSearchPage, parsePageParam } from '@/lib/seo/directory';
+import { loadHubPage, loadSearchPage, parsePageParam, type DirectoryPage } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
 import { SITE_URL } from '@/lib/site';
 import { jobHref } from '@/lib/seo/job-href';
+import { recordRouteMetric } from '@/lib/observability/route-metrics';
 
 interface Props {
   searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
@@ -65,9 +66,28 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   // Bounded reads: directory/category pages use the database-side slim
   // projection and return only one page; ?q= search remains database-paginated.
   // See src/lib/seo/directory.ts.
-  const hub = searchQuery
-    ? await loadSearchPage(searchQuery, resolvedParams.page)
-    : await loadHubPage(null, resolvedParams.page);
+  const directoryStartedAt = performance.now();
+  let hub: DirectoryPage;
+  try {
+    hub = searchQuery
+      ? await loadSearchPage(searchQuery, resolvedParams.page)
+      : await loadHubPage(null, resolvedParams.page);
+    recordRouteMetric({
+      route: 'public_job_directory',
+      stage: searchQuery ? 'search_page' : 'hub_page',
+      durationMs: performance.now() - directoryStartedAt,
+      outcome: hub.searchTimedOut ? 'timeout' : 'success',
+      resultCount: hub.jobs.length,
+    });
+  } catch (error) {
+    recordRouteMetric({
+      route: 'public_job_directory',
+      stage: searchQuery ? 'search_page' : 'hub_page',
+      durationMs: performance.now() - directoryStartedAt,
+      outcome: 'error',
+    });
+    throw error;
+  }
   if (hub?.outOfRange) notFound();
   const jobs = hub?.jobs ?? [];
   const totalJobs = hub?.total ?? 0;
