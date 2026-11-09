@@ -278,7 +278,7 @@ AS $$
     -- but make the tie-break deterministic. This uses the projection's
     -- (source_id, source) index rather than scanning opportunities repeatedly.
     SELECT DISTINCT ON (i.source_id) i.source_id, i.source
-    FROM public.opportunity_catalog_index AS i
+    FROM matched AS i
     JOIN requested_ids AS requested USING (source_id)
     ORDER BY i.source_id ASC, i.source ASC
   ),
