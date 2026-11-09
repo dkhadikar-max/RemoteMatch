@@ -83,7 +83,8 @@ async function main() {
     ] as const;
     for (const [name, filters] of filterCases) {
       const filterResponse = await get(`/api/integrations/chatgpt/jobs?${filters}&limit=5`);
-      assert.equal(filterResponse.status, 200, `${name} filter request should succeed`);
+      const filterBody = await filterResponse.clone().text();
+      assert.equal(filterResponse.status, 200, `${name} filter request should succeed; status=${filterResponse.status}; body=${filterBody}`);
       const filterResult = await filterResponse.json() as { total: number };
       assert.ok(filterResult.total >= 1, `${name} filter must retain the seeded fixture`);
     }
