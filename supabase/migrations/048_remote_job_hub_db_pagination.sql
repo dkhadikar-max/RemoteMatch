@@ -261,9 +261,17 @@ AS $$
       * LEAST(GREATEST(COALESCE(p_page_size, 24), 1), 24)
     )
   ),
+  -- Match the legacy getOpportunitiesBySourceIds() behavior: source IDs
+  -- are deduplicated within the requested page before resolving full rows.
+  -- The page total still counts catalog entries, as the old directory did.
+  unique_page_ids AS (
+    SELECT DISTINCT ON (source_id) source_id, source, posted_at
+    FROM page_ids
+    ORDER BY source_id ASC, posted_at DESC NULLS LAST, source ASC
+  ),
   requested_ids AS (
     SELECT DISTINCT source_id
-    FROM page_ids
+    FROM unique_page_ids
   ),
   first_match AS MATERIALIZED (
     -- Preserve the existing "first source row for this source_id" behavior,
@@ -280,7 +288,7 @@ AS $$
       page_ids.source_id AS _index_source_id,
       page_ids.source AS _index_source,
       o.*
-    FROM page_ids
+    FROM unique_page_ids
     JOIN first_match USING (source_id)
     JOIN public.opportunities AS o
       ON o.source = first_match.source
