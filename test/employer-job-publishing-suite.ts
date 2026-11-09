@@ -24,6 +24,9 @@ const employerPage = read('src/app/employer/page.tsx');
 const formPage = read('src/app/employer/jobs/new/page.tsx');
 const adminPage = read('src/app/admin/(dashboard)/employer-jobs/page.tsx');
 const navbar = read('src/components/navigation/navbar.tsx');
+const employerNavbar = read('src/components/navigation/employer-navbar.tsx');
+const employerLayout = read('src/app/employer/layout.tsx');
+const landingPage = read('src/app/page.tsx');
 const sidebar = read('src/components/admin/Sidebar.tsx');
 const catalogSync = read('src/lib/ingestion/catalog-sync.ts');
 
@@ -54,4 +57,9 @@ check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employe
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');
 check(/EMPLOYER_INDUSTRIES/.test(taxonomy) && /EMPLOYER_COMPANY_SIZES/.test(taxonomy), 'industry and employee ranges use standardized filter values');
 
+check(/pathname\?\.startsWith\('\/employer'\)/.test(navbar), 'candidate navigation is hidden throughout employer routes');
+check(!/href="\/employer"[^>]*>/.test(navbar), 'candidate navigation does not show a post-a-job control');
+check(/EmployerNavbar/.test(employerLayout) && /EmployerNavbar/.test(employerNavbar), 'employer routes render a dedicated employer navigation shell');
+check(/href="\/remote-jobs"/.test(employerNavbar) && /Post a job/.test(employerNavbar), 'employer navigation has a clear candidate handoff and employer posting action');
+check(/For employers/.test(landingPage) && /href="\/employer"/.test(landingPage), 'homepage presents a separate employer entry point');
 console.log('\n' + passed + ' employer job publishing checks passed.');
