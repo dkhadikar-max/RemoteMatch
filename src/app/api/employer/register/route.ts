@@ -3,6 +3,7 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import { normalizeDomain } from '@/lib/employer/normalize-domain';
+import { EMPLOYER_INDUSTRIES, EMPLOYER_COMPANY_SIZES } from '@/lib/employer/taxonomy';
 
 const MAX_TEXT = 500;
 const MAX_LONG_TEXT = 5000;
@@ -47,8 +48,8 @@ function isValidBody(body: unknown): body is RegisterBody {
     isNonEmptyString(b.representativeRelationship, MAX_TEXT) &&
     isOptionalString(b.registrationNumber, MAX_TEXT) &&
     isOptionalString(b.linkedinUrl, MAX_TEXT) &&
-    isOptionalString(b.industry, MAX_TEXT) &&
-    isOptionalString(b.companySize, MAX_TEXT) &&
+    isOptionalString(b.industry, MAX_TEXT) && (b.industry === undefined || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
+    isOptionalString(b.companySize, MAX_TEXT) && (b.companySize === undefined || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
     isOptionalString(b.description, MAX_LONG_TEXT) &&
     isOptionalString(b.headquarters, MAX_TEXT)
   );
