@@ -730,7 +730,7 @@ function SettingsContent() {
                     disabled={isUpgrading}
                     className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 transition-colors shadow-sm flex items-center gap-1.5"
                   >
-                    <span>{isUpgrading ? 'Connecting…' : 'Upgrade to Pro ({PRO_CURRENCY_PRICES[billingCurrency]})'}</span>
+                    <span>{isUpgrading ? 'Connecting…' : `Upgrade to Pro (${PRO_CURRENCY_PRICES[billingCurrency]})`}</span>
                     <ArrowUpRight size={13} />
                   </button>
                 )}
