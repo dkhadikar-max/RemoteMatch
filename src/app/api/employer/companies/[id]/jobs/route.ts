@@ -19,7 +19,7 @@ function valid(body: unknown): body is Record<string, unknown> {
     str('remoteType',20,true) && ['Remote','Hybrid','On-site'].includes(String(b.remoteType)) &&
     str('location',180,true) && arr('eligibleCountries') && num('salaryMin') && num('salaryMax') &&
     str('salaryCurrency',3) && (b.salaryCurrency === undefined || /^[A-Z]{3}$/.test(String(b.salaryCurrency).toUpperCase())) && arr('requiredSkills') && arr('preferredSkills') &&
-    str('experienceRequirement',180) && str('applicationUrl',1000,true);
+    str('experienceRequirement',180);
 }
 function toRow(b: Record<string, unknown>) {
   return {
