@@ -23,7 +23,7 @@ ALTER TABLE public.employer_job_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employer_job_applications FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS employer_job_applications_service_role_all ON public.employer_job_applications;
 CREATE POLICY employer_job_applications_service_role_all ON public.employer_job_applications
-  FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 REVOKE ALL ON public.employer_job_applications FROM anon, authenticated;
 GRANT ALL ON public.employer_job_applications TO service_role;
 
