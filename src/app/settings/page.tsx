@@ -309,7 +309,8 @@ function SettingsContent() {
   };
 
   // ---- derived, server-only display values (no fixture, no fabrication) ----
-  const billingCurrency: ProCurrency = srv?.currentCountry?.trim().toUpperCase() === 'IN' || !srv?.currentCountry ? 'INR' : 'USD';
+  const billingCountry = srv?.currentCountry?.trim().toUpperCase();
+  const billingCurrency: ProCurrency = !billingCountry || billingCountry === 'IN' || billingCountry === 'INDIA' ? 'INR' : 'USD';
   const planTier = ent?.planTier ?? 'free';
   const rightSwipes = ent?.dailyRightSwipesCount ?? 0;
   const proposals = ent?.dailyProposalsCount ?? 0;
