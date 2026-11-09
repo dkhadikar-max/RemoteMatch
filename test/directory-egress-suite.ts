@@ -367,6 +367,9 @@ async function main() {
     const full = mine(fullRun.r);
     console.log(`  · OLD full-catalog read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
     assert(full.length === visibleIds.size, `old full read sees the same ${full.length} listings`);
+    const syntheticFullIds = new Set(full.map((job) => job.sourceId));
+    assert(syntheticFullIds.size === full.length, 'full-catalog pagination contains no duplicate synthetic source IDs');
+    assert(Array.from(visibleIds).every((id) => syntheticFullIds.has(id)), 'full-catalog pagination contains every expected visible synthetic source ID');
     let membersEqual = true; const bad: string[] = [];
     for (const cat of SEO_CATEGORIES) {
       const a = new Set(idxMine.filter((e) => matchesCategory(cat, e)).map((e) => e.sourceId));
