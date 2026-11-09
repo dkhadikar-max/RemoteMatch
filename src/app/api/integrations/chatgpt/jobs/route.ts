@@ -99,7 +99,7 @@ function publicJob(job: NonNullable<Awaited<ReturnType<typeof getFeedCatalog>>>[
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const rawQuery = (params.get('q') ?? '').trim().slice(0, MAX_QUERY_LENGTH);
-  const queryTerms = rawQuery.toLowerCase().split(/\\s+/).filter(Boolean);
+  const queryTerms = rawQuery.toLowerCase().split(/\s+/).filter(Boolean);
   const skills = csv(params.get('skills'));
   const country = normalized(params.get('country'));
   const remoteType = normalized(params.get('remoteType'));
