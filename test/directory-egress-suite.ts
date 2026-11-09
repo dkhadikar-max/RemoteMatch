@@ -429,7 +429,23 @@ async function main() {
     assert(eng.total > 0 && oldEng.length > 0, `?q=engineer still returns results in both existing search paths (${eng.total} DB, ${oldEng.length} legacy)`);
     const multi = (await loadSearchPage('senior engineer', '1'))!;
     const oldMulti = await searchJobs('senior engineer', undefined, anon);
-    assert(multi.total === oldMulti.length, `multi-term search ANDs the terms like the old path (${multi.total} vs ${oldMulti.length})`);
+    // The database search deliberately matches a skill as a WHOLE tag; the
+    // legacy in-memory haystack also matched arbitrary substrings inside a
+    // skill name (e.g. "engineer" inside "engineering"). Compute the expected
+    // database semantics over the full read rather than asserting false
+    // parity with that documented legacy difference.
+    const multiTerms = ['senior', 'engineer'];
+    const expectedMulti = full.filter((job) => multiTerms.every((term) => {
+      const cap = term.charAt(0).toUpperCase() + term.slice(1);
+      const upper = term.toUpperCase();
+      return [job.title, job.company, job.description, job.remoteType]
+        .some((field) => field.toLowerCase().includes(term)) ||
+        (job.requiredSkills ?? []).some((skill) => skill === term || skill === cap || skill === upper);
+    }));
+    assert(
+      multi.total === expectedMulti.length && multi.total > 0 && oldMulti.length >= multi.total,
+      `multi-term database search matches its documented whole-skill-tag semantics (${multi.total} DB, ${expectedMulti.length} expected, ${oldMulti.length} legacy substring matches)`
+    );
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
     const s2 = (await loadSearchPage('engineer', '2'))!;
