@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { z } from 'zod/v4';
+import * as z from 'zod/v4';
 
 const PORT = Number(process.env.PORT ?? 3001);
 const API_BASE = (process.env.REMOTEMATCH_API_BASE_URL ?? 'https://remotematch.online').replace(/\/$/, '');
@@ -184,6 +184,7 @@ app.post(MCP_PATH, rateLimit, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'MCP request failed.' });
     }
+  } finally {
     await transport.close().catch(() => undefined);
     await server.close().catch(() => undefined);
   }
