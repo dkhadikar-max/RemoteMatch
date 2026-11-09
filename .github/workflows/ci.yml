@@ -60,6 +60,7 @@ jobs:
           suites=(
             test/swipe-limits-rolling-24h-suite.ts
             test/catalog-hub-db-pagination-suite.ts
+            test/job-filter-data-quality-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
