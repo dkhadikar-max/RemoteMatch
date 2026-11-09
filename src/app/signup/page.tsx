@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { startSignupWithPassword } from '@/lib/auth/auth-flow';
 import { VerifyCode } from '@/components/auth/VerifyCode';
 
-export default function SignupPage() {
+function SignupContent() {
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect') || (searchParams.get('role') === 'employer' ? '/employer' : '/onboarding');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,6 +34,7 @@ export default function SignupPage() {
     return (
       <VerifyCode
         email={sentTo}
+        redirect={redirect}
         onChangeEmail={() => {
           // Keep the name and password; just let them fix the address.
           setSentTo(null);
@@ -116,7 +120,7 @@ export default function SignupPage() {
 
           <p className="text-center text-sm text-[var(--muted)]">
             Already have an account?{' '}
-            <Link href="/login" className="font-semibold text-[var(--red)] hover:underline">
+            <Link href={"/login?role=" + (searchParams.get("role") === "employer" ? "employer" : "candidate") + "&redirect=" + encodeURIComponent(redirect)} className="font-semibold text-[var(--red)] hover:underline">
               Sign in
             </Link>
           </p>
@@ -124,4 +128,8 @@ export default function SignupPage() {
       </div>
     </div>
   );
+}
+
+export default function SignupPage() {
+  return <Suspense fallback={<div className="p-12 text-center text-sm text-[var(--muted)]">Loading…</div>}><SignupContent /></Suspense>;
 }

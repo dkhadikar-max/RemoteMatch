@@ -168,9 +168,26 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // --- Pre-auth intent selection ---
+  // Never silently assume that a visitor is a candidate or employer.
+  // Protected employer URLs and direct login/signup visits first pass through
+  // the public role chooser. The chooser then links back with an explicit role.
+  if (!verified) {
+    const role = request.nextUrl.searchParams.get('role');
+    const isAuthEntry = pathname === '/login' || pathname === '/signup';
+    const needsRoleChoice = (inProduct || inOnboarding || inVerifiedOnly || isAuthEntry) &&
+      !(isAuthEntry && (role === 'candidate' || role === 'employer'));
+    if (needsRoleChoice && pathname !== '/choose-role') {
+      const chooser = new URL('/choose-role', request.url);
+      chooser.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(chooser);
+    }
+  }
+
   // --- Private-route boundary (verified) ---
   if ((inProduct || inOnboarding || inVerifiedOnly) && !verified) {
     const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('role', pathname.startsWith('/employer') ? 'employer' : 'candidate');
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
