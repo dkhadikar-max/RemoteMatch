@@ -78,10 +78,44 @@ function applyCountryFilter<T extends { or(filters: string): T; not(column: stri
   if (EU_EEA_COUNTRIES.has(country)) {
     clauses.push('eligible_countries.ov.{"EU","EEA","EU/EEA"}', 'remote_type.eq.eu/eea');
   }
-  query = query.or(clauses.join(','));
-  // Exclusions always win, including for worldwide and regional listings.
-  query = query.or(`excluded_countries.is.null,excluded_countries.not.ov.${pgArray(arrayVariants)}`);
-  return query;
+  return query.or(clauses.join(','));
+}
+
+const MAX_INLINE_COUNTRY_EXCLUSION_IDS = 1000;
+
+/**
+ * Resolve country exclusions through a positive array-overlap lookup. A
+ * negative array-overlap predicate on the main text-search query forced a
+ * sequential scan of the entire opportunities table, even while every
+ * excluded_countries array was empty. The GIN index added by the companion
+ * migration makes this bounded lookup selective; the main query then excludes
+ * only the matching UUIDs through its primary-key predicate.
+ *
+ * Fail closed if the exclusion set is unexpectedly large rather than return
+ * jobs that may be ineligible for the requested country.
+ */
+async function loadCountryExclusionIds(
+  supabase: NonNullable<ReturnType<typeof createSupabasePublicClient>>,
+  country: string
+): Promise<string[]> {
+  const variants = COUNTRY_ALIASES[country] ?? [country];
+  const arrayVariants = Array.from(new Set(variants.flatMap((value) => [
+    value,
+    value.toUpperCase(),
+    value.charAt(0).toUpperCase() + value.slice(1),
+  ])));
+  const { data, error } = await supabase
+    .from('opportunities')
+    .select('id')
+    .eq('status', 'active')
+    .overlaps('excluded_countries', arrayVariants)
+    .limit(MAX_INLINE_COUNTRY_EXCLUSION_IDS + 1);
+  if (error) throw new Error(`Could not load country exclusions: ${error.message}`);
+  const rows = (data ?? []) as Array<{ id: string }>;
+  if (rows.length > MAX_INLINE_COUNTRY_EXCLUSION_IDS) {
+    throw new Error('Country exclusion set exceeds the safe inline limit.');
+  }
+  return rows.map((row) => row.id);
 }
 
 function publicJob(job: CanonicalOpportunity) {
@@ -143,6 +177,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Job catalogue temporarily unavailable.' }, { status: 503 });
     }
 
+    const excludedIds = country ? await loadCountryExclusionIds(supabase, country) : [];
+
     let query = supabase
       .from('opportunities')
       .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
@@ -171,6 +207,9 @@ export async function GET(request: NextRequest) {
     }
 
     query = applyCountryFilter(query, country);
+    if (excludedIds.length > 0) {
+      query = query.not('id', 'in', `(${excludedIds.join(',')})`);
+    }
     if (remoteType) query = query.ilike('remote_type', remoteType);
     if (employmentType) query = query.ilike('employment_type', employmentType);
     if (experience) query = query.ilike('experience_requirement', experience);
