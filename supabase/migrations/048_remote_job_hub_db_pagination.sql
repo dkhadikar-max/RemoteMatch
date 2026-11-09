@@ -28,6 +28,9 @@ CREATE TABLE public.opportunity_catalog_index (
 CREATE INDEX opportunity_catalog_index_order
   ON public.opportunity_catalog_index (posted_at DESC NULLS LAST, source_id ASC, source ASC);
 
+CREATE INDEX opportunity_catalog_index_source_id
+  ON public.opportunity_catalog_index (source_id ASC, source ASC);
+
 ALTER TABLE public.opportunity_catalog_index ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY opportunity_catalog_index_select_public
@@ -168,6 +171,10 @@ WHERE o.status = 'active'
     OR o.translation_status <> 'error'
   );
 
+-- The projection is populated in one backfill; collect planner statistics
+-- before the first public RPC request uses it.
+ANALYZE public.opportunity_catalog_index;
+
 CREATE OR REPLACE FUNCTION public.get_remote_job_hub_page(
   p_category_slug text DEFAULT NULL,
   p_page integer DEFAULT 1,
@@ -254,30 +261,40 @@ AS $$
       * LEAST(GREATEST(COALESCE(p_page_size, 24), 1), 24)
     )
   ),
+  requested_ids AS (
+    SELECT DISTINCT source_id
+    FROM page_ids
+  ),
+  first_match AS MATERIALIZED (
+    -- Preserve the existing "first source row for this source_id" behavior,
+    -- but make the tie-break deterministic. This uses the projection's
+    -- (source_id, source) index rather than scanning opportunities repeatedly.
+    SELECT DISTINCT ON (i.source_id) i.source_id, i.source
+    FROM public.opportunity_catalog_index AS i
+    JOIN requested_ids AS requested USING (source_id)
+    ORDER BY i.source_id ASC, i.source ASC
+  ),
   resolved AS (
     SELECT
       page_ids.posted_at AS _index_posted_at,
       page_ids.source_id AS _index_source_id,
       page_ids.source AS _index_source,
-      opportunity.*
+      o.*
     FROM page_ids
-    JOIN LATERAL (
-      SELECT o.*
-      FROM public.opportunities AS o
-      WHERE o.source_id = page_ids.source_id
-        AND o.status = 'active'
-        AND (
-          o.source_language IS NULL
-          OR o.source_language = 'en'
-          OR o.translation_status = 'ok'
-        )
-        AND (
-          o.translation_status IS NULL
-          OR o.translation_status <> 'error'
-        )
-      ORDER BY o.source ASC
-      LIMIT 1
-    ) AS opportunity ON true
+    JOIN first_match USING (source_id)
+    JOIN public.opportunities AS o
+      ON o.source = first_match.source
+      AND o.source_id = first_match.source_id
+    WHERE o.status = 'active'
+      AND (
+        o.source_language IS NULL
+        OR o.source_language = 'en'
+        OR o.translation_status = 'ok'
+      )
+      AND (
+        o.translation_status IS NULL
+        OR o.translation_status <> 'error'
+      )
   )
   SELECT jsonb_build_object(
     'total', totals.total,
