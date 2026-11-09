@@ -1,5 +1,11 @@
 name: CI
 
+# The live integration job uses one isolated Supabase project; serialize runs per PR
+# so overlapping pushes cannot race over the same synthetic test rows.
+concurrency:
+  group: remotematch-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # This repo has no existing CI (confirmed during the PR #51 review: the only
 # check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
 # tests). This workflow is intentionally narrow and generic, so it's safe to
@@ -73,6 +79,10 @@ jobs:
       - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
         if: hashFiles('test/employer-company-accounts-suite.ts') != ''
         run: npx tsx test/employer-company-accounts-suite.ts
+
+      - name: Employer job publishing regression suite
+        if: hashFiles('test/employer-job-publishing-suite.ts') != ''
+        run: npx tsx test/employer-job-publishing-suite.ts
 
   # ----------------------------------------------------------------------------
   # Direct Employer Supply (migrations 044/045/047) -- LIVE integration tier.

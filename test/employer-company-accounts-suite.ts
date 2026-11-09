@@ -206,6 +206,9 @@ async function main() {
   const cleanupCompanyIds: string[] = [];
   const cleanupUserIds: string[] = [];
   const cleanupAdminRowIds: string[] = [];
+  const cleanupJobSubmissionIds: string[] = [];
+  const cleanupOpportunityIds: string[] = [];
+  let jobDraftId: string | null = null;
   let adminAuditRowCreated = false;
 
   try {
@@ -297,6 +300,36 @@ async function main() {
       retryRes.status === 200 && retryBody.companyId === companyId && retryBody.alreadyRegistered === true,
       `the original registrant retrying the same registration recovers their existing company (got status ${retryRes.status}, companyId match ${retryBody.companyId === companyId}, alreadyRegistered ${retryBody.alreadyRegistered})`
     );
+
+    // --- Vacancy draft creation is allowed before company verification; submission is not. ---
+    const draftRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+      body: JSON.stringify({
+        title: 'RemoteMatch integration test engineer',
+        description: 'Build and maintain reliable software systems, collaborate with product teams, and improve automated test coverage.',
+        responsibilities: 'Write tests, review code, and document release evidence.',
+        employmentType: 'Full-time',
+        remoteType: 'Remote',
+        location: 'Worldwide',
+        eligibleCountries: ['Worldwide'],
+        salaryMin: 100000,
+        salaryMax: 150000,
+        salaryCurrency: 'USD',
+        requiredSkills: ['TypeScript', 'PostgreSQL'],
+        preferredSkills: ['Playwright'],
+        experienceRequirement: '3-5 years',
+        applicationUrl: `https://example.com/careers/remotematch-integration-test-${Date.now()}`,
+      }),
+    });
+    const draftBody = await draftRes.json();
+    assert(draftRes.status === 201 && draftBody.job?.status === 'draft', `an authorized employer can save a vacancy draft (got ${draftRes.status})`);
+    jobDraftId = draftBody.job?.id ?? null;
+    if (jobDraftId) cleanupJobSubmissionIds.push(jobDraftId);
+    const blockedSubmit = jobDraftId ? await fetch(`${BASE_URL}/api/employer/companies/${companyId}/jobs/${jobDraftId}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${sessionA.token}` },
+    }) : null;
+    assert(Boolean(blockedSubmit && blockedSubmit.status === 409), 'a draft cannot be submitted while company verification is pending');
 
     // --- Admin review path ---
     const adminEmail = uniqueEmail();
@@ -407,6 +440,32 @@ async function main() {
         body: JSON.stringify({ action: 'verify', reason: 'should not apply twice' }),
       });
       assert(reVerifyRes.status === 409, `re-verifying an already-verified company is rejected 409 (got ${reVerifyRes.status})`);
+
+      // --- Verified company may submit; admin approval atomically publishes to opportunities. ---
+      const submitRes = jobDraftId ? await fetch(`${BASE_URL}/api/employer/companies/${companyId}/jobs/${jobDraftId}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${sessionA.token}` },
+      }) : null;
+      const submitBody = submitRes ? await submitRes.json() : {};
+      assert(Boolean(submitRes && submitRes.status === 200 && submitBody.job?.status === 'submitted'), `verified company can submit its draft for moderation (got ${submitRes?.status})`);
+
+      const queueRes = await adminFetch('/api/admin/employer-jobs', { headers: { Authorization: `Bearer ${adminToken}` } });
+      const queueBody = await queueRes.json();
+      assert(queueRes.status === 200 && (queueBody.jobs ?? []).some((job: { id: string }) => job.id === jobDraftId), 'admin vacancy review queue contains the submitted job');
+
+      const publishRes = await adminFetch('/api/admin/employer-jobs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ submissionId: jobDraftId, action: 'approve_publish', reason: 'Integration suite: employer identity and vacancy details reviewed.' }),
+      });
+      const publishBody = await publishRes.json();
+      assert(publishRes.status === 200 && publishBody.status === 'published' && Boolean(publishBody.opportunityId), `admin approval publishes the vacancy (got ${publishRes.status})`);
+      if (publishBody.opportunityId) cleanupOpportunityIds.push(publishBody.opportunityId);
+      const published = publishBody.opportunityId ? await admin.from('opportunities').select('id,status,source,source_id').eq('id', publishBody.opportunityId).maybeSingle() : { data: null, error: null };
+      assert(!published.error && published.data?.status === 'active' && published.data?.source === 'employerdirect' && published.data?.source_id === jobDraftId, 'published vacancy is active in the existing opportunities catalogue under employerdirect');
+      const { data: publishEvents, error: publishEventsError } = await admin.from('employer_job_review_events')
+        .select('action,to_status,opportunity_id').eq('submission_id', jobDraftId).eq('action', 'approve_publish');
+      assert(!publishEventsError && (publishEvents ?? []).length === 1 && publishEvents?.[0]?.to_status === 'published', 'approval writes exactly one auditable publish event');
+
     }
 
     // --- RLS deny-by-default, directly against the tables ---
@@ -419,11 +478,23 @@ async function main() {
 
     const { data: ownSessionCompanies, error: ownSessionErr } = await sessionA.client.from('companies').select('id').eq('id', companyId).limit(1);
     assert((ownSessionCompanies ?? []).length === 0 || Boolean(ownSessionErr), "the OWNER's own session client (not service-role) still cannot read companies directly — every read goes through getAuthenticatedEmployer()'s service-role lookup, never a client-side RLS self-read");
+    const { data: anonSubmissions, error: anonSubmissionsErr } = await anonClient.from('employer_job_submissions').select('id').limit(1);
+    assert((anonSubmissions ?? []).length === 0 || Boolean(anonSubmissionsErr), 'anon client cannot read private employer vacancy submissions');
+    const { data: ownSessionSubmissions, error: ownSessionSubmissionsErr } = await sessionA.client.from('employer_job_submissions').select('id').limit(1);
+    assert((ownSessionSubmissions ?? []).length === 0 || Boolean(ownSessionSubmissionsErr), 'authenticated employer session cannot bypass server-side vacancy APIs');
+
 
     const { data: serviceCompanies, error: serviceErr } = await admin.from('companies').select('id').eq('id', companyId).limit(1);
     assert(!serviceErr && (serviceCompanies ?? []).length === 1, 'service-role client has full read access');
   } finally {
     console.log('\nCleanup…');
+    for (const id of cleanupOpportunityIds) {
+      try { await admin.from('opportunities').delete().eq('id', id); } catch { /* best-effort */ }
+    }
+    for (const id of cleanupJobSubmissionIds) {
+      try { await admin.from('employer_job_review_events').delete().eq('submission_id', id); } catch { /* best-effort */ }
+      try { await admin.from('employer_job_submissions').delete().eq('id', id); } catch { /* best-effort */ }
+    }
     for (const id of cleanupCompanyIds) {
       try { await admin.from('company_members').delete().eq('company_id', id); } catch { /* best-effort */ }
       if (adminAuditRowCreated) {
