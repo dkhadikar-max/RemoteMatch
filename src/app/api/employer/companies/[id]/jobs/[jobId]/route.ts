@@ -6,7 +6,7 @@ import { must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
 
 const COLUMNS = 'id,company_id,title,description,responsibilities,employment_type,remote_type,location,eligible_countries,salary_min,salary_max,salary_currency,required_skills,preferred_skills,experience_requirement,application_url,status,review_reason,published_opportunity_id,created_at,updated_at,submitted_at';
-const allowed = ['title','description','responsibilities','employmentType','remoteType','location','eligibleCountries','salaryMin','salaryMax','salaryCurrency','requiredSkills','preferredSkills','experienceRequirement','applicationUrl'];
+const allowed = ['title','description','responsibilities','employmentType','remoteType','location','eligibleCountries','salaryMin','salaryMax','salaryCurrency','requiredSkills','preferredSkills','experienceRequirement'];
 function valid(body: unknown): body is Record<string, unknown> {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
   const b = body as Record<string, unknown>;
@@ -56,9 +56,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 }); }
   if (!valid(body)) return NextResponse.json({ error: 'Complete all required job fields with valid values.' }, { status: 400 });
   if (body.salaryMin != null && body.salaryMax != null && Number(body.salaryMax) < Number(body.salaryMin)) return NextResponse.json({ error: 'Maximum salary must be greater than or equal to minimum salary.' }, { status: 400 });
-  let url: URL;
-  try { url = new URL(String(body.applicationUrl)); } catch { return NextResponse.json({ error: 'Application URL must be a valid HTTPS URL.' }, { status: 400 }); }
-  if (url.protocol !== 'https:') return NextResponse.json({ error: 'Application URL must use HTTPS.' }, { status: 400 });
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
