@@ -387,6 +387,43 @@ export async function getCatalogIndexEntries(supabase: SupabaseClient): Promise<
 }
 
 /**
+ * One database-paginated page for the public directory or a category hub.
+ * The database-side projection performs membership, exact counting, ordering,
+ * and pagination; only the requested full rows cross the API boundary.
+ *
+ * The RPC is SECURITY INVOKER and reads both the projection and opportunities
+ * under the caller's RLS policies. Its SQL predicate is kept in sync with
+ * matchesCategory() by the catalog-hub integration suite.
+ */
+export async function getCatalogHubPage(
+  supabase: SupabaseClient,
+  categorySlug: string | null,
+  page: number,
+  pageSize = 24
+): Promise<{ jobs: CanonicalOpportunity[]; total: number }> {
+  const { data, error } = await supabase.rpc('get_remote_job_hub_page', {
+    p_category_slug: categorySlug,
+    p_page: page,
+    p_page_size: pageSize,
+  });
+  if (error) throw new Error(`Could not read directory page: ${error.message}`);
+
+  const payload = data as { total?: number; jobs?: OpportunityRow[] } | null;
+  if (
+    !payload ||
+    !Number.isFinite(Number(payload.total)) ||
+    !Array.isArray(payload.jobs)
+  ) {
+    throw new Error('Directory page RPC returned an invalid payload');
+  }
+
+  return {
+    total: Number(payload.total),
+    jobs: payload.jobs.map((row) => rowToCanonicalOpportunity(row)),
+  };
+}
+
+/**
  * Full CanonicalOpportunity rows for a short list of source ids (one page of a
  * hub — tens of rows), returned in the order of `sourceIds`. Same gates as the
  * full read (RLS active-only + translationSafe). Ids that no longer resolve
