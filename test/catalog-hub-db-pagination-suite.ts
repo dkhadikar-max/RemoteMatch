@@ -47,6 +47,22 @@ async function rpc<T>(db: PGlite, args: { p_category_slug: string | null; p_page
   return (typeof value === 'string' ? JSON.parse(value) : value) as T;
 }
 
+async function sitemapRpc(db: PGlite, args: {
+  p_after_source: string | null;
+  p_after_source_id: string | null;
+  p_page_size: number;
+}): Promise<Array<{ source: string; source_id: string; title: string; posted_at: string; required_skills: string[] }>> {
+  const result = await db.query(
+    `SELECT * FROM public.get_remote_job_sitemap_page(
+      p_after_source := $1,
+      p_after_source_id := $2,
+      p_page_size := $3
+    );`,
+    [args.p_after_source, args.p_after_source_id, args.p_page_size]
+  );
+  return result.rows as Array<{ source: string; source_id: string; title: string; posted_at: string; required_skills: string[] }>;
+}
+
 interface Fixture {
   source?: string;
   source_id: string;
@@ -127,6 +143,8 @@ async function main() {
 
     await db.exec(read('supabase/migrations/048_remote_job_hub_db_pagination.sql'));
     assert(true, 'migration 048 applies cleanly to a minimal Postgres schema');
+    await db.exec(read('supabase/migrations/20261109095000_catalog_hub_sitemap_query_performance.sql'));
+    assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
@@ -247,6 +265,38 @@ async function main() {
       p_category_slug: null, p_page: 2, p_page_size: 24,
     });
     assert(rootPage2.total === visible.length && rootPage2.jobs.length === visible.length - 24, 'root page 2 returns only the remaining rows with the same exact total');
+
+    // Sitemap pagination must seek by the composite natural key, preserve
+    // deterministic ordering, and enforce the same active/translation-safe RLS.
+    const sitemapRows: Array<{ source: string; source_id: string }> = [];
+    let afterSource: string | null = null;
+    let afterSourceId: string | null = null;
+    for (let page = 0; page < 10; page++) {
+      const rows = await sitemapRpc(db, {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: 5,
+      });
+      if (rows.length === 0) break;
+      sitemapRows.push(...rows);
+      const last = rows[rows.length - 1];
+      afterSource = last.source;
+      afterSourceId = last.source_id;
+      if (rows.length < 5) break;
+    }
+    const expectedSitemap = [...visible].sort((a, b) =>
+      (a.source ?? 'fixture').localeCompare(b.source ?? 'fixture') ||
+      a.source_id.localeCompare(b.source_id)
+    );
+    assert(
+      sitemapRows.map((row) => `${row.source}:${row.source_id}`).join('|') ===
+        expectedSitemap.map((row) => `${row.source ?? 'fixture'}:${row.source_id}`).join('|'),
+      'keyset sitemap pages return every active translation-safe listing exactly once in stable order'
+    );
+    assert(
+      sitemapRows.every((row) => !['translation-error', 'expired'].includes(row.source_id)),
+      'sitemap RPC excludes translation-error and inactive listings under anon/RLS'
+    );
 
     const outOfRange = await rpc<{ total: number; jobs: unknown[] }>(db, {
       p_category_slug: null, p_page: 5000, p_page_size: 24,

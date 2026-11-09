@@ -125,7 +125,9 @@ async function main() {
   const relSrc = noComments(read('src/app/remote-jobs/view/[id]/page.tsx'));
   assert(/getRelatedJobs\(/.test(relSrc) && !/getActiveJobs/.test(relSrc), 'related-job reads are still the bounded LIMIT-3 read (preserved)');
   const sm = noComments(read('src/lib/seo/sitemap-data.ts'));
-  assert(/getSitemapJobEntries/.test(sm) && /createAsyncTtlCache/.test(sm) && !/getActiveJobs/.test(sm), 'sitemap keeps its slim read + TTL cache (preserved)');
+  const catalogRead = read('src/lib/ingestion/catalog-read.ts');
+  const sitemapReader = catalogRead.slice(catalogRead.indexOf('export async function getSitemapJobEntries'), catalogRead.indexOf('/** The columns the directory'));
+  assert(/getSitemapJobEntries/.test(sm) && /createAsyncTtlCache/.test(sm) && /get_remote_job_sitemap_page/.test(sitemapReader) && !/\.range\(/.test(sitemapReader), 'sitemap uses its slim TTL-cached keyset RPC instead of OFFSET pagination');
 
   // ===========================================================================
   console.log('\n2. UNIT');
@@ -304,7 +306,7 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page') || u.includes('/rest/v1/rpc/get_remote_job_sitemap_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
