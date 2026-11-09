@@ -273,8 +273,10 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
   const entries: SitemapJobEntry[] = [];
   // JSONB RPC batches bypass PostgREST's setof max_rows cap while keeping
   // each response bounded. The covering partial index makes this a narrow
-  // index-only seek instead of 79,000 heap fetches across 79 round trips.
-  const pageSize = 5000;
+  // index-only seek. Keep each anonymous-role RPC well below Supabase's 3s
+  // statement timeout during crawler bursts; a 5,000-row JSON aggregate was
+  // measured at ~2.86s before any concurrent directory traffic.
+  const pageSize = 1000;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
 
