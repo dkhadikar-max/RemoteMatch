@@ -390,10 +390,7 @@ async function main() {
     console.log(`  · per request: OLD ${kb(oldPer)} -> NEW bounded database page: ${kb(bounded)} max (${(100 - (bounded / oldPer) * 100).toFixed(1)}% less); cold: ${kb(cold.bytes)} (${(100 - (cold.bytes / oldPer) * 100).toFixed(1)}% less)`);
     assert(bounded < oldPer * 0.02, `a warm page view reads under 2% of what the old path read (${kb(bounded)} vs ${kb(oldPer)})`);
     assert(cold.bytes < oldPer * 0.2, `even a COLD view (index rebuild) reads under 20% of the old path (${kb(cold.bytes)} vs ${kb(oldPer)})`);
-    // Extrapolation to the real catalog (labelled as such): the slice is catalog-size independent; the index scales linearly.
-    const perRowIdx = idxRun.bytes / idxRun.r.length;
-    const slice = Math.max(warm2.bytes, catPage.bytes);
-    console.log(`  · EXTRAPOLATED to 23,096 rows (uncompressed): index ≈ ${((perRowIdx * 23096) / 1048576).toFixed(1)} MB per 6h refresh (${(((perRowIdx * 23096) / 1048576) * 4).toFixed(1)} MB/day), page slice ≈ ${kb(slice)} per cache miss, vs ${((fullRun.bytes / fullRun.r.length) * 23096 / 1048576).toFixed(0)} MB per request on the old path`);
+    console.log(`  · LEGACY index audit baseline: ${idxRun.calls} REST calls, ${kb(idxRun.bytes)} for ${idxRun.r.length} rows; production hub requests now use one RPC and return at most 24 full rows.`);
 
     // --- 3d. pagination correctness against the real DB ---
     resetDirectoryCachesForTests();
