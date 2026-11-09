@@ -308,7 +308,7 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page') || u.includes('/rest/v1/rpc/get_remote_job_sitemap_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page') || u.includes('/rest/v1/rpc/get_remote_job_sitemap_page') || u.includes('/rest/v1/rpc/get_active_opportunities_keyset_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
@@ -367,6 +367,12 @@ async function main() {
     const full = mine(fullRun.r);
     console.log(`  · OLD full-catalog read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
     assert(full.length === visibleIds.size, `old full read sees the same ${full.length} listings`);
+    assert(fullRun.calls === Math.ceil(fullRun.r.length / 1000), `full-catalog reader uses one bounded keyset RPC per 1,000-row page (${fullRun.calls} calls)`);
+    const cursorOrdered = fullRun.r.every((job, i, rows) =>
+      i === 0 || rows[i - 1].source < job.source ||
+      (rows[i - 1].source === job.source && rows[i - 1].sourceId < job.sourceId)
+    );
+    assert(cursorOrdered, 'full-catalog keyset pages are strictly ordered by unique (source, source_id) cursor');
     const syntheticFullIds = new Set(full.map((job) => job.sourceId));
     assert(syntheticFullIds.size === full.length, 'full-catalog pagination contains no duplicate synthetic source IDs');
     assert(Array.from(visibleIds).every((id) => syntheticFullIds.has(id)), 'full-catalog pagination contains every expected visible synthetic source ID');

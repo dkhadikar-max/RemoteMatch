@@ -203,29 +203,39 @@ export async function getActiveOpportunities(
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
   const pageSize = 1000;
-  let from = 0;
+  let afterSource: string | null = null;
+  let afterSourceId: string | null = null;
+
+  // Cursor pagination seeks from the last unique (source, source_id) pair.
+  // Unlike OFFSET, later pages do not rescan or skip all preceding rows.
+  // The RPC is SECURITY INVOKER, so the caller's active-row RLS policy remains
+  // in force; the optional gates match the previous PostgREST implementation.
+  const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
 
   while (true) {
-    let query = supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
-    if (options?.freshOnly) {
-      const { from: windowFrom, to: windowTo } = getFreshnessWindowBounds();
-      query = query.gte('posted_at', windowFrom).lte('posted_at', windowTo);
-    }
-    if (options?.translationSafe) {
-      query = applyTranslationSafe(query);
-    }
-    // Offset pagination is only correct when every page uses the same total
-    // order. Without this unique tie-break, concurrent catalog writes and
-    // planner changes can reshuffle rows between requests, duplicating some
-    // rows and omitting others across the full read.
-    query = query.order('source', { ascending: true }).order('source_id', { ascending: true });
-    query = query.range(from, from + pageSize - 1);
-    const { data, error } = await query;
+    const { data, error } = await supabase.rpc('get_active_opportunities_keyset_page', {
+      p_after_source: afterSource,
+      p_after_source_id: afterSourceId,
+      p_page_size: pageSize,
+      p_fresh_from: freshness?.from ?? null,
+      p_fresh_to: freshness?.to ?? null,
+      p_translation_safe: options?.translationSafe ?? false,
+    });
     if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
-    if (!data || data.length === 0) break;
-    allRows.push(...(data as unknown as OpportunityRow[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (!Array.isArray(data)) {
+      throw new Error('Active opportunities keyset RPC returned an invalid payload');
+    }
+    if (data.length === 0) break;
+
+    const rows = data as unknown as OpportunityRow[];
+    allRows.push(...rows);
+    const last = rows[rows.length - 1];
+    if (!last.source || !last.source_id) {
+      throw new Error('Active opportunities keyset RPC returned a row without its cursor key');
+    }
+    afterSource = last.source;
+    afterSourceId = last.source_id;
+    if (rows.length < pageSize) break;
   }
 
   return allRows.map(rowToCanonicalOpportunity);
