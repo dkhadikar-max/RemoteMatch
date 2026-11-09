@@ -3,7 +3,6 @@ import { applyTranslationSafe, OPPORTUNITY_COLUMNS, rowToCanonicalOpportunity } 
 import { createSupabasePublicClient } from '@/lib/supabase/server';
 import type { CanonicalOpportunity } from '@/types/byn';
 import { jobUrl } from '@/lib/seo/job-href';
-import { matchesEuEeaEligibility } from '@/lib/jobs/regional-country-eligibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +17,10 @@ function csv(value: string | null): string[] {
 
 function normalized(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+}
+
+function filterValue(value: string | undefined | null): string {
+  return (value ?? '').trim().toLowerCase();
 }
 
 function searchTerms(value: string): string[] {
@@ -109,10 +112,10 @@ export async function GET(request: NextRequest) {
   const queryTerms = searchTerms(rawQuery);
   const skills = csv(params.get('skills'));
   const country = normalized(params.get('country'));
-  const remoteType = normalized(params.get('remoteType'));
-  const employmentType = normalized(params.get('employmentType'));
-  const salaryCurrency = normalized(params.get('salaryCurrency'));
-  const experience = normalized(params.get('experience'));
+  const remoteType = filterValue(params.get('remoteType'));
+  const employmentType = filterValue(params.get('employmentType'));
+  const salaryCurrency = filterValue(params.get('salaryCurrency'));
+  const experience = filterValue(params.get('experience'));
   const minSalaryRaw = params.get('minSalary');
   const minSalary = minSalaryRaw === null ? null : Number(minSalaryRaw);
 
