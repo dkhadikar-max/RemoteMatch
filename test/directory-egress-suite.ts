@@ -33,6 +33,7 @@ import {
 import {
   DIRECTORY_PAGE_SIZE,
   MAX_DIRECTORY_PAGE,
+  MAX_DIRECTORY_REQUEST_PAGE,
   parsePageParam,
   buildSearchTerms,
   getHubPage,
@@ -135,6 +136,7 @@ async function main() {
   assert(parsePageParam(undefined) === 1 && parsePageParam('') === 1 && parsePageParam('abc') === 1 && parsePageParam('-3') === 1 && parsePageParam('0') === 1, 'parsePageParam: missing/garbage/zero/negative -> 1');
   assert(parsePageParam('7') === 7 && parsePageParam(['4', '9']) === 4 && parsePageParam('2.5') === 1, 'parsePageParam: integers pass, arrays use the first, decimals -> 1');
   assert(parsePageParam('999999') === MAX_DIRECTORY_PAGE && parsePageParam('99999999999') === 1, `parsePageParam: capped at ${MAX_DIRECTORY_PAGE}; absurdly long digit strings are rejected`);
+  assert(MAX_DIRECTORY_REQUEST_PAGE === 100, 'public directory RPC guard caps crawler-accessible pages at 100');
   assert(buildSearchTerms('  React   TypeScript ').join('|') === 'react|typescript', 'buildSearchTerms: lowercases and splits on whitespace');
   assert(buildSearchTerms('c++ c# .net ci/cd node.js').join('|') === 'c++|c#|.net|ci/cd|node.js', 'buildSearchTerms: keeps the characters real skills use');
   assert(buildSearchTerms('a,b)(c "x" 100% a_b *').join('|') === 'abc|x|100|ab', 'buildSearchTerms: strips filter-grammar and LIKE-wildcard characters (, ( ) " % _ *)');
@@ -403,10 +405,10 @@ async function main() {
     assert(p1.total === idxAll.length && p1.totalPages === Math.ceil(idxAll.length / DIRECTORY_PAGE_SIZE), `directory total/pages match the index (${p1.total}/${p1.totalPages})`);
     assert(p1.jobs.map((j) => j.sourceId).join() === idxAll.slice(0, DIRECTORY_PAGE_SIZE).map((e) => e.sourceId).join(), 'page 1 rows are the newest listings, in index order, with full data (description present)');
     assert(p1.jobs.every((j) => j.description.length > 500 && !!j.company && j.status === 'active'), 'page rows are full CanonicalOpportunity objects (cards + JSON-LD can render)');
-    const pl = (await loadHubPage(null, String(p1.totalPages)))!;
-    assert(pl.jobs.length === idxAll.length - (p1.totalPages - 1) * DIRECTORY_PAGE_SIZE, `the last page holds the remainder (${pl.jobs.length})`);
-    const oor = (await loadHubPage(null, String(p1.totalPages + 5)))!;
-    assert(oor.outOfRange, 'a page past the end is flagged outOfRange');
+    const blockedDeep = await measure(() => loadHubPage(null, '101'));
+    assert(blockedDeep.calls === 0 && blockedDeep.r!.outOfRange, 'directory page 101 is rejected before a REST/RPC call');
+    const blockedSearch = await measure(() => loadSearchPage('engineer', '101'));
+    assert(blockedSearch.calls === 0 && blockedSearch.r!.outOfRange, 'search page 101 is rejected before a REST/RPC call');
     const seen = new Set<string>(); let dup = false;
     for (const pg of [1, 2, 3]) for (const j of (await loadHubPage(null, String(pg)))!.jobs) { if (seen.has(j.sourceId)) dup = true; seen.add(j.sourceId); }
     assert(!dup && seen.size === DIRECTORY_PAGE_SIZE * 3, 'consecutive pages do not repeat listings');
@@ -466,6 +468,8 @@ async function main() {
       const d2 = await get('/remote-jobs?page=2');
       assert(d2.status === 200 && /name="robots" content="[^"]*noindex/.test(d2.text) && /rel="prev"/.test(d2.text), 'GET /remote-jobs?page=2 -> 200, noindex,follow, with a "previous" link');
       assert((await get('/remote-jobs?page=99999')).status === 404, 'an out-of-range page -> 404');
+      assert((await get('/remote-jobs?page=101')).status === 404, 'a crawler page beyond the 100-page budget -> 404 before a DB query');
+      assert((await get('/remote-jobs?q=engineer&page=101')).status === 404, 'a deep search page -> 404 before a DB query');
       assert((await get('/remote-jobs?page=abc')).status === 200, 'a garbage page param -> page 1 (200)');
       const dq = await get('/remote-jobs?q=' + encodeURIComponent(SEARCH_TOKEN.toLowerCase()));
       assert(dq.status === 200 && /Showing 5 verified positions/.test(dq.text) && dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()), 'GET /remote-jobs with a unique search token -> the 5 fixtures');
@@ -474,6 +478,7 @@ async function main() {
       assert(c1.status === 200 && (c1.text.match(/<article/g) || []).length === 24 && /Showing 1–24 of \d+ verified active positions/.test(c1.text), 'GET /remote-jobs/software-engineering -> 200 with a 24-card first page');
       const cw = await get('/remote-jobs/worldwide?page=2');
       assert(cw.status === 200 && /rel="prev"/.test(cw.text), 'a category page 2 renders');
+      assert((await get('/remote-jobs/worldwide?page=101')).status === 404, 'a deep category page -> 404 before a DB query');
       assert((await get('/remote-jobs/not-a-category')).status === 404, 'an unknown category -> 404');
       console.log(`  · HTML sizes: directory page 1 ${kb(d1.bytes)}, category page 1 ${kb(c1.bytes)}`);
     }
