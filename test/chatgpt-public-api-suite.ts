@@ -31,6 +31,7 @@ async function main() {
   const invalidId = await get('/api/integrations/chatgpt/jobs/not-a-canonical-id');
   assert.equal(invalidId.status, 400, 'job details API must reject malformed canonical IDs');
 
+  try {
   const { error: seedError } = await admin.from('opportunities').insert({
     source: 'remotive',
     source_id: sourceId,
@@ -114,7 +115,6 @@ async function main() {
   });
   assert.equal(excludedSeedError, null, `excluded-country fixture must seed successfully: ${excludedSeedError?.message ?? ''}`);
 
-  try {
     const filterCases = [
       ['text', 'q=ChatGPT%20API%20Test'],
       ['skills', 'q=ChatGPT%20API%20Test&skills=TypeScript'],
