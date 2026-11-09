@@ -3,7 +3,7 @@
 --
 -- The old directory path fetched every active, translation-safe listing in
 -- 1,000-row PostgREST OFFSET pages and computed category membership in Node.
--- This projection keeps only the eight fields required for hub membership and
+-- This projection keeps only the membership and ordering fields required for hub membership and
 -- ordering in Postgres. A trigger maintains it transactionally with the source
 -- row; the public RPC returns only the requested 24 full opportunity rows plus
 -- the exact total. No materialized-view refresh window or stale projection.
@@ -25,23 +25,8 @@ CREATE TABLE public.opportunity_catalog_index (
   experience_requirement text
 );
 
-CREATE UNIQUE INDEX opportunity_catalog_index_source_key
-  ON public.opportunity_catalog_index (source, source_id);
-
 CREATE INDEX opportunity_catalog_index_order
   ON public.opportunity_catalog_index (posted_at DESC NULLS LAST, source_id ASC, source ASC);
-
-CREATE INDEX opportunity_catalog_index_skills_gin
-  ON public.opportunity_catalog_index USING gin (required_skills_lower);
-
-CREATE INDEX opportunity_catalog_index_countries_gin
-  ON public.opportunity_catalog_index USING gin (eligible_countries);
-
-CREATE INDEX opportunity_catalog_index_remote_type
-  ON public.opportunity_catalog_index (remote_type);
-
-CREATE INDEX opportunity_catalog_index_experience
-  ON public.opportunity_catalog_index (experience_requirement);
 
 ALTER TABLE public.opportunity_catalog_index ENABLE ROW LEVEL SECURITY;
 
@@ -260,7 +245,9 @@ AS $$
     FROM matched
   ),
   page_ids AS (
-    SELECT source_id
+    SELECT
+      source_id,
+      row_number() OVER (ORDER BY posted_at DESC NULLS LAST, source_id ASC, source ASC) AS ordinal
     FROM matched
     ORDER BY posted_at DESC NULLS LAST, source_id ASC, source ASC
     LIMIT LEAST(GREATEST(COALESCE(p_page_size, 24), 1), 24)
@@ -270,7 +257,7 @@ AS $$
     )
   ),
   resolved AS (
-    SELECT opportunity.*
+    SELECT page_ids.ordinal, opportunity.*
     FROM page_ids
     JOIN LATERAL (
       SELECT o.*
@@ -296,8 +283,8 @@ AS $$
     COALESCE(
       (
         SELECT jsonb_agg(
-          to_jsonb(resolved)
-          ORDER BY resolved.posted_at DESC NULLS LAST, resolved.source_id ASC, resolved.source ASC
+          to_jsonb(resolved) - 'ordinal'
+          ORDER BY resolved.ordinal
         )
         FROM resolved
       ),
