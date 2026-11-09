@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft proposal only. No runtime behaviour changes in this change.
+Phase 1 characterization and observability are implemented: the feed route records opt-in stage timings, the matcher’s stable tie ordering is explicit, and CI runs a golden characterization suite plus a reproducible synthetic benchmark. Candidate retrieval and API pagination remain design proposals; no candidate filtering or feed pagination has shipped.
 
 ## Problem
 
@@ -16,7 +16,7 @@ The process-local TTL cache reduces repeated database reads per warm runtime, bu
 2. Preserve the exact 48-hour freshness boundary and translation-safe visibility rules.
 3. Preserve cross-provider supersession exclusion on the scored path only.
 4. Preserve server-authoritative Pro/change-fields gating and effective swipe exclusion/personalization.
-5. Preserve stable ranking for equal scores. The current implementation relies on stable JavaScript sort and catalogue order for ties; a paginated design must define and test an explicit deterministic tie-breaker before rollout.
+5. Preserve stable ranking for equal scores. The current implementation preserves stable JavaScript sort semantics by explicitly using original catalogue order as the equal-score tie-breaker; a paginated design must preserve and test this ordering.
 6. Do not silently omit opportunities that the current matcher could rank. A database candidate query must be proven to be a superset of the legacy input set for the supported profile shape, or the request must use the legacy path.
 7. Do not introduce a hard candidate LIMIT before proving top-K equivalence. A LIMIT can return a plausible but incomplete feed.
 
@@ -28,10 +28,10 @@ The matcher contains fuzzy/alias skill matching via `skillMatches()`, target-rol
 
 ### Phase 1 — Characterization and observability
 
-- Add deterministic fixtures covering generic and specific target roles, aliases, short skills, case variants, ambiguous title tags, all remote scopes, employment types, null/default fields, superseded rows, and equal-score ties.
-- Record legacy ordered IDs and scores as the reference output.
-- Add timings and counters around cache hit/miss, catalogue rows, scoring duration, personalization duration, response bytes, and per-request memory where the runtime supports reliable measurement.
-- Establish a reproducible benchmark at realistic catalogue sizes (including 25k, 50k, and 100k rows).
+- Implemented a golden matcher characterization suite for ordered IDs/scores, equal-score ties, skill aliases/case normalization, India vs US remote scope, and employment mismatch. Broader fixtures remain required for ambiguous titles, all remote scopes, null/default fields, supersession, and additional role combinations.
+- Record legacy ordered IDs and scores as the reference output (initial golden corpus implemented).
+- Implemented opt-in stage timings/counters for catalogue, scoring, personalization, response bytes, and process memory. Cache hit/miss detail and a full-size reproducible 25k/50k/100k benchmark with p50/p95 baselines remain to be completed.
+- A synthetic benchmark harness exists; realistic 25k/50k/100k p50/p95 baselines remain outstanding.
 
 ### Phase 2 — Retrieval projection, not lossy filtering
 
