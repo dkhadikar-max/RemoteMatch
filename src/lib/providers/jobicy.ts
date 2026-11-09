@@ -64,11 +64,11 @@ export class JobicyProvider implements JobProvider {
           locationString: job.jobGeo || 'Worldwide',
           salaryMin: minSal,
           salaryMax: maxSal,
-          salaryCurrency: job.salaryCurrency || 'USD',
+          salaryCurrency: (minSal || maxSal) && job.salaryCurrency ? String(job.salaryCurrency).toUpperCase() : undefined,
           salaryPeriod: (minSal || maxSal) ? 'yearly' : undefined,
           tags,
           publicationDate: job.pubDate || new Date().toISOString(),
-          experienceLevel: job.jobLevel || '2-3',
+          experienceLevel: job.jobLevel ? String(job.jobLevel) : undefined,
         };
       });
     } catch (err) {
