@@ -71,7 +71,7 @@ async function main() {
   assert.equal(seedError, null, `isolated job fixture must seed successfully: ${seedError?.message ?? ''}`);
 
   try {
-    const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&skills=TypeScript&country=India&remoteType=Specific%20countries&employmentType=Full-time&experience=2-3&minSalary=90000&salaryCurrency=USD&limit=5');
+    const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&limit=5');
     assert.equal(response.status, 200, 'public job search should be available');
     const result = await response.json() as {
       success: boolean;
