@@ -42,7 +42,7 @@ check(!/required\('applicationUrl'/.test(createRoute) && !/applicationUrl/.test(
 check(/company\.verification_status !== 'verified'/.test(jobRoute), 'employers cannot submit drafts before company verification');
 check(/eq\('status', 'draft'\)/.test(jobRoute), 'only drafts can be edited or submitted');
 check(/getAuthenticatedAdmin\(req\)/.test(adminRoute) && /review_employer_job_submission/.test(adminRoute), 'review actions require admin authentication and the atomic RPC');
-check(/Post a job/.test(navbar), 'public navigation exposes the Post a Job entry point');
+check(!/href="\/employer"/.test(navbar), 'candidate navigation does not expose employer posting controls');
 check(/employer-jobs/.test(sidebar), 'admin navigation exposes vacancy moderation');
 check(/Create a job vacancy/.test(formPage) && !/Application URL/.test(formPage), 'employers can complete a detailed vacancy form without an external application URL');
 check(/Submit for review/.test(employerPage), 'employer workspace supports submitting saved drafts after verification');
