@@ -35,7 +35,7 @@ check(/v_company\.verification_status <> 'verified'/.test(migration), 'publicati
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');
-check(!/required\('applicationUrl'/.test(createRoute) && /application_url: typeof b\.applicationUrl/.test(createRoute), 'external application URL is optional');
+check(!/required\('applicationUrl'/.test(createRoute) && !/applicationUrl/.test(createRoute), 'external application URL is not part of the employer job form or API contract');
 check(/company\.verification_status !== 'verified'/.test(jobRoute), 'employers cannot submit drafts before company verification');
 check(/eq\('status', 'draft'\)/.test(jobRoute), 'only drafts can be edited or submitted');
 check(/getAuthenticatedAdmin\(req\)/.test(adminRoute) && /review_employer_job_submission/.test(adminRoute), 'review actions require admin authentication and the atomic RPC');
@@ -46,10 +46,10 @@ check(/Submit for review/.test(employerPage), 'employer workspace supports submi
 check(/Approve & publish/.test(adminPage), 'admin review queue supports approve and publish');
 check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider deduplication does not suppress verified employer-direct listings');
 
-check(/CREATE TABLE IF NOT EXISTS public\\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
-check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
+check(/CREATE TABLE IF NOT EXISTS public\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
+check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
 check(/employerdirect/.test(applyRoute) && /getAuthenticatedUser/.test(applyRoute), 'native apply endpoint authenticates candidates and accepts only active direct-employer jobs');
-check(/getAuthenticatedEmployer\\(req, params\\.id\\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
+check(/getAuthenticatedEmployer\(req, params\.id\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
 check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employerApplicationsRoute), 'employers can update applicant status only within their own company');
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');
 check(/EMPLOYER_INDUSTRIES/.test(taxonomy) && /EMPLOYER_COMPANY_SIZES/.test(taxonomy), 'industry and employee ranges use standardized filter values');
