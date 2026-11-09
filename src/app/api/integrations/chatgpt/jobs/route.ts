@@ -48,7 +48,7 @@ const EU_EEA_COUNTRIES = new Set([
 function matchesRegionalCountry(eligible: string[], variants: Set<string>): boolean {
   const regions = new Set(eligible.map(normalized));
   if (regions.has('eu') || regions.has('eea') || regions.has('eu eea')) {
-    return [...variants].some((country) => EU_EEA_COUNTRIES.has(country));
+    return Array.from(variants).some((country) => EU_EEA_COUNTRIES.has(country));
   }
   return false;
 }
