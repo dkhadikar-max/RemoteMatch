@@ -61,7 +61,7 @@ async function main() {
   // An invalidation that races an in-flight refresh must not mark that
   // potentially pre-write result fresh or replace an existing good snapshot.
   let raceCalls = 0;
-  let release: ((value: string) => void) | undefined;
+  let release: (value: string) => void = () => { throw new Error('refresh resolver was not registered'); };
   const raced = createAsyncTtlCache(
     async () => {
       raceCalls++;
@@ -75,7 +75,7 @@ async function main() {
   raced.invalidate();
   const pending = raced.get();
   raced.invalidate();
-  release?.('possibly-stale-in-flight-read');
+  release('possibly-stale-in-flight-read');
   assert(await pending === 'possibly-stale-in-flight-read', 'the in-flight caller receives its completed read');
   assert(await raced.get() === 'after-write' && raceCalls === 3, 'invalidation during refresh forces another read instead of blessing a stale result');
 
