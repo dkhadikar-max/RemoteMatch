@@ -332,11 +332,10 @@ export interface CatalogIndexEntry {
 }
 
 /**
- * The slim catalog index behind the paginated directory and category hubs:
- * every active, translation-safe listing's membership fields (~7 narrow
- * columns, no description/company/URLs), newest first. Callers keep it behind
- * a long TTL cache (src/lib/seo/directory.ts) so a page view costs a 24-row
- * slice fetch, not a catalog read.
+ * Legacy slim-index reader retained for audit/integration comparisons.
+ * Production directory and category-hub requests now use getCatalogHubPage(),
+ * backed by the transactionally maintained opportunity_catalog_index and the
+ * SECURITY INVOKER page RPC; they no longer call this whole-index reader.
  *
  * Same visibility rules as getActiveJobs(): RLS (active only) via whichever
  * client is passed, plus the multilingual translationSafe gate. Pages over a
