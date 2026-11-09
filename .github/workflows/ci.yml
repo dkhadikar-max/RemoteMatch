@@ -1,10 +1,11 @@
 name: CI
 
-# The live integration job uses one isolated Supabase project; serialize runs per PR
-# so overlapping pushes cannot race over the same synthetic test rows.
+# The live integration job uses one isolated Supabase project. Serialize runs
+# without cancelling an in-progress run: a newer PR must not kill another PR's
+# typecheck or integration checks while both share the isolated test project.
 concurrency:
   group: remotematch-ci-isolated-supabase
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # This repo has no existing CI (confirmed during the PR #51 review: the only
 # check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
