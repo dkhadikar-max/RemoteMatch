@@ -12,7 +12,7 @@ const MAX_QUERY_LENGTH = 160;
 const MAX_TERMS = 5;
 
 function csv(value: string | null): string[] {
-  return (value ?? '').split(',').map((part) => part.trim().toLowerCase()).filter(Boolean).slice(0, 20);
+  return (value ?? '').split(',').map((part) => part.trim()).filter(Boolean).slice(0, 20);
 }
 
 function normalized(value: string | undefined | null): string {
@@ -162,7 +162,7 @@ export async function GET(request: NextRequest) {
     }
 
     for (const skill of skills) {
-      const variants = Array.from(new Set([skill, skill.charAt(0).toUpperCase() + skill.slice(1), skill.toUpperCase()]));
+      const variants = Array.from(new Set([skill, skill.toLowerCase(), skill.charAt(0).toUpperCase() + skill.slice(1), skill.toUpperCase()]));
       const clauses = [
         ...variants.map((variant) => `required_skills.cs.{${variant}}`),
         ...variants.map((variant) => `preferred_skills.cs.{${variant}}`),
