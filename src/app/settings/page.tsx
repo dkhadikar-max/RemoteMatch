@@ -10,7 +10,7 @@ import { computeProfileCompleteness } from '@/lib/profile/completeness';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
-import { startProUpgrade, cancelProSubscription } from '@/lib/razorpay-checkout';
+import { startProUpgrade, cancelProSubscription, PRO_CURRENCY_PRICES, type ProCurrency } from '@/lib/razorpay-checkout';
 import { GrowYourMatches } from '@/components/settings/grow-your-matches';
 import { SearchProfile } from '@/components/settings/search-profile';
 import {
@@ -92,6 +92,7 @@ function SettingsContent() {
   const [isSaved, setIsSaved] = useState(false);
 
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [billingCurrency, setBillingCurrency] = useState<ProCurrency>('INR');
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
@@ -268,7 +269,7 @@ function SettingsContent() {
     try {
       // Razorpay Checkout opens as a modal — no redirect. The server verifies
       // the payment with Razorpay before planTier changes.
-      const result = await startProUpgrade();
+      const result = await startProUpgrade(billingCurrency);
       if (result.status === 'upgraded') {
         setUpgradeSuccess(true);
         setActiveTab('billing');
@@ -688,6 +689,22 @@ function SettingsContent() {
                 </div>
               )}
 
+              {planTier === 'free' && (
+                <div className="soft-card p-4 border border-[var(--line)] space-y-2">
+                  <label htmlFor="settings-pro-currency" className="block text-xs font-semibold text-[var(--muted)]">Choose billing currency</label>
+                  <select
+                    id="settings-pro-currency"
+                    value={billingCurrency}
+                    onChange={(event) => setBillingCurrency(event.target.value as ProCurrency)}
+                    disabled={isUpgrading}
+                    className="w-full sm:max-w-xs rounded-xl border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] text-xs px-3 py-2.5 min-h-[42px]"
+                  >
+                    <option value="INR">INR — ₹499/month</option>
+                    <option value="USD">USD — $9/month</option>
+                  </select>
+                </div>
+              )}
+
               <div className="soft-card p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[var(--line)]">
                 <div className="space-y-1">
                   <span className="status good text-xs">Current subscription</span>
@@ -713,7 +730,7 @@ function SettingsContent() {
                     disabled={isUpgrading}
                     className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 transition-colors shadow-sm flex items-center gap-1.5"
                   >
-                    <span>{isUpgrading ? 'Connecting…' : 'Upgrade to Pro (₹499/mo)'}</span>
+                    <span>{isUpgrading ? 'Connecting…' : `Upgrade to Pro (${PRO_CURRENCY_PRICES[billingCurrency]})`}</span>
                     <ArrowUpRight size={13} />
                   </button>
                 )}
@@ -749,7 +766,7 @@ function SettingsContent() {
                   <div className="space-y-1 border-b border-[var(--line)] pb-4">
                     <span className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider">RemoteMatch Pro</span>
                     <div className="text-3xl font-bold text-[var(--ink)] mono">
-                      ₹499 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                      {billingCurrency === 'INR' ? '₹499' : '$9'} <span className="text-xs font-normal text-[var(--muted)]">/month</span>
                     </div>
                     <p className="text-xs text-[var(--muted)]">More ways to find the right job.</p>
                   </div>

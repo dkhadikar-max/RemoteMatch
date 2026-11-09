@@ -78,12 +78,31 @@ async function verify(body: Record<string, unknown>): Promise<UpgradeResult> {
   };
 }
 
-export async function startProUpgrade(): Promise<UpgradeResult> {
+export type ProCurrency = 'INR' | 'USD';
+
+export const PRO_CURRENCY_PRICES: Record<ProCurrency, string> = {
+  INR: '₹499/month',
+  USD: '$9/month',
+};
+
+export async function startProUpgrade(currency: ProCurrency = 'INR'): Promise<UpgradeResult> {
   try {
-    const res = await fetch('/api/razorpay/subscription', { method: 'POST' });
+    const res = await fetch('/api/razorpay/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currency }),
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       return { status: 'error', message: data.error ?? 'Could not start checkout. Please try again.' };
+    }
+    // Never open a checkout in a different currency from the user's explicit
+    // selection. The server may safely fall back when a plan is not configured.
+    if (!data.isMock && data.currency !== currency) {
+      return {
+        status: 'error',
+        message: `${currency} checkout is not available yet. Select INR or try again later.`,
+      };
     }
 
     if (data.isMock) return verify({ mock: true });
