@@ -68,8 +68,8 @@ function isValidPatchBody(body: unknown): body is PatchBody {
   return (
     isOptionalNullableString(b.description, MAX_LONG_TEXT) &&
     isOptionalNullableString(b.headquarters, MAX_TEXT) &&
-    isOptionalNullableString(b.industry, MAX_TEXT) && (b.industry === undefined || b.industry === null || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
-    isOptionalNullableString(b.companySize, MAX_TEXT) && (b.companySize === undefined || b.companySize === null || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
+    isOptionalNullableString(b.industry, MAX_TEXT) && (b.industry === undefined || b.industry === null || b.industry === '' || (EMPLOYER_INDUSTRIES as readonly string[]).includes(String(b.industry))) &&
+    isOptionalNullableString(b.companySize, MAX_TEXT) && (b.companySize === undefined || b.companySize === null || b.companySize === '' || (EMPLOYER_COMPANY_SIZES as readonly string[]).includes(String(b.companySize))) &&
     isOptionalNullableString(b.linkedinUrl, MAX_TEXT)
   );
 }
