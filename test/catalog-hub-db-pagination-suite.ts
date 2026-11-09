@@ -63,6 +63,25 @@ async function sitemapRpc(db: PGlite, args: {
   return result.rows as Array<{ source: string; source_id: string; title: string; posted_at: string; required_skills: string[] }>;
 }
 
+async function sitemapJsonRpc(db: PGlite, args: {
+  p_after_source: string | null;
+  p_after_source_id: string | null;
+  p_page_size: number;
+}): Promise<Array<{ source: string; source_id: string; title: string; posted_at: string; required_skills: string[] }>> {
+  const result = await db.query(
+    `SELECT public.get_remote_job_sitemap_page_json(
+      p_after_source := $1,
+      p_after_source_id := $2,
+      p_page_size := $3
+    ) AS result;`,
+    [args.p_after_source, args.p_after_source_id, args.p_page_size]
+  );
+  const value = (result.rows[0] as any).result;
+  return (typeof value === 'string' ? JSON.parse(value) : value) as Array<{
+    source: string; source_id: string; title: string; posted_at: string; required_skills: string[];
+  }>;
+}
+
 interface Fixture {
   source?: string;
   source_id: string;
@@ -145,6 +164,8 @@ async function main() {
     assert(true, 'migration 048 applies cleanly to a minimal Postgres schema');
     await db.exec(read('supabase/migrations/20261109095000_catalog_hub_sitemap_query_performance.sql'));
     assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
+    await db.exec(read('supabase/migrations/20261109120000_sitemap_batched_read.sql'));
+    assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
@@ -298,6 +319,29 @@ async function main() {
       'sitemap RPC excludes translation-error and inactive listings under anon/RLS'
     );
 
+    const sitemapJsonFirst = await sitemapJsonRpc(db, {
+      p_after_source: null, p_after_source_id: null, p_page_size: 5,
+    });
+    const sitemapJsonNext = await sitemapJsonRpc(db, {
+      p_after_source: sitemapJsonFirst.at(-1)?.source ?? null,
+      p_after_source_id: sitemapJsonFirst.at(-1)?.source_id ?? null,
+      p_page_size: 5,
+    });
+    assert(
+      sitemapJsonFirst.map((row) => `${row.source}:${row.source_id}`).join('|') ===
+        expectedSitemap.slice(0, 5).map((row) => `${row.source ?? 'fixture'}:${row.source_id}`).join('|') &&
+      sitemapJsonNext.map((row) => `${row.source}:${row.source_id}`).join('|') ===
+        expectedSitemap.slice(5, 10).map((row) => `${row.source ?? 'fixture'}:${row.source_id}`).join('|'),
+      'JSONB sitemap batches preserve composite-cursor order and return the same records as the legacy setof RPC'
+    );
+    const sitemapJsonSecurity = await db.query(`
+      SELECT p.prosecdef AS security_definer
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'get_remote_job_sitemap_page_json';
+    `);
+    assert((sitemapJsonSecurity.rows[0] as any).security_definer === false,
+      'JSONB sitemap batch RPC remains SECURITY INVOKER');
+
     const outOfRange = await rpc<{ total: number; jobs: unknown[] }>(db, {
       p_category_slug: null, p_page: 5000, p_page_size: 24,
     });
@@ -425,6 +469,30 @@ async function main() {
       largePage2.jobs.length === 24 &&
       largePage2.jobs.every((j) => !largeIds1.has(j.source_id)),
       'large-catalog page 2 is bounded and does not repeat page 1 listings'
+    );
+
+    const largeSitemapBatch1 = await sitemapJsonRpc(db, {
+      p_after_source: null, p_after_source_id: null, p_page_size: 5000,
+    });
+    const lastLargeSitemapRow = largeSitemapBatch1[largeSitemapBatch1.length - 1];
+    const largeSitemapBatch2 = await sitemapJsonRpc(db, {
+      p_after_source: lastLargeSitemapRow.source,
+      p_after_source_id: lastLargeSitemapRow.source_id,
+      p_page_size: 5000,
+    });
+    const largeSitemapIds = new Set(largeSitemapBatch1.map((row) => `${row.source}:${row.source_id}`));
+    assert(
+      largeSitemapBatch1.length === 5000 && largeSitemapBatch2.length === 5000 &&
+      largeSitemapBatch2.every((row) => !largeSitemapIds.has(`${row.source}:${row.source_id}`)),
+      '92k+ catalog sitemap RPC returns bounded 5,000-row JSON batches with a non-overlapping next cursor'
+    );
+    const sitemapCoveringIndex = await db.query(`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND indexname = 'idx_opportunities_sitemap_visible_cursor_cover';
+    `);
+    assert(
+      String((sitemapCoveringIndex.rows[0] as any)?.indexdef ?? '').includes('INCLUDE (title, posted_at, required_skills)'),
+      'migration 052 creates the covering partial sitemap cursor index'
     );
 
     const timeoutClient = {
