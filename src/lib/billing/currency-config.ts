@@ -181,10 +181,11 @@ export function currencyForPlanId(planId: string): string | null {
  *  2026-10-31.md) — but it is deliberately NOT wired into any route yet;
  *  wiring it in is a product decision outside this fix's scope. */
 export function currencyForCountry(countryCode: string | null | undefined): string {
-  if (!countryCode) return DEFAULT_CURRENCY;
-  // Product pricing policy: India pays INR; every other known country pays USD.
-  // Missing country remains INR until the account completes location onboarding.
-  return countryCode.trim().toUpperCase() === 'IN' ? 'INR' : 'USD';
+  if (!countryCode?.trim()) return DEFAULT_CURRENCY;
+  // Onboarding currently stores free-text country names (e.g. "India"),
+  // while older/imported rows may contain ISO-2 codes.
+  const normalized = countryCode.trim().toUpperCase();
+  return normalized === 'IN' || normalized === 'INDIA' ? 'INR' : 'USD';
 }
 
 /**
