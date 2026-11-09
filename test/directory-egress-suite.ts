@@ -121,7 +121,7 @@ async function main() {
   assert(/loadHubPage\(category\.slug/.test(catPage), 'category page uses the hub loader');
   assert(/numberOfItems: totalJobs/.test(dirPage) && /numberOfItems: totalJobs/.test(catPage), 'JSON-LD numberOfItems is the TOTAL, with only the page\'s postings listed');
   const dirSrc = noComments(read('src/lib/seo/directory.ts'));
-  assert(/CATALOG_INDEX_TTL_MS = 6 \* 60 \* 60 \* 1000/.test(dirSrc), 'the catalog index TTL is 6 hours');
+  assert(/HUB_PAGE_CACHE_TTL_MS = 30 \* 60 \* 1000/.test(dirSrc), 'database-backed hub pages use a 30-minute bounded cache');
   const relSrc = noComments(read('src/app/remote-jobs/view/[id]/page.tsx'));
   assert(/getRelatedJobs\(/.test(relSrc) && !/getActiveJobs/.test(relSrc), 'related-job reads are still the bounded LIMIT-3 read (preserved)');
   const sm = noComments(read('src/lib/seo/sitemap-data.ts'));
@@ -304,7 +304,7 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
@@ -376,18 +376,18 @@ async function main() {
     resetDirectoryCachesForTests();
     const cold = await measure(() => loadHubPage(null, '1'));
     assert(!!cold.r && cold.r.jobs.length === DIRECTORY_PAGE_SIZE, `directory page 1 renders ${cold.r?.jobs.length} jobs`);
-    console.log(`  · COLD directory page 1: ${cold.calls} REST calls, ${kb(cold.bytes)} (index + one 24-row slice)`);
+    console.log(`  · COLD directory page 1: ${cold.calls} REST call, ${kb(cold.bytes)} (database-side count + one 24-row page)`);
     const warm1 = await measure(() => loadHubPage(null, '1'));
     assert(warm1.calls === 0 && warm1.bytes === 0, 'WARM directory page 1: 0 REST calls, 0 bytes');
     const warm2 = await measure(() => loadHubPage(null, '2'));
-    assert(warm2.calls === 1 && warm2.r!.page === 2, `WARM directory page 2 (new slice): ${warm2.calls} REST call, ${kb(warm2.bytes)}`);
+    assert(warm2.calls === 1 && warm2.r!.page === 2, `WARM directory page 2 (new database page): ${warm2.calls} REST call, ${kb(warm2.bytes)}`);
     const catPage = await measure(() => loadHubPage('software-engineering', '1'));
-    assert(catPage.calls === 1 && catPage.r!.jobs.length > 0, `category hub page 1: ${catPage.calls} REST call, ${kb(catPage.bytes)} (index already warm)`);
+    assert(catPage.calls === 1 && catPage.r!.jobs.length > 0, `category hub page 1: ${catPage.calls} REST call, ${kb(catPage.bytes)} (database-side membership)`);
     const search = await measure(() => loadSearchPage('engineer', '1'));
     assert(search.calls === 1 && search.r!.jobs.length === DIRECTORY_PAGE_SIZE, `search ?q=engineer: ${search.calls} REST call, ${kb(search.bytes)}, ${search.r!.total} total matches`);
     const oldPer = fullRun.bytes;
     const bounded = Math.max(warm2.bytes, catPage.bytes, search.bytes);
-    console.log(`  · per request: OLD ${kb(oldPer)} -> NEW warm index: ${kb(bounded)} max (${(100 - (bounded / oldPer) * 100).toFixed(1)}% less); cold: ${kb(cold.bytes)} (${(100 - (cold.bytes / oldPer) * 100).toFixed(1)}% less)`);
+    console.log(`  · per request: OLD ${kb(oldPer)} -> NEW bounded database page: ${kb(bounded)} max (${(100 - (bounded / oldPer) * 100).toFixed(1)}% less); cold: ${kb(cold.bytes)} (${(100 - (cold.bytes / oldPer) * 100).toFixed(1)}% less)`);
     assert(bounded < oldPer * 0.02, `a warm page view reads under 2% of what the old path read (${kb(bounded)} vs ${kb(oldPer)})`);
     assert(cold.bytes < oldPer * 0.2, `even a COLD view (index rebuild) reads under 20% of the old path (${kb(cold.bytes)} vs ${kb(oldPer)})`);
     // Extrapolation to the real catalog (labelled as such): the slice is catalog-size independent; the index scales linearly.
