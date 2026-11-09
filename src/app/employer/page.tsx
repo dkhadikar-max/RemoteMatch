@@ -73,7 +73,10 @@ export default function EmployerDashboardPage() {
         {selected.verification_reason && <p className="text-xs text-[var(--danger)]">Review note: {selected.verification_reason}</p>}
         {selected.verification_status !== 'verified' && <p className="text-xs text-[var(--muted)]">You can prepare and save vacancy drafts now. Submission unlocks after company verification.</p>}
       </div>}
-      <Link href={'/employer/companies/' + companyId} className="text-sm font-semibold text-[var(--red)] hover:underline">View company profile →</Link>
+      {selected && <div className="flex flex-wrap gap-3">
+        <Link href={'/employer/companies/' + companyId} className="text-sm font-semibold text-[var(--red)] hover:underline">View company profile →</Link>
+        <Link href={'/employer/companies/' + companyId + '/applications'} className="text-sm font-semibold text-[var(--red)] hover:underline">View applicants →</Link>
+      </div>}
     </section>
     <section className="space-y-3">
       <h2 className="text-lg font-bold text-[var(--ink)]">Your vacancies</h2>
