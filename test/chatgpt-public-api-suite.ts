@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import ws from 'ws';
 import { createClient } from '@supabase/supabase-js';
+
+(globalThis as typeof globalThis & { WebSocket?: typeof WebSocket }).WebSocket = ws as unknown as typeof WebSocket;
 
 const baseUrl = process.env.TEST_BASE_URL ?? 'http://localhost:3100';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
