@@ -48,6 +48,7 @@ async function rpc<T>(db: PGlite, args: { p_category_slug: string | null; p_page
 }
 
 interface Fixture {
+  source?: string;
   source_id: string;
   title: string;
   posted_at: string;
@@ -139,6 +140,8 @@ async function main() {
       base('translated-de', 26, { title: 'Übersetzte Rolle', source_language: 'de', translation_status: 'ok' }),
       base('translation-error', 27, { title: 'Hidden foreign role', source_language: 'de', translation_status: 'error' }),
       base('expired', 28, { title: 'Expired role', status: 'expired' }),
+      base('collision', 29, { title: 'Collision Engineer', required_skills: ['React'], source: 'zeta' }),
+      base('collision', 29, { title: 'Collision Engineer', required_skills: ['React'], source: 'alpha' }),
     );
 
     await setRole(db, 'service_role');
@@ -151,11 +154,12 @@ async function main() {
           status, source_language, translation_status,
           canonical_url_hash, content_hash
         ) VALUES (
-          $1::uuid, 'fixture', $2, $3, $4::timestamptz, $5::text[],
-          $6, $7::text[], $8, $9, $10, $11, $12, $13
+          $1::uuid, $2, $3, $4, $5::timestamptz, $6::text[],
+          $7, $8::text[], $9, $10, $11, $12, $13, $14
         );`,
         [
           `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          f.source ?? 'fixture',
           f.source_id,
           f.title,
           f.posted_at,
@@ -166,8 +170,8 @@ async function main() {
           f.status,
           f.source_language,
           f.translation_status,
-          `hash-${f.source_id}`,
-          `content-${f.source_id}`,
+          `hash-${f.source_id}-${f.source ?? 'fixture'}`,
+          `content-${f.source_id}-${f.source ?? 'fixture'}`,
         ]
       );
     }
@@ -178,14 +182,16 @@ async function main() {
       (f.translation_status === null || f.translation_status !== 'error')
     );
     const expectedOrder = (rows: Fixture[]) => [...rows].sort((a, b) =>
-      b.posted_at.localeCompare(a.posted_at) || a.source_id.localeCompare(b.source_id)
+      b.posted_at.localeCompare(a.posted_at) ||
+      a.source_id.localeCompare(b.source_id) ||
+      (a.source ?? 'fixture').localeCompare(b.source ?? 'fixture')
     );
 
     const indexCount = await db.query('SELECT count(*)::int AS n FROM public.opportunity_catalog_index;');
     assert(Number((indexCount.rows[0] as any).n) === visible.length, 'trigger/backfill projection contains only active, translation-safe rows');
 
     await setRole(db, 'anon');
-    const rootPage1 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+    const rootPage1 = await rpc<{ total: number; jobs: Array<{ source_id: string; source: string }> }>(db, {
       p_category_slug: null, p_page: 1, p_page_size: 24,
     });
     const expectedRoot = expectedOrder(visible);
@@ -193,6 +199,11 @@ async function main() {
     assert(
       rootPage1.jobs.map((j) => j.source_id).join('|') === expectedRoot.slice(0, 24).map((f) => f.source_id).join('|'),
       'root page 1 returns the newest 24 rows in deterministic order'
+    );
+    const collisionRows = rootPage1.jobs.filter((job) => job.source_id === 'collision');
+    assert(
+      collisionRows.length === 2 && collisionRows.every((job) => job.source === 'alpha'),
+      'duplicate source_id page entries resolve to the first source deterministically without collapsing page positions'
     );
 
     const rootPage2 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
