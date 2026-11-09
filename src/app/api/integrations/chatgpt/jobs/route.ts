@@ -14,20 +14,32 @@ function csv(value: string | null): string[] {
 }
 
 function normalized(value: string | undefined | null): string {
-  return (value ?? '').trim().toLowerCase();
+  return (value ?? '').trim().toLowerCase().replace(/[_-]+/g, ' ');
 }
+
+const COUNTRY_ALIASES: Record<string, string[]> = {
+  india: ['india', 'in'],
+  in: ['india', 'in'],
+  us: ['us', 'usa', 'united states'],
+  usa: ['us', 'usa', 'united states'],
+  'united states': ['us', 'usa', 'united states'],
+  uk: ['uk', 'gb', 'united kingdom'],
+  gb: ['uk', 'gb', 'united kingdom'],
+  'united kingdom': ['uk', 'gb', 'united kingdom'],
+};
 
 function matchesCountry(job: CanonicalOpportunity, country: string): boolean {
   if (!country) return true;
   const remote = normalized(job.remoteType);
+  const variants = new Set(COUNTRY_ALIASES[country] ?? [country]);
   const eligible = (job.eligibleCountries ?? []).map(normalized);
   const excluded = (job.excludedCountries ?? []).map(normalized);
-  if (excluded.includes(country)) return false;
+  if (excluded.some((value) => variants.has(value))) return false;
   if (remote === 'worldwide') return true;
-  if (remote === 'india') return country === 'india' || country === 'in';
-  if (remote === 'us') return country === 'us' || country === 'usa' || country === 'united states';
-  if (eligible.length > 0) return eligible.includes(country);
-  return remote === country;
+  if (remote === 'india') return variants.has('india') || variants.has('in');
+  if (remote === 'us') return variants.has('us') || variants.has('usa') || variants.has('united states');
+  if (eligible.length > 0) return eligible.some((value) => variants.has(value));
+  return variants.has(remote);
 }
 
 function publicJob(job: NonNullable<Awaited<ReturnType<typeof getFeedCatalog>>>[number]) {
