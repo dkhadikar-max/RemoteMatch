@@ -23,6 +23,7 @@ import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { hasActivePurchaseGrant } from '@/lib/billing/purchase-access';
 import {
+  currencyForCountry,
   currencyForPlanId,
   DEFAULT_CURRENCY,
   MissingDisplayPriceError,
@@ -112,8 +113,7 @@ export async function POST(req: NextRequest) {
     console.error('[razorpay] could not resolve account country', locationError.message);
     return NextResponse.json({ error: 'Could not verify your billing country. Please try again.' }, { status: 503 });
   }
-  const requestedCurrency = location?.current_country?.trim().toUpperCase() === 'IN' ? 'INR'
-    : location?.current_country ? 'USD' : DEFAULT_CURRENCY;
+  const requestedCurrency = currencyForCountry(location?.current_country);
   const { planId: resolvedPlanId, currency: resolvedCurrency } = resolvePlan(requestedCurrency);
   // Never silently downgrade a non-Indian account to an INR plan. If the USD
   // plan is not configured, stop checkout rather than charging the wrong currency.
