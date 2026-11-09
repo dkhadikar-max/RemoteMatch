@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
     const result = must(await db.from('employer_job_submissions')
-      .select('id,company_id,title,employment_type,remote_type,location,status,submitted_at,created_at,companies(legal_name,official_domain,verification_status)', { count: 'exact' })
+      .select('id,company_id,title,description,responsibilities,employment_type,remote_type,location,eligible_countries,salary_min,salary_max,salary_currency,required_skills,preferred_skills,experience_requirement,application_url,status,submitted_at,created_at,companies(legal_name,official_domain,verification_status)', { count: 'exact' })
       .in('status', ['submitted','under_review']).order('submitted_at', { ascending: true, nullsFirst: false }).limit(100), 'employer_job_submissions');
     return NextResponse.json({ jobs: result.data ?? [], total: result.count ?? 0 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
