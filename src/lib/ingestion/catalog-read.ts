@@ -225,6 +225,15 @@ export async function getActiveOpportunities(
     if (!Array.isArray(data)) {
       throw new Error('Active opportunities keyset RPC returned an invalid payload');
     }
+    // Low-volume runtime evidence: confirms the production directory reader is
+    // executing the keyset RPC, while exposing counts rather than job identifiers.
+    console.info('[catalog-read] keyset-page', JSON.stringify({
+      rows: data.length,
+      pageSize,
+      hasCursor: afterSource !== null,
+      translationSafe: options?.translationSafe ?? false,
+      freshOnly: options?.freshOnly ?? false,
+    }));
     if (data.length === 0) break;
 
     const rows = data as unknown as OpportunityRow[];
