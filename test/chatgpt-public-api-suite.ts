@@ -89,6 +89,7 @@ async function main() {
     assert.ok(Array.isArray(result.opportunities));
     assert.ok(result.opportunities.length <= 5);
 
+    process.stdout.write(`DEBUG search response: ${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}\n`);
     const job = result.opportunities.find((item) => item.id === `opp-remotive-${sourceId}`);
     assert.ok(job, 'the fixture must match the combined search filters');
     process.stdout.write(`DEBUG fixture row: ${JSON.stringify({ id: job.id, title: job.title, company: job.company })}\n`);
