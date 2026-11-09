@@ -73,7 +73,7 @@ function applyCountryFilter<T extends { or(filters: string): T; not(column: stri
   }
   query = query.or(clauses.join(','));
   // Exclusions always win, including for worldwide and regional listings.
-  query = query.not('excluded_countries', 'ov', pgArray(variants));
+  query = query.or(`excluded_countries.is.null,excluded_countries.not.ov.${pgArray(variants)}`);
   return query;
 }
 
