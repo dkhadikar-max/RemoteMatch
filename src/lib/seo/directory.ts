@@ -44,6 +44,16 @@ export const DIRECTORY_PAGE_SIZE = 24;
 /** Hard ceiling on the page number — the key space of a cache must not be
  *  user-controlled without bound. */
 export const MAX_DIRECTORY_PAGE = 5000;
+/** Public crawler guard: pages beyond 100 add little discovery value but force
+ *  the RPC to materialize and sort the catalogue for a deep OFFSET. */
+export const MAX_DIRECTORY_REQUEST_PAGE = 100;
+
+function rejectedDeepPage(): DirectoryPage {
+  return {
+    jobs: [], total: 0, page: 1, totalPages: 1,
+    pageSize: DIRECTORY_PAGE_SIZE, outOfRange: true,
+  };
+}
 
 export const HUB_PAGE_CACHE_TTL_MS = 30 * 60 * 1000;
 export const HUB_PAGE_CACHE_MAX_ENTRIES = 300;
@@ -193,6 +203,7 @@ export async function loadHubPage(slug: string | null, rawPage: unknown): Promis
 
   const cat = slug ? SEO_CATEGORIES.find((c) => c.slug === slug) ?? null : null;
   const requestedPage = parsePageParam(rawPage);
+  if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();
   const cacheKey = `${cat?.slug ?? '*'}:${requestedPage}`;
   const cached = hubPageCache.get(cacheKey);
   if (cached) return cached;
@@ -239,7 +250,9 @@ export async function loadHubPage(slug: string | null, rawPage: unknown): Promis
 export async function loadSearchPage(q: string, rawPage: unknown): Promise<DirectoryPage | null> {
   const supabase = createSupabasePublicClient();
   if (!supabase) return null;
-  return getSearchPage(supabase, q, parsePageParam(rawPage));
+  const requestedPage = parsePageParam(rawPage);
+  if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();
+  return getSearchPage(supabase, q, requestedPage);
 }
 
 /** Test hook: drop the module-level caches. */
