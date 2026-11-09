@@ -91,6 +91,7 @@ async function main() {
 
     const job = result.opportunities.find((item) => item.id === `opp-remotive-${sourceId}`);
     assert.ok(job, 'the fixture must match the combined search filters');
+    console.log('DEBUG returned fixture title:', JSON.stringify(job.title), 'company:', JSON.stringify(job.company), 'id:', job.id);
     assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
     assert.ok(job.jobUrl.startsWith('https://'));
