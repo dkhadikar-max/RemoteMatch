@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFeedCatalog } from '@/lib/feed/catalog-cache';
+import type { CanonicalOpportunity } from '@/types/byn';
 import { jobUrl } from '@/lib/seo/job-href';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,7 @@ function normalized(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
 }
 
-function matchesCountry(job: Awaited<ReturnType<typeof getFeedCatalog>> extends (infer T)[] | null ? T : never, country: string): boolean {
+function matchesCountry(job: CanonicalOpportunity, country: string): boolean {
   if (!country) return true;
   const remote = normalized(job.remoteType);
   const eligible = (job.eligibleCountries ?? []).map(normalized);
