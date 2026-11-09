@@ -314,7 +314,7 @@ async function main() {
   const anon = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const PREFIX = `dir-egress-${Date.now().toString(36)}-`;
   const SEARCH_TOKEN = `rmsearch${Date.now().toString(36)}`;
-  const GERMAN_TOKEN = `${SEARCH_TOKEN}translated`;
+  const GERMAN_TOKEN = `rmgerman${Date.now().toString(36)}`;
   const N = 2500;
   const rr = mulberry32(777);
   const rp = <T,>(a: readonly T[]) => a[Math.floor(rr() * a.length)];
