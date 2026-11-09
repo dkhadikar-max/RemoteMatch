@@ -427,6 +427,31 @@ async function main() {
       'large-catalog page 2 is bounded and does not repeat page 1 listings'
     );
 
+    // Concurrent large-catalog regression: exercise the same RPC at the
+    // production failure scale (92k+ rows) with overlapping root/category and
+    // deep-page reads. This validates bounded responses and deterministic
+    // totals under concurrent callers; PGlite timings are diagnostic only and
+    // are not treated as a production latency/SLO measurement.
+    const concurrentCases = Array.from({ length: 32 }, (_, i) => ({
+      p_category_slug: i % 3 === 0 ? null : SEO_CATEGORIES[(i - 1) % SEO_CATEGORIES.length].slug,
+      p_page: i % 4 === 0 ? 161 : i % 4 === 1 ? 3289 : i % 4 === 2 ? 1 : 2,
+      p_page_size: 24,
+    }));
+    const concurrentStarted = performance.now();
+    const concurrentResults = await Promise.all(concurrentCases.map((args) => rpc<{
+      total: number;
+      jobs: Array<{ source_id: string }>;
+    }>(db, args)));
+    const concurrentElapsed = performance.now() - concurrentStarted;
+    const expectedLargeTotal = visible.length - 1 + 92357;
+    assert(
+      concurrentResults.length === 32 && concurrentResults.every((result) =>
+        result.total === expectedLargeTotal && result.jobs.length <= 24
+      ),
+      '32 concurrent root/category and deep-page RPC reads remain bounded and preserve the 92k+ catalog total'
+    );
+    console.log(`  ℹ 32 concurrent large-catalog RPC reads completed in ${concurrentElapsed.toFixed(1)} ms (PGlite diagnostic; not a production latency claim).`);
+
     const timeoutClient = {
       rpc: async () => ({
         data: null,
