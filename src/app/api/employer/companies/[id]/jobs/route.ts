@@ -14,11 +14,11 @@ function valid(body: unknown): body is Record<string, unknown> {
   const str = (k: string, max: number, required = false) => b[k] === undefined || (typeof b[k] === 'string' && (b[k] as string).length <= max && (!required || Boolean((b[k] as string).trim())));
   const arr = (k: string) => b[k] === undefined || (Array.isArray(b[k]) && (b[k] as unknown[]).length <= 50 && (b[k] as unknown[]).every(x => typeof x === 'string' && x.length <= 80));
   const num = (k: string) => b[k] === undefined || b[k] === null || (typeof b[k] === 'number' && Number.isFinite(b[k]) && (b[k] as number) >= 0);
-  return str('title',180,true) && str('description',20000,true) && str('responsibilities',10000) &&
+  return str('title',180,true) && str('description',20000,true) && (String(b.description ?? '').trim().length >= 30) && str('responsibilities',10000) &&
     str('employmentType',30,true) && ['Full-time','Part-time','Contract','Temporary','Internship'].includes(String(b.employmentType)) &&
     str('remoteType',20,true) && ['Remote','Hybrid','On-site'].includes(String(b.remoteType)) &&
     str('location',180,true) && arr('eligibleCountries') && num('salaryMin') && num('salaryMax') &&
-    str('salaryCurrency',3) && arr('requiredSkills') && arr('preferredSkills') &&
+    str('salaryCurrency',3) && (b.salaryCurrency === undefined || /^[A-Z]{3}$/.test(String(b.salaryCurrency).toUpperCase())) && arr('requiredSkills') && arr('preferredSkills') &&
     str('experienceRequirement',180) && str('applicationUrl',1000,true);
 }
 function toRow(b: Record<string, unknown>) {
