@@ -53,6 +53,7 @@ jobs:
           shopt -s nullglob
           suites=(
             test/swipe-limits-rolling-24h-suite.ts
+            test/catalog-hub-db-pagination-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
@@ -134,6 +135,21 @@ jobs:
           echo "Server did not become healthy in time:"
           cat /tmp/ci-dev-server.log
           exit 1
+
+      - name: Verify the approved isolated Supabase target
+        run: |
+          node - <<'NODE'
+          const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
+          const expected = 'xyahktsgdigutxartafb';
+          const actual = url.hostname.split('.')[0];
+          if (actual !== expected) {
+            throw new Error(`Refusing live directory tests against unexpected Supabase project: ${actual}`);
+          }
+          console.log(`Verified isolated test project: ${actual}`);
+          NODE
+
+      - name: Live directory egress + HTTP integration
+        run: npx tsx test/directory-egress-suite.ts
 
       - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
         run: npx tsx test/employer-company-accounts-suite.ts

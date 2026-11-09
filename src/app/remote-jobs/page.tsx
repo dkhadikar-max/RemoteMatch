@@ -62,8 +62,9 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
   const q = resolvedParams.q;
   const searchQuery = (typeof q === 'string' ? q : '')?.trim() || '';
-  // Bounded reads: a cached slim index + one page of rows (or a database-side
-  // search with LIMIT/OFFSET) — never the whole catalog. See src/lib/seo/directory.ts.
+  // Bounded reads: directory/category pages use the database-side slim
+  // projection and return only one page; ?q= search remains database-paginated.
+  // See src/lib/seo/directory.ts.
   const hub = searchQuery
     ? await loadSearchPage(searchQuery, resolvedParams.page)
     : await loadHubPage(null, resolvedParams.page);

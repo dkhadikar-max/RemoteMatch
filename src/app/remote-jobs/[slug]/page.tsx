@@ -55,8 +55,9 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
   if (!category) notFound();
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
 
-  // Bounded read: category membership from the cached slim index + one page of
-  // rows — never the whole catalog. See src/lib/seo/directory.ts.
+  // Bounded database read: category membership, exact count, ordering, and
+  // pagination run against the slim projection; only this page's full rows
+  // cross the API boundary. See src/lib/seo/directory.ts.
   const hub = await loadHubPage(category.slug, resolvedParams.page);
   if (hub?.outOfRange) notFound();
   const jobs = hub?.jobs ?? [];

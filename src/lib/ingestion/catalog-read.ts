@@ -332,11 +332,10 @@ export interface CatalogIndexEntry {
 }
 
 /**
- * The slim catalog index behind the paginated directory and category hubs:
- * every active, translation-safe listing's membership fields (~7 narrow
- * columns, no description/company/URLs), newest first. Callers keep it behind
- * a long TTL cache (src/lib/seo/directory.ts) so a page view costs a 24-row
- * slice fetch, not a catalog read.
+ * Legacy slim-index reader retained for audit/integration comparisons.
+ * Production directory and category-hub requests now use getCatalogHubPage(),
+ * backed by the transactionally maintained opportunity_catalog_index and the
+ * SECURITY INVOKER page RPC; they no longer call this whole-index reader.
  *
  * Same visibility rules as getActiveJobs(): RLS (active only) via whichever
  * client is passed, plus the multilingual translationSafe gate. Pages over a
@@ -384,6 +383,53 @@ export async function getCatalogIndexEntries(supabase: SupabaseClient): Promise<
   // Newest first; '' (no date) last; sourceId breaks ties so the order is total.
   entries.sort((a, b) => (a.postedAt === b.postedAt ? (a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0) : a.postedAt < b.postedAt ? 1 : -1));
   return entries;
+}
+
+/**
+ * One database-paginated page for the public directory or a category hub.
+ * The database-side projection performs membership, exact counting, ordering,
+ * and pagination; only the requested full rows cross the API boundary.
+ *
+ * The RPC is SECURITY INVOKER and reads both the projection and opportunities
+ * under the caller's RLS policies. Its SQL predicate is kept in sync with
+ * matchesCategory() by the catalog-hub integration suite.
+ */
+export class CatalogHubTimeoutError extends Error {
+  constructor() {
+    super('Directory page query took too long and was canceled by the database.');
+    this.name = 'CatalogHubTimeoutError';
+  }
+}
+
+export async function getCatalogHubPage(
+  supabase: SupabaseClient,
+  categorySlug: string | null,
+  page: number,
+  pageSize = 24
+): Promise<{ jobs: CanonicalOpportunity[]; total: number }> {
+  const { data, error } = await supabase.rpc('get_remote_job_hub_page', {
+    p_category_slug: categorySlug,
+    p_page: page,
+    p_page_size: pageSize,
+  });
+  if (error) {
+    if (isStatementTimeout(error)) throw new CatalogHubTimeoutError();
+    throw new Error(`Could not read directory page: ${error.message}`);
+  }
+
+  const payload = data as { total?: number; jobs?: OpportunityRow[] } | null;
+  if (
+    !payload ||
+    !Number.isFinite(Number(payload.total)) ||
+    !Array.isArray(payload.jobs)
+  ) {
+    throw new Error('Directory page RPC returned an invalid payload');
+  }
+
+  return {
+    total: Number(payload.total),
+    jobs: payload.jobs.map((row) => rowToCanonicalOpportunity(row)),
+  };
 }
 
 /**
