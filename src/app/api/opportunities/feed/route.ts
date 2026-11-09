@@ -164,7 +164,9 @@ export async function GET() {
     if (!opportunities) {
       return NextResponse.json({ success: false, error: 'Service temporarily unavailable.' }, { status: 503 });
     }
-    const payload = { success: true, opportunities, scored: false };\n    recordFeedPerf('response', catalogStartedAt, { rowCount: opportunities.length, responseBytes: Buffer.byteLength(JSON.stringify(payload)), scored: false });\n    return NextResponse.json(payload);
+    const payload = { success: true, opportunities, scored: false };
+    recordFeedPerf('response', catalogStartedAt, { rowCount: opportunities.length, responseBytes: Buffer.byteLength(JSON.stringify(payload)), scored: false });
+    return NextResponse.json(payload);
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }
