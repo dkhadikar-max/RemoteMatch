@@ -84,7 +84,7 @@ export default function EmployerDashboardPage() {
         <div className="flex items-center gap-3">
           {job.status==='draft' && selected?.verification_status==='verified' && <button onClick={()=>submitDraft(job.id)} disabled={busy===job.id} className="soft-button primary text-xs">{busy===job.id?'Submitting…':'Submit for review'}</button>}
           {job.status==='draft' && <Link href={'/employer/jobs/new?companyId='+companyId+'&jobId='+job.id} className="text-sm font-semibold text-[var(--red)]">Edit draft</Link>}
-          {job.published_opportunity_id && <Link href={'/remote-jobs/'+job.published_opportunity_id} className="text-sm font-semibold text-[var(--red)]">View listing</Link>}
+          {job.published_opportunity_id && <Link href={'/remote-jobs/view/'+encodeURIComponent(job.id)} className="text-sm font-semibold text-[var(--red)]">View listing</Link>}
         </div>
       </article>)}
     </section>
