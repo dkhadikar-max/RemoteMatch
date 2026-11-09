@@ -231,7 +231,6 @@ async function main() {
     const rootPage1 = await rpc<{ total: number; jobs: Array<{ source_id: string; source: string }> }>(db, {
       p_category_slug: null, p_page: 1, p_page_size: 24,
     });
-    const expectedRoot = expectedOrder(visible);
     assert(rootPage1.total === visible.length, 'root directory returns the exact active, translation-safe total');
     assert(
       rootPage1.jobs.map((j) => j.source_id).join('|') === expectedPageJobs(visible).map((f) => f.source_id).join('|'),
