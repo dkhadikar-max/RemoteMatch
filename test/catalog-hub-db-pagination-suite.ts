@@ -323,8 +323,8 @@ async function main() {
       p_after_source: null, p_after_source_id: null, p_page_size: 5,
     });
     const sitemapJsonNext = await sitemapJsonRpc(db, {
-      p_after_source: sitemapJsonFirst.at(-1)?.source ?? null,
-      p_after_source_id: sitemapJsonFirst.at(-1)?.source_id ?? null,
+      p_after_source: sitemapJsonFirst[sitemapJsonFirst.length - 1]?.source ?? null,
+      p_after_source_id: sitemapJsonFirst[sitemapJsonFirst.length - 1]?.source_id ?? null,
       p_page_size: 5,
     });
     assert(
