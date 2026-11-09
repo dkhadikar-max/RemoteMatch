@@ -42,12 +42,12 @@ const EU_EEA_COUNTRIES = new Set([
   'austria','belgium','bulgaria','croatia','cyprus','czechia','czech republic','denmark',
   'estonia','finland','france','germany','greece','hungary','ireland','italy','latvia',
   'lithuania','luxembourg','malta','netherlands','poland','portugal','romania','slovakia',
-  'slovenia','spain','sweden','iceland','liechtenstein','norway','united kingdom','uk','gb'
+  'slovenia','spain','sweden','iceland','liechtenstein','norway'
 ]);
 
 function matchesRegionalCountry(eligible: string[], variants: Set<string>): boolean {
   const regions = new Set(eligible.map(normalized));
-  if (regions.has('eu') || regions.has('eea') || regions.has('eu eea')) {
+  if (regions.has('eu') || regions.has('eea') || regions.has('eu eea') || regions.has('eu/eea')) {
     return Array.from(variants).some((country) => EU_EEA_COUNTRIES.has(country));
   }
   return false;
@@ -99,7 +99,7 @@ function publicJob(job: NonNullable<Awaited<ReturnType<typeof getFeedCatalog>>>[
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const rawQuery = (params.get('q') ?? '').trim().slice(0, MAX_QUERY_LENGTH);
-  const queryTerms = rawQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const queryTerms = rawQuery.toLowerCase().split(/\\s+/).filter(Boolean);
   const skills = csv(params.get('skills'));
   const country = normalized(params.get('country'));
   const remoteType = normalized(params.get('remoteType'));
