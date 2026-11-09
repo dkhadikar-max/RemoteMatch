@@ -71,6 +71,23 @@ async function main() {
   assert.equal(seedError, null, `isolated job fixture must seed successfully: ${seedError?.message ?? ''}`);
 
   try {
+    const filterCases = [
+      ['text', 'q=ChatGPT%20API%20Test'],
+      ['skills', 'q=ChatGPT%20API%20Test&skills=TypeScript'],
+      ['country', 'q=ChatGPT%20API%20Test&country=India'],
+      ['remoteType', 'q=ChatGPT%20API%20Test&remoteType=Specific%20countries'],
+      ['employmentType', 'q=ChatGPT%20API%20Test&employmentType=Full-time'],
+      ['experience', 'q=ChatGPT%20API%20Test&experience=2-3'],
+      ['salaryCurrency', 'q=ChatGPT%20API%20Test&salaryCurrency=USD'],
+      ['minSalary', 'q=ChatGPT%20API%20Test&minSalary=90000'],
+    ] as const;
+    for (const [name, filters] of filterCases) {
+      const filterResponse = await get(`/api/integrations/chatgpt/jobs?${filters}&limit=5`);
+      assert.equal(filterResponse.status, 200, `${name} filter request should succeed`);
+      const filterResult = await filterResponse.json() as { total: number };
+      assert.ok(filterResult.total >= 1, `${name} filter must retain the seeded fixture`);
+    }
+
     const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&skills=TypeScript&country=India&remoteType=Specific%20countries&employmentType=Full-time&experience=2-3&minSalary=90000&salaryCurrency=USD&limit=5');
     assert.equal(response.status, 200, 'public job search should be available');
     const result = await response.json() as {
@@ -85,13 +102,13 @@ async function main() {
     assert.equal(result.success, true);
     assert.equal(result.limit, 5);
     assert.equal(result.offset, 0);
-    assert.ok(Number.isInteger(result.total) && result.total >= 1);
+    assert.ok(Number.isInteger(result.total) && result.total >= 1, 'combined filters must retain the seeded fixture');
     assert.ok(Array.isArray(result.opportunities));
     assert.ok(result.opportunities.length <= 5);
 
     const job = result.opportunities.find((item) => item.id === `opp-remotive-${sourceId}`);
-    assert.ok(job, 'the fixture must match the combined search filters');
-    assert.ok(job.title.includes('ChatGPT API Test'));
+    if (!job) throw new Error(`ChatGPT search did not return seeded fixture ${sourceId}; response=${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}`);
+    assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
     assert.ok(job.jobUrl.startsWith('https://'));
     assert.ok(job.applicationUrl.startsWith('https://'));
@@ -107,7 +124,7 @@ async function main() {
     assert.equal(detail.opportunity?.title, job.title);
     assert.equal(detail.opportunity?.salaryCurrency, 'USD');
 
-    console.log('ChatGPT public API suite passed: filter validation, synthetic job discovery, country/skill/salary filters, public-field allowlist, and job details.');
+    console.log('ChatGPT public API suite passed: filter validation, combined text/country/skill/salary filters, public-field allowlist, and job details.');
   } finally {
     const { error: cleanupError } = await admin.from('opportunities').delete().eq('source', 'remotive').eq('source_id', sourceId);
     assert.equal(cleanupError, null, `isolated job fixture must be cleaned up: ${cleanupError?.message ?? ''}`);
