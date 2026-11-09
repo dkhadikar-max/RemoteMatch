@@ -24,6 +24,7 @@
 import { formatCurrency } from './currency-format';
 
 export const DEFAULT_CURRENCY = 'INR' as const;
+const CHECKOUT_CURRENCIES = new Set(['INR', 'USD']);
 
 /** One Razorpay Subscription Plan per currency — each must be created by hand
  *  in the Razorpay dashboard first; this only names where its id lives. */
@@ -98,7 +99,7 @@ export function isCurrencyActive(currency: string): boolean {
 }
 
 export function activeCurrencies(): string[] {
-  return Object.keys(PLAN_ENV_VAR_BY_CURRENCY).filter(isCurrencyActive);
+  return Object.keys(PLAN_ENV_VAR_BY_CURRENCY).filter((currency) => CHECKOUT_CURRENCIES.has(currency) && isCurrencyActive(currency));
 }
 
 /**
@@ -196,7 +197,9 @@ export function currencyForPlanId(planId: string): string | null {
  *  wiring it in is a product decision outside this fix's scope. */
 export function currencyForCountry(countryCode: string | null | undefined): string {
   if (!countryCode) return DEFAULT_CURRENCY;
-  return CURRENCY_BY_COUNTRY[countryCode.trim().toUpperCase()] ?? DEFAULT_CURRENCY;
+  // Product pricing policy: India pays INR; every other known country pays USD.
+  // Missing country remains INR until the account completes location onboarding.
+  return countryCode.trim().toUpperCase() === 'IN' ? 'INR' : 'USD';
 }
 
 /**
@@ -209,7 +212,8 @@ export function currencyForCountry(countryCode: string | null | undefined): stri
  * Live, not historical — same reasoning as `isCurrencyActive` above.
  */
 export function resolvePlan(requestedCurrency: string): PlanResolution {
-  const wanted = requestedCurrency.toUpperCase();
+  const candidate = requestedCurrency.toUpperCase();
+  const wanted = CHECKOUT_CURRENCIES.has(candidate) ? candidate : DEFAULT_CURRENCY;
   const planId = configuredPlanId(wanted);
   if (planId) {
     observeCurrentConfig();
