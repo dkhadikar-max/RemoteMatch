@@ -129,7 +129,7 @@ export async function GET(request: NextRequest) {
       hasMore: offsetRaw + opportunities.length < total,
       opportunities,
     }, {
-      headers: { 'Cache-Control': 'public, max-age=30, stale-while-revalidate=60' },
+      headers: { 'Cache-Control': 'no-store' },
     });
   } catch {
     return NextResponse.json({ success: false, error: 'Could not search the job catalogue.' }, { status: 503 });
