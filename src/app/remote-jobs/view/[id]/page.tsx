@@ -201,7 +201,7 @@ export default async function PublicJobDetailPage({ params }: Props) {
           </div>
 
           {isLive && (job.source === 'employerdirect' ? (
-            <DirectEmployerApplyButton opportunityId={job.id} />
+            <DirectEmployerApplyButton sourceId={job.sourceId} />
           ) : (
             <div className="flex flex-wrap items-center gap-2 self-start">
               <TrackedApplyLink href={job.officialUrl} opportunityId={job.id}
