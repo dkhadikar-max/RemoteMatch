@@ -78,7 +78,7 @@ jobs:
             echo "No known self-contained suite files present yet -- nothing to run, not a failure."
           fi
 
-      - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
+      - name: Main feed matcher characterization golden suite\n        run: npx tsx test/main-feed-characterization-suite.ts\n\n      - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
         if: hashFiles('test/employer-company-accounts-suite.ts') != ''
         run: npx tsx test/employer-company-accounts-suite.ts
 
