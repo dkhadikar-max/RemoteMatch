@@ -180,5 +180,8 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.get_active_opportunities_keyset_page(text, text, integer, timestamp with time zone, timestamp with time zone, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_active_opportunities_keyset_page(text, text, integer, timestamp with time zone, timestamp with time zone, boolean) TO anon, authenticated, service_role;
+
 COMMENT ON FUNCTION public.get_active_opportunities_keyset_page(text, text, integer, timestamp with time zone, timestamp with time zone, boolean) IS
   'Keyset-paged active opportunities. Fresh + translation-safe feed reads select keys from the partial covering cursor index before fetching wide rows.';
