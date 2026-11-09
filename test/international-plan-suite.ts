@@ -564,9 +564,9 @@ async function run() {
           { eventId, eventType, subscription, payment },
           { recordBillingTransaction: async () => ({ error: { message: 'simulated failure, full chain' } }) }
         );
-        assert(result.status === 200, 'the full chain (real parse + real fetch) still returns 200 when only the ledger write fails', result);
+        assert(result.status === 503, 'the full chain (real parse + real fetch) returns retryable 503 when the ledger write fails', result);
         const { data: eventRow } = await admin.from('razorpay_webhook_events').select('event_id').eq('event_id', eventId).maybeSingle();
-        assert(Boolean(eventRow), 'the event is still recorded as handled end to end despite the ledger failure — observable via the console.error added for G1/the ledger-logging hardening, not swallowed');
+        assert(!eventRow, 'the event remains unhandled so Razorpay can redeliver after the ledger failure');
       }
     } finally {
       if (subId) await cancelSubscriptionAtCycleEnd(subId).catch(() => {});
