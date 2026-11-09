@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import { EMPLOYER_INDUSTRIES, EMPLOYER_COMPANY_SIZES } from '@/lib/employer/taxonomy';
 
 interface Company {
   id: string;
@@ -137,12 +138,24 @@ export default function EmployerCompanyPage() {
         {EDITABLE_FIELDS.map(({ key, label }) => (
           <div key={key}>
             <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">{label}</label>
-            <input
-              disabled={!canEdit}
-              value={edits[key] ?? (company[key] as string) ?? ''}
-              onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-              className="soft-input py-2 px-3 text-sm w-full disabled:opacity-60"
-            />
+            {(key === 'industry' || key === 'company_size') ? (
+              <select
+                disabled={!canEdit}
+                value={edits[key] ?? (company[key] as string) ?? ''}
+                onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                className="soft-input py-2 px-3 text-sm w-full disabled:opacity-60"
+              >
+                <option value="">Select {key === 'industry' ? 'industry' : 'employee range'}</option>
+                {(key === 'industry' ? EMPLOYER_INDUSTRIES : EMPLOYER_COMPANY_SIZES).map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            ) : (
+              <input
+                disabled={!canEdit}
+                value={edits[key] ?? (company[key] as string) ?? ''}
+                onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                className="soft-input py-2 px-3 text-sm w-full disabled:opacity-60"
+              />
+            )}
           </div>
         ))}
         {canEdit && (
