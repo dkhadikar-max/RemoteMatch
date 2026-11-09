@@ -9,8 +9,16 @@ interface RouteContext {
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
-  const { id } = context.params;
-  if (!id || id.length > 240 || !/^opp-[a-z0-9_-]+-[^/]+$/i.test(id)) {
+  const { id: encodedId } = context.params;
+  let id: string;
+  try {
+    // Next.js preserves encoded dynamic route segments. Decode once so source
+    // IDs containing slashes or percent escapes resolve to their canonical ID.
+    id = decodeURIComponent(encodedId);
+  } catch {
+    return NextResponse.json({ success: false, error: 'Invalid opportunity ID.' }, { status: 400 });
+  }
+  if (!id || id.length > 240 || !/^opp-[a-z0-9_-]+-/i.test(id)) {
     return NextResponse.json({ success: false, error: 'Invalid opportunity ID.' }, { status: 400 });
   }
 
