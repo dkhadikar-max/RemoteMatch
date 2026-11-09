@@ -99,17 +99,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, isMock: true });
   }
 
-  // Currency is a ROUTING hint only, never a price: the client may suggest
-  // one (e.g. from browser locale, once a country/currency picker exists —
-  // not built yet, see docs/international-payments-audit-plan-2026-10-31.md).
-  // resolvePlan() is the sole authority on what's actually chargeable — it
-  // only ever returns a plan id this server has configured itself (via env
-  // vars), and silently falls back to INR for anything else. The body is
-  // otherwise unused and ignored; a malformed/absent body is not an error.
-  const requestedCurrency = await req
-    .json()
-    .then((body) => (typeof body?.currency === 'string' ? body.currency : DEFAULT_CURRENCY))
-    .catch(() => DEFAULT_CURRENCY);
+  // Billing currency is derived exclusively from the account's saved country.
+  // Never trust a browser selector, request body, locale, or ChatGPT location.
+  // Unknown/missing country uses the documented INR fallback; a failed DB
+  // lookup fails closed rather than risking a currency chosen from client input.
+  const { data: location, error: locationError } = await admin
+    .from('profile_locations')
+    .select('current_country')
+    .eq('profile_id', user.id)
+    .maybeSingle();
+  if (locationError) {
+    console.error('[razorpay] could not resolve account country', locationError.message);
+    return NextResponse.json({ error: 'Could not verify your billing country. Please try again.' }, { status: 503 });
+  }
+  const requestedCurrency = location?.current_country?.trim().toUpperCase() === 'IN' ? 'INR'
+    : location?.current_country ? 'USD' : DEFAULT_CURRENCY;
   const { planId: resolvedPlanId, currency: resolvedCurrency } = resolvePlan(requestedCurrency);
 
   // F1 (2026-11-05 audit): `currency` here MUST reflect the currency of
