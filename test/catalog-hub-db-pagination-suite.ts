@@ -205,6 +205,24 @@ async function main() {
       a.source_id.localeCompare(b.source_id) ||
       (a.source ?? 'fixture').localeCompare(b.source ?? 'fixture')
     );
+    // The production RPC preserves the legacy page window, then deduplicates
+    // source IDs before resolving full rows. Model that exact page behavior:
+    // totals count catalog entries, while a page emits one row per source ID.
+    const expectedPageJobs = (rows: Fixture[]) => {
+      const ordered = expectedOrder(rows);
+      const firstSourceById = new Map<string, Fixture>();
+      for (const row of [...rows].sort((a, b) =>
+        (a.source ?? 'fixture').localeCompare(b.source ?? 'fixture')
+      )) {
+        if (!firstSourceById.has(row.source_id)) firstSourceById.set(row.source_id, row);
+      }
+      const seen = new Set<string>();
+      return ordered.slice(0, 24).flatMap((row) => {
+        if (seen.has(row.source_id)) return [];
+        seen.add(row.source_id);
+        return [firstSourceById.get(row.source_id)!];
+      });
+    };
 
     const indexCount = await db.query('SELECT count(*)::int AS n FROM public.opportunity_catalog_index;');
     assert(Number((indexCount.rows[0] as any).n) === visible.length, 'trigger/backfill projection contains only active, translation-safe rows');
@@ -216,7 +234,7 @@ async function main() {
     const expectedRoot = expectedOrder(visible);
     assert(rootPage1.total === visible.length, 'root directory returns the exact active, translation-safe total');
     assert(
-      rootPage1.jobs.map((j) => j.source_id).join('|') === expectedRoot.slice(0, 24).map((f) => f.source_id).join('|'),
+      rootPage1.jobs.map((j) => j.source_id).join('|') === expectedPageJobs(visible).map((f) => f.source_id).join('|'),
       'root page 1 returns the newest 24 rows in deterministic order'
     );
     const collisionRows = rootPage1.jobs.filter((job) => job.source_id === 'collision');
@@ -250,7 +268,13 @@ async function main() {
       });
       if (
         actual.total !== expected.length ||
-        actual.jobs.map((j) => j.source_id).join('|') !== expected.slice(0, 24).map((f) => f.source_id).join('|')
+        actual.jobs.map((j) => j.source_id).join('|') !== expectedPageJobs(visible.filter((f) => matchesCategory(category, {
+          title: f.title,
+          requiredSkills: f.required_skills,
+          remoteType: f.remote_type ?? undefined,
+          eligibleCountries: f.eligible_countries,
+          experienceRequirement: f.experience_requirement ?? undefined,
+        }))).map((f) => f.source_id).join('|')
       ) {
         categoryParity = false;
         parityFailures.push(category.slug);
