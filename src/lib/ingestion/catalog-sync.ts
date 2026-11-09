@@ -458,7 +458,7 @@ async function syncOpportunitiesToCatalogLegacy(
       timezone_requirements: opp.timezoneRequirements,
       salary_min: opp.salaryMin ?? null,
       salary_max: opp.salaryMax ?? null,
-      salary_currency: opp.salaryCurrency ?? 'USD',
+      salary_currency: opp.salaryCurrency ?? null,
       salary_period: opp.salaryPeriod ?? 'unknown',
       required_skills: opp.requiredSkills,
       preferred_skills: opp.preferredSkills,

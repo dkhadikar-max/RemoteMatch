@@ -93,7 +93,7 @@ interface OpportunityRow {
   timezone_requirements: string[];
   salary_min: number | null;
   salary_max: number | null;
-  salary_currency: string;
+  salary_currency: string | null;
   salary_period: string | null;
   required_skills: string[];
   preferred_skills: string[];
@@ -140,7 +140,7 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
     timezoneRequirements: row.timezone_requirements ?? [],
     salaryMin: row.salary_min ?? undefined,
     salaryMax: row.salary_max ?? undefined,
-    salaryCurrency: row.salary_currency,
+    salaryCurrency: row.salary_currency ?? undefined,
     salaryPeriod: (row.salary_period as CanonicalOpportunity['salaryPeriod']) ?? undefined,
     requiredSkills: row.required_skills ?? [],
     preferredSkills: row.preferred_skills ?? [],
