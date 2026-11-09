@@ -43,7 +43,7 @@ function toolResult(data: unknown) {
   const serialized = JSON.stringify(data);
   return {
     content: [{ type: 'text' as const, text: serialized }],
-    structuredContent: data as Record<string, unknown>,
+    structuredContent: data as unknown as Record<string, unknown>,
   };
 }
 
