@@ -36,23 +36,8 @@ const PLAN_ENV_VAR_BY_CURRENCY: Record<string, string> = {
   EUR: 'RAZORPAY_PRO_PLAN_ID_EUR',
 };
 
-/** ISO 3166-1 alpha-2 country → ISO 4217 currency. Deliberately a short,
- *  explicit, hand-maintained list (task scenarios + obvious EU members) —
- *  not an attempt at exhaustive world coverage. Add entries one at a time,
- *  each backed by a real Razorpay Plan, never speculatively. */
-const CURRENCY_BY_COUNTRY: Record<string, string> = {
-  IN: 'INR',
-  US: 'USD',
-  GB: 'GBP',
-  AE: 'AED',
-  // Eurozone (subset — extend deliberately, not by assuming all 27 EU states use EUR):
-  DE: 'EUR',
-  FR: 'EUR',
-  ES: 'EUR',
-  IT: 'EUR',
-  NL: 'EUR',
-  IE: 'EUR',
-};
+/** Account country policy is intentionally binary: India is INR; every
+ * other known country is USD. Missing country uses the INR default. */
 
 export interface PlanResolution {
   /** The currency actually used — may differ from the detected/requested one
