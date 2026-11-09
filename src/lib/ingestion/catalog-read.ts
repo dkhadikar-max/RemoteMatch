@@ -271,18 +271,24 @@ export interface SitemapJobEntry {
  *  with OFFSET. The database RPC runs under the caller's RLS policies. */
 export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
   const entries: SitemapJobEntry[] = [];
-  const pageSize = 1000;
+  // JSONB RPC batches bypass PostgREST's setof max_rows cap while keeping
+  // each response bounded. The covering partial index makes this a narrow
+  // index-only seek instead of 79,000 heap fetches across 79 round trips.
+  const pageSize = 5000;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
 
   while (true) {
-    const { data, error } = await supabase.rpc('get_remote_job_sitemap_page', {
+    const { data, error } = await supabase.rpc('get_remote_job_sitemap_page_json', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
     });
     if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
-    if (!data || data.length === 0) break;
+    if (!Array.isArray(data)) {
+      throw new Error('Sitemap batch RPC returned an invalid payload');
+    }
+    if (data.length === 0) break;
 
     const rows = data as Array<{
       source: string;
