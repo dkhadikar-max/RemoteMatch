@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { normalizeOpportunity, resolveExperienceRequirement } from '../src/lib/ingestion/pipeline';
 import type { RawJobPayload } from '../src/lib/providers/types';
+import { matchesEuEeaEligibility } from '../src/lib/jobs/regional-country-eligibility';
 
 function raw(overrides: Partial<RawJobPayload> = {}): RawJobPayload {
   return {
@@ -44,4 +45,9 @@ assert.equal(salaryWithoutCurrency.salaryCurrency, undefined, 'numeric salary wi
 const salaryWithCurrency = normalizeOpportunity(raw({ salaryMin: 100000, salaryMax: 120000, salaryCurrency: 'INR' }));
 assert.equal(salaryWithCurrency.salaryCurrency, 'INR', 'explicit salary currency must be retained');
 
-console.log('Job filter data quality suite passed: explicit experience bands and non-fabricated salary currency.');
+assert.equal(matchesEuEeaEligibility(['EU/EEA'], new Set(['germany'])), true, 'EU/EEA listings must include Germany');
+assert.equal(matchesEuEeaEligibility(['EU/EEA'], new Set(['switzerland'])), false, 'EU/EEA listings must exclude Switzerland');
+assert.equal(matchesEuEeaEligibility(['EU'], new Set(['switzerland'])), false, 'EU listings must exclude Switzerland');
+assert.equal(matchesEuEeaEligibility(['EEA'], new Set(['norway'])), true, 'EEA listings must include Norway');
+
+console.log('Job filter data quality suite passed: experience, salary currency, and EU/EEA eligibility.');
