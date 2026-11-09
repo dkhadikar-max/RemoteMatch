@@ -76,7 +76,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string;
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
-    const company = must(await db.from('companies').select('verification_status').eq('id', params.id).single(), 'companies').data;
+    const company = must(await db.from('companies').select('verification_status').eq('id', params.id).maybeSingle(), 'companies').data;
+    if (!company) return NextResponse.json({ error: 'Company not found.' }, { status: 404 });
     if (company.verification_status !== 'verified') return NextResponse.json({ error: 'Company verification must be complete before a vacancy can be submitted for review. Your draft is saved.' }, { status: 409 });
     const job = must(await db.from('employer_job_submissions').update({ status: 'submitted', submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('company_id', params.id).eq('id', params.jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
