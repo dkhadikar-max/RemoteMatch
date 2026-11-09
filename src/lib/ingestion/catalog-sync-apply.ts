@@ -64,8 +64,9 @@ const LOOKUP_MAX_KEYS = 150;
 const LOOKUP_MAX_ENCODED_CHARS = 3_500; // keep request URLs well under gateway limits
 const ID_CHUNK = 100; // uuid list in a URL: 100 x ~37 chars
 const INSERT_CHUNK = 100;
-const DB_CONCURRENCY = 4;
-const UPDATE_CONCURRENCY = 6;
+const DB_CONCURRENCY = 2;
+const UPDATE_CONCURRENCY = 2;
+const UPDATE_ID_CHUNK = 25;
 const VERIFY_CONCURRENCY = 8;
 
 const EXISTING_COLUMNS = ['id', 'source', 'source_id', 'status', 'consecutive_absences', 'posted_at', ...CONTENT_FIELD_NAMES, ...TRANSLATION_STATE_COLUMNS].join(', ');
@@ -617,7 +618,7 @@ async function bulkUpdateByIds(
   patch: Record<string, unknown>
 ): Promise<number> {
   let written = 0;
-  await runPool(chunk(ids, ID_CHUNK), DB_CONCURRENCY, async (batch) => {
+  await runPool(chunk(ids, UPDATE_ID_CHUNK), 1, async (batch) => {
     ctx.requests++;
     const res = await admin.from('opportunities').update(patch).in('id', batch).select('id');
     if (res.error) {
