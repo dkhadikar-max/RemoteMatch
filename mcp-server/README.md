@@ -16,6 +16,13 @@ npm install
 REMOTEMATCH_API_BASE_URL=https://remotematch.online npm start
 ```
 
+Run the MCP protocol smoke test (uses a local mock RemoteMatch API):
+
+```bash
+npm test
+npm run typecheck
+```
+
 - MCP endpoint: `POST /mcp` (Streamable HTTP, stateless)
 - Health endpoint: `GET /healthz`
 
