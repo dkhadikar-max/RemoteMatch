@@ -104,10 +104,13 @@ async function loadCountryExclusionIds(
     value.toUpperCase(),
     value.charAt(0).toUpperCase() + value.slice(1),
   ])));
-  const { data, error } = await supabase
+  let query = supabase
     .from('opportunities')
     .select('id')
     .eq('status', 'active')
+    .is('superseded_by_opportunity_id', null);
+  query = applyTranslationSafe(query);
+  const { data, error } = await query
     .overlaps('excluded_countries', arrayVariants)
     .limit(MAX_INLINE_COUNTRY_EXCLUSION_IDS + 1);
   if (error) throw new Error(`Could not load country exclusions: ${error.message}`);
