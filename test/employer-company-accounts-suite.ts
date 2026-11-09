@@ -319,7 +319,7 @@ async function main() {
         requiredSkills: ['TypeScript', 'PostgreSQL'],
         preferredSkills: ['Playwright'],
         experienceRequirement: '3-5 years',
-        applicationUrl: 'https://example.com/careers/remotematch-integration-test',
+        applicationUrl: `https://example.com/careers/remotematch-integration-test-${Date.now()}`,
       }),
     });
     const draftBody = await draftRes.json();
