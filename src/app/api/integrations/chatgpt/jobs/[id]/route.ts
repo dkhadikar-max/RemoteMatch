@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   } catch {
     return NextResponse.json({ success: false, error: 'Invalid opportunity ID.' }, { status: 400 });
   }
-  if (!id || id.length > 240 || !/^opp-[a-z0-9_-]+-/i.test(id)) {
+  if (!id || id.length > 512 || !/^opp-[a-z0-9_-]+-/i.test(id)) {
     return NextResponse.json({ success: false, error: 'Invalid opportunity ID.' }, { status: 400 });
   }
 
