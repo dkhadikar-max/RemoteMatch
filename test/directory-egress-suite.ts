@@ -323,7 +323,7 @@ async function main() {
     description: desc(i), source_url: 'https://example.com', official_url: 'https://example.com/apply', canonical_url_hash: `h-${id}`, content_hash: `c-${id}`,
     employment_type: 'Full-time', remote_type: rp(REMOTE), eligible_countries: rp(COUNTRIES), excluded_countries: [], timezone_requirements: [],
     required_skills: Array.from({ length: Math.floor(rr() * 4) }, () => rp(allTags)), experience_requirement: rp(EXPERIENCE) ?? null,
-    explicit_remote_scope: 'explicit_worldwide', status: 'active', posted_at: new Date(Date.UTC(2026, 8, 1) + i * 60_000).toISOString(),
+    explicit_remote_scope: 'explicit_worldwide', status: 'active', posted_at: new Date(Date.UTC(2026, 10, 10) + i * 60_000).toISOString(),
     first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0, ...over,
   });
   const rows = [
@@ -415,10 +415,10 @@ async function main() {
     const z = (await loadSearchPage('zebratitle', '1'))!;
     assert(z.jobs.map((j) => j.sourceId).join() === `${PREFIX}t-de-ok`, 'only the TRANSLATED German listing matches its title word (the untranslated one stays hidden)');
     const eng = (await loadSearchPage('engineer', '1'))!;
-    const oldEng = (await searchJobs('engineer', undefined, anon)).filter((j) => j.sourceId.startsWith(PREFIX));
+    const oldEng = await searchJobs('engineer', undefined, anon);
     assert(eng.total === oldEng.length, `?q=engineer total matches the old whole-catalog search (${eng.total} vs ${oldEng.length})`);
     const multi = (await loadSearchPage('senior engineer', '1'))!;
-    const oldMulti = (await searchJobs('senior engineer', undefined, anon)).filter((j) => j.sourceId.startsWith(PREFIX));
+    const oldMulti = await searchJobs('senior engineer', undefined, anon);
     assert(multi.total === oldMulti.length, `multi-term search ANDs the terms like the old path (${multi.total} vs ${oldMulti.length})`);
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
