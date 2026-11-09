@@ -15,11 +15,11 @@ function valid(body: unknown): body is Record<string, unknown> {
   const optional = (k: string, max: number) => b[k] === undefined || b[k] === null || (typeof b[k] === 'string' && (b[k] as string).length <= max);
   const arr = (k: string) => b[k] === undefined || (Array.isArray(b[k]) && (b[k] as unknown[]).length <= 50 && (b[k] as unknown[]).every(x => typeof x === 'string' && x.length <= 80));
   const num = (k: string) => b[k] === undefined || b[k] === null || (typeof b[k] === 'number' && Number.isFinite(b[k]) && (b[k] as number) >= 0);
-  return required('title',180) && required('description',20000) && optional('responsibilities',10000) &&
+  return required('title',180) && required('description',20000) && (String(b.description).trim().length >= 30) && optional('responsibilities',10000) &&
     required('employmentType',30) && ['Full-time','Part-time','Contract','Temporary','Internship'].includes(String(b.employmentType)) &&
     required('remoteType',20) && ['Remote','Hybrid','On-site'].includes(String(b.remoteType)) &&
     required('location',180) && arr('eligibleCountries') && num('salaryMin') && num('salaryMax') &&
-    optional('salaryCurrency',3) && arr('requiredSkills') && arr('preferredSkills') &&
+    optional('salaryCurrency',3) && (b.salaryCurrency === undefined || /^[A-Z]{3}$/.test(String(b.salaryCurrency).toUpperCase())) && arr('requiredSkills') && arr('preferredSkills') &&
     optional('experienceRequirement',180) && required('applicationUrl',1000);
 }
 function toRow(b: Record<string, unknown>) {
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string;
     const company = must(await db.from('companies').select('verification_status').eq('id', params.id).single(), 'companies').data;
     if (company.verification_status !== 'verified') return NextResponse.json({ error: 'Company verification must be complete before a vacancy can be submitted for review. Your draft is saved.' }, { status: 409 });
     const job = must(await db.from('employer_job_submissions').update({ status: 'submitted', submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('company_id', params.id).eq('id', params.jobId).eq('created_by', employer.user.id).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
+      .eq('company_id', params.id).eq('id', params.jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
     return job ? NextResponse.json({ job }) : NextResponse.json({ error: 'Draft not found or already submitted.' }, { status: 409 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Could not submit job.' }, { status: 500 }); }
 }
