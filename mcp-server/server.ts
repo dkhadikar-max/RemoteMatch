@@ -109,7 +109,7 @@ function createServer() {
       title: 'Get RemoteMatch job details',
       description: 'Retrieve the full public details for one active RemoteMatch job using its canonical opportunity ID (the id returned by search_remote_jobs). Includes eligibility boundaries, compensation, skills, job link, and application handoff. Public read-only; does not submit applications.',
       inputSchema: {
-        opportunityId: z.string().trim().min(1).max(240).describe('Canonical opportunity ID returned by search_remote_jobs.'),
+        opportunityId: z.string().trim().min(1).max(512).describe('Canonical opportunity ID returned by search_remote_jobs.'),
       },
     },
     async ({ opportunityId }) => {
