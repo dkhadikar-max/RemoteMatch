@@ -42,7 +42,8 @@ async function rpc<T>(db: PGlite, args: { p_category_slug: string | null; p_page
     ) AS result;`,
     [args.p_category_slug, args.p_page, args.p_page_size]
   );
-  return (result.rows[0] as any).result as T;
+  const value = (result.rows[0] as any).result;
+  return (typeof value === 'string' ? JSON.parse(value) : value) as T;
 }
 
 interface Fixture {
@@ -196,7 +197,7 @@ async function main() {
     const rootPage2 = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
       p_category_slug: null, p_page: 2, p_page_size: 24,
     });
-    assert(rootPage2.total === visible.length && rootPage2.jobs.length === 2, 'root page 2 returns only the remaining rows with the same exact total');
+    assert(rootPage2.total === visible.length && rootPage2.jobs.length === visible.length - 24, 'root page 2 returns only the remaining rows with the same exact total');
 
     const outOfRange = await rpc<{ total: number; jobs: unknown[] }>(db, {
       p_category_slug: null, p_page: 5000, p_page_size: 24,
@@ -226,6 +227,7 @@ async function main() {
     }
     assert(categoryParity, `SQL category predicates match matchesCategory() for all ${SEO_CATEGORIES.length} hubs`, parityFailures.join(', '));
 
+    await setRole(db, 'service_role');
     const policy = await db.query(`
       SELECT c.relrowsecurity AS enabled
       FROM pg_class c
