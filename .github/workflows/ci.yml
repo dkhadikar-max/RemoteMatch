@@ -81,6 +81,9 @@ jobs:
       - name: Main feed matcher characterization golden suite
         run: npx tsx test/main-feed-characterization-suite.ts
 
+      - name: Main feed 25k/50k/100k matcher benchmark
+        run: npx tsx test/main-feed-benchmark.ts
+
       - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
         if: hashFiles('test/employer-company-accounts-suite.ts') != ''
         run: npx tsx test/employer-company-accounts-suite.ts
