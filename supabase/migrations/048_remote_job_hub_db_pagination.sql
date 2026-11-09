@@ -245,9 +245,7 @@ AS $$
     FROM matched
   ),
   page_ids AS (
-    SELECT
-      source_id,
-      row_number() OVER (ORDER BY posted_at DESC NULLS LAST, source_id ASC, source ASC) AS ordinal
+    SELECT source_id, source, posted_at
     FROM matched
     ORDER BY posted_at DESC NULLS LAST, source_id ASC, source ASC
     LIMIT LEAST(GREATEST(COALESCE(p_page_size, 24), 1), 24)
@@ -257,7 +255,11 @@ AS $$
     )
   ),
   resolved AS (
-    SELECT page_ids.ordinal, opportunity.*
+    SELECT
+      page_ids.posted_at AS _index_posted_at,
+      page_ids.source_id AS _index_source_id,
+      page_ids.source AS _index_source,
+      opportunity.*
     FROM page_ids
     JOIN LATERAL (
       SELECT o.*
@@ -283,8 +285,8 @@ AS $$
     COALESCE(
       (
         SELECT jsonb_agg(
-          to_jsonb(resolved) - 'ordinal'
-          ORDER BY resolved.ordinal
+          to_jsonb(resolved) - '_index_posted_at' - '_index_source_id' - '_index_source'
+          ORDER BY resolved._index_posted_at DESC NULLS LAST, resolved._index_source_id ASC, resolved._index_source ASC
         )
         FROM resolved
       ),
