@@ -20,6 +20,7 @@ const formPage = read('src/app/employer/jobs/new/page.tsx');
 const adminPage = read('src/app/admin/(dashboard)/employer-jobs/page.tsx');
 const navbar = read('src/components/navigation/navbar.tsx');
 const sidebar = read('src/components/admin/Sidebar.tsx');
+const catalogSync = read('src/lib/ingestion/catalog-sync.ts');
 
 check(/CREATE TABLE IF NOT EXISTS public\.employer_job_submissions/.test(migration), 'vacancy submissions have a dedicated staging table');
 check(/ENABLE ROW LEVEL SECURITY/.test(migration) && /FORCE ROW LEVEL SECURITY/.test(migration), 'staging tables force RLS');
@@ -38,5 +39,6 @@ check(/employer-jobs/.test(sidebar), 'admin navigation exposes vacancy moderatio
 check(/Create a job vacancy/.test(formPage) && /Application URL/.test(formPage), 'employers can complete a detailed vacancy form');
 check(/Submit for review/.test(employerPage), 'employer workspace supports submitting saved drafts after verification');
 check(/Approve & publish/.test(adminPage), 'admin review queue supports approve and publish');
+check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider deduplication does not suppress verified employer-direct listings');
 
 console.log('\n' + passed + ' employer job publishing checks passed.');
