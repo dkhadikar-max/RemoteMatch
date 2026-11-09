@@ -59,7 +59,7 @@ export default function EmployerDashboardPage() {
   return <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-bold text-[var(--ink)]">Employer workspace</h1><p className="text-sm text-[var(--muted)]">Manage company verification and job vacancies.</p></div>
-      <Link href={'/employer/jobs/new?companyId=' + companyId} className="soft-button primary inline-flex">Create a job</Link>
+      <div className="flex flex-wrap gap-2"><Link href={'/employer/companies/' + companyId + '/applications'} className="soft-button secondary inline-flex">View applicants</Link><Link href={'/employer/jobs/new?companyId=' + companyId} className="soft-button primary inline-flex">Create a job</Link></div>
     </div>
     {error && <p className="rounded-xl border border-[var(--red-soft-border)] p-3 text-sm text-[var(--danger)]">{error}</p>}
     <section className="soft-card border border-[var(--line)] p-5 space-y-3">
