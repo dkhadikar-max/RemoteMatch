@@ -208,6 +208,7 @@ async function main() {
   const cleanupAdminRowIds: string[] = [];
   const cleanupJobSubmissionIds: string[] = [];
   const cleanupOpportunityIds: string[] = [];
+  const cleanupEmployerApplicationIds: string[] = [];
   let jobDraftId: string | null = null;
   let adminAuditRowCreated = false;
 
@@ -319,7 +320,6 @@ async function main() {
         requiredSkills: ['TypeScript', 'PostgreSQL'],
         preferredSkills: ['Playwright'],
         experienceRequirement: '3-5 years',
-        applicationUrl: `https://example.com/careers/remotematch-integration-test-${Date.now()}`,
       }),
     });
     const draftBody = await draftRes.json();
@@ -466,6 +466,31 @@ async function main() {
         .select('action,to_status,opportunity_id').eq('submission_id', jobDraftId).eq('action', 'approve_publish');
       assert(!publishEventsError && (publishEvents ?? []).length === 1 && publishEvents?.[0]?.to_status === 'published', 'approval writes exactly one auditable publish event');
 
+      // --- A separate candidate applies in-platform; the employer receives the application. ---
+      const applyRes = await fetch(`${BASE_URL}/api/employer-jobs/${publishBody.opportunityId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
+        body: JSON.stringify({ opportunityId: publishBody.opportunityId, coverNote: 'I am interested in this role and have relevant experience.' }),
+      });
+      const applyBody = await applyRes.json();
+      assert(applyRes.status === 201 && applyBody.application?.status === 'submitted', `candidate can apply directly on RemoteMatch (got ${applyRes.status})`);
+      if (applyBody.application?.id) cleanupEmployerApplicationIds.push(applyBody.application.id);
+
+      const inboxRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+        headers: { Authorization: `Bearer ${sessionA.token}` },
+      });
+      const inboxBody = await inboxRes.json();
+      assert(inboxRes.status === 200 && (inboxBody.applications ?? []).some((a: { id: string }) => a.id === applyBody.application?.id), 'employer inbox contains the candidate application');
+
+      const statusRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+        body: JSON.stringify({ applicationId: applyBody.application?.id, status: 'shortlisted' }),
+      });
+      const statusBody = await statusRes.json();
+      assert(statusRes.status === 200 && statusBody.status === 'shortlisted', `employer can shortlist an applicant (got ${statusRes.status})`);
+
+
     }
 
     // --- RLS deny-by-default, directly against the tables ---
@@ -478,6 +503,10 @@ async function main() {
 
     const { data: ownSessionCompanies, error: ownSessionErr } = await sessionA.client.from('companies').select('id').eq('id', companyId).limit(1);
     assert((ownSessionCompanies ?? []).length === 0 || Boolean(ownSessionErr), "the OWNER's own session client (not service-role) still cannot read companies directly — every read goes through getAuthenticatedEmployer()'s service-role lookup, never a client-side RLS self-read");
+    const { data: anonApplications, error: anonApplicationsErr } = await anonClient.from('employer_job_applications').select('id').limit(1);
+    assert((anonApplications ?? []).length === 0 || Boolean(anonApplicationsErr), 'anon client cannot read private candidate applications');
+    const { data: ownSessionApplications, error: ownSessionApplicationsErr } = await sessionA.client.from('employer_job_applications').select('id').limit(1);
+    assert((ownSessionApplications ?? []).length === 0 || Boolean(ownSessionApplicationsErr), 'authenticated clients cannot bypass employer application APIs');
     const { data: anonSubmissions, error: anonSubmissionsErr } = await anonClient.from('employer_job_submissions').select('id').limit(1);
     assert((anonSubmissions ?? []).length === 0 || Boolean(anonSubmissionsErr), 'anon client cannot read private employer vacancy submissions');
     const { data: ownSessionSubmissions, error: ownSessionSubmissionsErr } = await sessionA.client.from('employer_job_submissions').select('id').limit(1);
@@ -488,6 +517,9 @@ async function main() {
     assert(!serviceErr && (serviceCompanies ?? []).length === 1, 'service-role client has full read access');
   } finally {
     console.log('\nCleanup…');
+    for (const id of cleanupEmployerApplicationIds) {
+      try { await admin.from('employer_job_applications').delete().eq('id', id); } catch { /* best-effort */ }
+    }
     for (const id of cleanupOpportunityIds) {
       try { await admin.from('opportunities').delete().eq('id', id); } catch { /* best-effort */ }
     }
