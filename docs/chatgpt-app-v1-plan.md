@@ -6,14 +6,16 @@ Expose the existing RemoteMatch job catalogue and matching experience inside Cha
 
 ## Product surface
 
-### V1 tools
+### Implemented Phase 1 tools
 - `search_remote_jobs` — natural-language job discovery with structured filters: keywords, skills, country eligibility, remote classification, employment type, experience, salary/currency, and pagination.
-- `get_job_details` — canonical job detail by RemoteMatch opportunity ID, including source, freshness/verification timestamp, eligibility, and the correct application destination.
-- `match_jobs_to_profile` — authenticated candidate matching using the user's server-side RemoteMatch profile; never accept a client-supplied profile ID or trust client-supplied skills as identity.
-- `get_company` — public company details for a company represented in the existing catalogue.
+- `get_remote_job` — canonical job detail by RemoteMatch opportunity ID, including eligibility, compensation, freshness, and the correct application handoff.
+
+### Deferred tools
+- `get_company` — requires a dedicated public company-details API; not part of the current release.
+- `match_jobs_to_profile` — requires a RemoteMatch OAuth 2.1 authorization-code flow with PKCE and server-verified candidate identity; not part of the current release.
 
 ### Application handoff
-- For employer-direct listings, link to the RemoteMatch job detail page and preserve the existing authenticated in-platform Apply workflow.
+- For employer-direct listings, link to the RemoteMatch job detail page. The in-platform Apply control is delivered by PR #57 and must be merged before this handoff is live.
 - For aggregator listings, preserve the source's external application URL.
 - V1 does not submit applications from ChatGPT. A later write action requires explicit user confirmation, authenticated user identity, idempotency, audit logging, and server-side eligibility checks.
 
@@ -42,10 +44,11 @@ The MCP server must not connect to Supabase with a service-role key or query pro
 
 1. Inspect the current catalogue read/query path and deployed API conventions; reuse existing canonical IDs and filtering semantics.
 2. Add narrowly scoped public API endpoints in the RemoteMatch Next.js backend, with tests for filtering, pagination, freshness, and public-field allowlists.
-3. Add a separately deployable TypeScript MCP service with `search_remote_jobs`, `get_job_details`, and `get_company`; connect it only to those public backend endpoints.
-4. Add OAuth-backed `match_jobs_to_profile` after the RemoteMatch OAuth/token contract is implemented and verified.
-5. Run unit, route, integration, and security tests; deploy only after explicit release approval.
-6. Connect through ChatGPT Developer Mode for private testing, then prepare the app directory submission, privacy policy, and support materials.
+3. Add a separately deployable TypeScript MCP service with `search_remote_jobs` and `get_remote_job`; connect it only to the public backend endpoints. (Implemented on PR #58.)
+4. Add a public company-details endpoint and then expose `get_company` if company discovery becomes part of the product scope.
+5. Add OAuth-backed `match_jobs_to_profile` only after the RemoteMatch OAuth/token contract is implemented and verified.
+6. Run unit, route, integration, and security tests; deploy only after explicit release approval.
+7. Connect through ChatGPT's custom MCP server setup for private testing, then prepare app-directory submission, privacy policy, and support materials.
 
 ## Existing work to preserve
 
