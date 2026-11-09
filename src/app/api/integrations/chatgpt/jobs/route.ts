@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getFeedCatalog } from '@/lib/feed/catalog-cache';
 import type { CanonicalOpportunity } from '@/types/byn';
 import { jobUrl } from '@/lib/seo/job-href';
+import { matchesEuEeaEligibility } from '@/lib/jobs/regional-country-eligibility';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,21 +39,6 @@ const COUNTRY_ALIASES: Record<string, string[]> = {
   malta: ['malta'], iceland: ['iceland'], liechtenstein: ['liechtenstein'],
 };
 
-const EU_EEA_COUNTRIES = new Set([
-  'austria','belgium','bulgaria','croatia','cyprus','czechia','czech republic','denmark',
-  'estonia','finland','france','germany','greece','hungary','ireland','italy','latvia',
-  'lithuania','luxembourg','malta','netherlands','poland','portugal','romania','slovakia',
-  'slovenia','spain','sweden','iceland','liechtenstein','norway'
-]);
-
-function matchesRegionalCountry(eligible: string[], variants: Set<string>): boolean {
-  const regions = new Set(eligible.map(normalized));
-  if (regions.has('eu') || regions.has('eea') || regions.has('eu eea') || regions.has('eu/eea')) {
-    return Array.from(variants).some((country) => EU_EEA_COUNTRIES.has(country));
-  }
-  return false;
-}
-
 function matchesCountry(job: CanonicalOpportunity, country: string): boolean {
   if (!country) return true;
   const remote = normalized(job.remoteType);
@@ -63,7 +49,7 @@ function matchesCountry(job: CanonicalOpportunity, country: string): boolean {
   if (remote === 'worldwide') return true;
   if (remote === 'india') return variants.has('india') || variants.has('in');
   if (remote === 'us') return variants.has('us') || variants.has('usa') || variants.has('united states');
-  if (eligible.length > 0) return eligible.some((value) => variants.has(value)) || matchesRegionalCountry(eligible, variants);
+  if (eligible.length > 0) return eligible.some((value) => variants.has(value)) || matchesEuEeaEligibility(eligible, variants);
   return variants.has(remote);
 }
 
