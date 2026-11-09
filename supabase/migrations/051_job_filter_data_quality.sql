@@ -5,7 +5,7 @@
 UPDATE public.opportunities
 SET experience_requirement = NULL
 WHERE experience_requirement = '2-3'
-  AND source NOT IN ('curated', 'employerdirect');
+  AND COALESCE(source, '') NOT IN ('curated', 'employerdirect');
 
 UPDATE public.opportunities
 SET salary_currency = NULL
