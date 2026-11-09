@@ -10,7 +10,7 @@ assert.ok(supabaseUrl && serviceRoleKey, 'isolated Supabase test credentials are
 const admin = createClient(supabaseUrl!, serviceRoleKey!, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
-const sourceId = `chatgpt-api-${randomUUID()}`;
+const sourceId = `chatgpt-api/${randomUUID()}`;
 const postedAt = new Date(Date.now() - 60_000).toISOString();
 
 async function get(path: string) {
@@ -40,8 +40,8 @@ async function main() {
     canonical_url_hash: `chatgpt-api-${sourceId}`,
     content_hash: `chatgpt-content-${sourceId}`,
     employment_type: 'Full-time',
-    remote_type: 'Worldwide',
-    eligible_countries: [],
+    remote_type: 'Specific countries',
+    eligible_countries: ['IN'],
     excluded_countries: [],
     timezone_requirements: [],
     salary_min: 100000,
@@ -68,7 +68,7 @@ async function main() {
   assert.equal(seedError, null, `isolated job fixture must seed successfully: ${seedError?.message ?? ''}`);
 
   try {
-    const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&skills=TypeScript&country=India&remoteType=Worldwide&employmentType=Full-time&experience=2-3&minSalary=90000&salaryCurrency=USD&limit=5');
+    const response = await get('/api/integrations/chatgpt/jobs?q=ChatGPT%20API%20Test&skills=TypeScript&country=India&remoteType=Specific%20countries&employmentType=Full-time&experience=2-3&minSalary=90000&salaryCurrency=USD&limit=5');
     assert.equal(response.status, 200, 'public job search should be available');
     const result = await response.json() as {
       success: boolean;
