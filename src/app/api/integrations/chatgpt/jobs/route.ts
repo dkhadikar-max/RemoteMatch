@@ -62,9 +62,16 @@ function applyCountryFilter<T extends { or(filters: string): T; not(column: stri
 ): T {
   if (!country) return query;
   const variants = COUNTRY_ALIASES[country] ?? [country];
+  // Country arrays contain a mix of ISO codes and display names; PostgreSQL
+  // array overlap is case-sensitive, unlike the previous in-memory matcher.
+  const arrayVariants = Array.from(new Set(variants.flatMap((value) => [
+    value,
+    value.toUpperCase(),
+    value.charAt(0).toUpperCase() + value.slice(1),
+  ])));
   const clauses = [
     'remote_type.eq.worldwide',
-    `eligible_countries.ov.${pgArray(variants)}`,
+    `eligible_countries.ov.${pgArray(arrayVariants)}`,
     ...variants.map((value) => `and(eligible_countries.is.null,remote_type.eq.${value.replace(/[^a-z0-9 /-]/g, '')})`),
     ...variants.map((value) => `and(eligible_countries.eq.{},remote_type.eq.${value.replace(/[^a-z0-9 /-]/g, '')})`),
   ];
@@ -73,7 +80,7 @@ function applyCountryFilter<T extends { or(filters: string): T; not(column: stri
   }
   query = query.or(clauses.join(','));
   // Exclusions always win, including for worldwide and regional listings.
-  query = query.or(`excluded_countries.is.null,excluded_countries.not.ov.${pgArray(variants)}`);
+  query = query.or(`excluded_countries.is.null,excluded_countries.not.ov.${pgArray(arrayVariants)}`);
   return query;
 }
 
