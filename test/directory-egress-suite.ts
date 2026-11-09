@@ -304,7 +304,7 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/opportunity_catalog_index') || u.includes('/rest/v1/rpc/get_remote_job_hub_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
