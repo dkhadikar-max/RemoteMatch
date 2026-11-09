@@ -69,6 +69,19 @@ function isScorableProfile(p: unknown): p is PersonProfile {
 
 type ResolvedAuth = { user: User; supabase: SupabaseClient } | null;
 
+type FeedPerfStage = 'catalog' | 'scoring' | 'personalization' | 'response';
+function recordFeedPerf(stage: FeedPerfStage, startedAt: number, fields: Record<string, number | string | boolean | null> = {}) {
+  if (process.env.REMOTEMATCH_FEED_PERF_LOGS !== 'true') return;
+  const memory = process.memoryUsage();
+  console.info('[feed-perf]', JSON.stringify({
+    stage,
+    durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    heapUsedBytes: memory.heapUsed,
+    rssBytes: memory.rss,
+    ...fields,
+  }));
+}
+
 /** Resolves the caller's identity once per request, for every layer below
  *  that needs it. Fails closed to `null` (anonymous/unauthenticated) —
  *  never throws past this point. */
@@ -151,7 +164,7 @@ export async function GET() {
     if (!opportunities) {
       return NextResponse.json({ success: false, error: 'Service temporarily unavailable.' }, { status: 503 });
     }
-    return NextResponse.json({ success: true, opportunities, scored: false });
+    const payload = { success: true, opportunities, scored: false };\n    recordFeedPerf('response', catalogStartedAt, { rowCount: opportunities.length, responseBytes: Buffer.byteLength(JSON.stringify(payload)), scored: false });\n    return NextResponse.json(payload);
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
   }
