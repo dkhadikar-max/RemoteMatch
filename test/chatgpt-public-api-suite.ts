@@ -186,8 +186,8 @@ async function main() {
     assert.deepEqual(job.requiredSkills, ['TypeScript']);
     assert.deepEqual(job.preferredSkills, ['Node.js']);
     assert.equal(job.experienceRequirement, '2-3');
-    assert.equal(job.postedAt, postedAt);
-    assert.equal(job.linkCheckedAt, postedAt);
+    assert.equal(Date.parse(String(job.postedAt)), Date.parse(postedAt), 'postedAt must preserve the seeded instant');
+    assert.equal(Date.parse(String(job.linkCheckedAt)), Date.parse(postedAt), 'linkCheckedAt must preserve the seeded instant');
     assert.ok(job.jobUrl.startsWith('https://'));
     assert.ok(job.applicationUrl.startsWith('https://'));
     assert.equal(job.applicationMethod, 'Employer website');
