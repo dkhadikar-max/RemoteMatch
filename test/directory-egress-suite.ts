@@ -367,7 +367,7 @@ async function main() {
     const full = mine(fullRun.r);
     console.log(`  · OLD full-catalog read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
     assert(full.length === visibleIds.size, `old full read sees the same ${full.length} listings`);
-    assert(fullRun.calls === Math.ceil(fullRun.r.length / 1000), `full-catalog reader uses one bounded keyset RPC per 1,000-row page (${fullRun.calls} calls)`);
+    assert(fullRun.calls === Math.ceil(fullRun.r.length / 100), `full-catalog reader uses one bounded keyset RPC per 100-row page (${fullRun.calls} calls)`);
     const cursorOrdered = fullRun.r.every((job, i, rows) =>
       i === 0 || rows[i - 1].source < job.source ||
       (rows[i - 1].source === job.source && rows[i - 1].sourceId < job.sourceId)

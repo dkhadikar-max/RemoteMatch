@@ -22,8 +22,10 @@ export const CHUNK_PATH_PREFIX = '/sitemaps';
 
 export const SITEMAP_RESPONSE_HEADERS = {
   'Content-Type': 'application/xml; charset=utf-8',
-  // What Next's built-in sitemap route sent before: always revalidate (the data is cached in-process, see sitemap-data.ts).
-  'Cache-Control': 'public, max-age=0, must-revalidate',
+  // Browsers revalidate, while shared edge caches keep the expensive catalogue
+  // snapshot for 30 minutes and may serve it stale for one hour during refresh.
+  // This prevents crawler bursts from triggering repeated full-catalogue reads.
+  'Cache-Control': 'public, max-age=0, s-maxage=1800, stale-while-revalidate=3600',
 } as const;
 
 export interface SplitOptions {
@@ -121,6 +123,12 @@ export async function respondSitemapRoot(load: () => Promise<readonly SitemapUrl
 
 /** The HTTP response for `/sitemaps/{param}`: 404 (plain text) whenever there is no such chunk. */
 export async function respondSitemapChunk(load: () => Promise<readonly SitemapUrlEntry[]>, param: unknown, opts: SplitOptions = {}): Promise<Response> {
+  // Reject malformed child paths before touching the catalog. Crawlers and
+  // scanners request paths such as /.env; these must be cheap 404s, not
+  // full sitemap refreshes that can hit the database statement timeout.
+  if (parseChunkParam(param) === null) {
+    return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
   const xml = renderSitemapChunk(await load(), param, opts);
   if (xml === null) return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   return new Response(xml, { headers: SITEMAP_RESPONSE_HEADERS });

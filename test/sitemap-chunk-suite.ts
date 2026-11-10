@@ -187,7 +187,7 @@ console.log('\n4. The root document (/sitemap.xml)');
   const huge = synth(120_001);
   const rootRes = await respondSitemapRoot(async () => huge);
   const rootDoc = parseSitemapXml(await rootRes.text());
-  assert(rootRes.status === 200 && rootRes.headers.get('content-type') === 'application/xml; charset=utf-8' && rootRes.headers.get('cache-control') === 'public, max-age=0, must-revalidate', 'GET /sitemap.xml with 120,001 URLs: 200, application/xml; charset=utf-8, revalidate cache header');
+  assert(rootRes.status === 200 && rootRes.headers.get('content-type') === 'application/xml; charset=utf-8' && rootRes.headers.get('cache-control') === 'public, max-age=0, s-maxage=1800, stale-while-revalidate=3600', 'GET /sitemap.xml with 120,001 URLs: 200, application/xml; charset=utf-8, revalidate cache header');
   assert(rootDoc.root === 'sitemapindex' && rootDoc.items.length === 3 && rootDoc.items.length < 50_000, '120,001 URLs -> an index of 3 chunks (far below the 50,000-sitemap index limit)');
   const seen = new Set<string>(); let total = 0, maxItems = 0, maxBytes = 0;
   for (let i = 0; i < 3; i++) {
@@ -200,6 +200,9 @@ console.log('\n4. The root document (/sitemap.xml)');
   assert(total === 120_001 && seen.size === 120_001 && maxItems < 45_000 && maxBytes < 50 * 1024 * 1024, `the 3 chunks hold all 120,001 URLs exactly once; largest chunk ${maxItems} URLs / ${(maxBytes / 1048576).toFixed(1)} MB`);
   const miss = await respondSitemapChunk(async () => huge, '3.xml');
   assert(miss.status === 404 && (await miss.text()) === 'Not Found', '/sitemaps/3.xml (out of range) -> 404');
+  let malformedLoadCalled = false;
+  const malformed = await respondSitemapChunk(async () => { malformedLoadCalled = true; return huge; }, '.env');
+  assert(malformed.status === 404 && !malformedLoadCalled, 'malformed /sitemaps/.env is rejected before the catalog loader runs');
 }
 
 console.log('\n5. The chunk documents (/sitemaps/{n}.xml)');
@@ -236,7 +239,7 @@ console.log('\n6. The real route handlers, offline (no Supabase client => static
     const c2 = await chunkMod.GET(new Request('http://x/sitemaps/abc.xml'), { params: Promise.resolve({ chunk: 'abc.xml' }) });
     assert(c2.status === 404, 'GET /sitemaps/abc.xml: 404');
     assert(rootMod.dynamic === 'force-dynamic' && chunkMod.dynamic === 'force-dynamic' && typeof rootMod.GET === 'function' && typeof chunkMod.GET === 'function', 'both route modules export `dynamic = "force-dynamic"` and a GET handler');
-    assert(JSON.stringify(SITEMAP_RESPONSE_HEADERS) === JSON.stringify({ 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=0, must-revalidate' }), 'response headers are the content type + the cache header Next\'s built-in sitemap route used');
+    assert(JSON.stringify(SITEMAP_RESPONSE_HEADERS) === JSON.stringify({ 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=0, s-maxage=1800, stale-while-revalidate=3600' }), 'response headers are the content type + the cache header Next\'s built-in sitemap route used');
   } finally { if (savedEnv.u !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = savedEnv.u; if (savedEnv.a !== undefined) process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedEnv.a; }
 }
 
@@ -252,6 +255,8 @@ console.log('\n7. Static guards');
     assert(/export const dynamic = 'force-dynamic'/.test(s) && /export async function GET\(/.test(s) && /getSitemapEntries/.test(s), `${f}: force-dynamic GET handler fed by getSitemapEntries`);
   }
   assert(/sitemap: `\$\{SITE_URL\}\/sitemap\.xml`/.test(strip(read('src/app/robots.ts'))), 'robots.txt still advertises /sitemap.xml (now an index when needed)');
+  const catalogRead = strip(read('src/lib/ingestion/catalog-read.ts'));
+  assert(/const pageSize = 3000/.test(catalogRead), 'sitemap cold reads use measured 3,000-row keyset batches');
   const data = strip(read('src/lib/seo/sitemap-data.ts'));
   assert(/getSitemapJobEntries/.test(data) && /createAsyncTtlCache/.test(data) && /getOrCreateCatalogCache\('sitemap-entries'/.test(data) && /SITEMAP_TTL_MS = 6 \* 60 \* 60 \* 1000/.test(data) && /SITEMAP_MAX_STALE_MS = 24 \* 60 \* 60 \* 1000/.test(data) && !/getActiveJobs|getActiveOpportunities/.test(data), 'the data module keeps the slim read, the 6 h TTL / 24 h stale cache and the "sitemap-entries" cache key the sync route invalidates');
   assert(/dedupeByUrl\(buildSitemap\(SITE_URL, activeJobs\)\)/.test(data), 'the URL list is buildSitemap() (eligibility + order unchanged) passed through the duplicate filter only');

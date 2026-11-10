@@ -202,9 +202,15 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  const pageSize = 1000;
+  // Full-record batches are sensitive to description size. Production anonymous-role
+  // probes: 1,000 rows timed out; 500 rows took ~1.71s; a later 250-row cursor timed
+  // out; the same cursor completed in ~0.53s at 100 rows. Start at 100 and fall back
+  // to 50/25 on SQLSTATE 57014 so one unusually large page cannot fail the feed.
+  const initialPageSize = 100;
+  let pageSize = initialPageSize;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
+  let pageIndex = 0;
 
   // Cursor pagination seeks from the last unique (source, source_id) pair.
   // Unlike OFFSET, later pages do not rescan or skip all preceding rows.
@@ -213,7 +219,9 @@ export async function getActiveOpportunities(
   const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
 
   while (true) {
-    const { data, error } = await supabase.rpc('get_active_opportunities_keyset_page', {
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
+    let pageStartedAt = performance.now();
+    let response = await supabase.rpc('get_active_opportunities_keyset_page', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
@@ -221,19 +229,46 @@ export async function getActiveOpportunities(
       p_fresh_to: freshness?.to ?? null,
       p_translation_safe: options?.translationSafe ?? false,
     });
-    if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
+    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
+      const failedPageSize = pageSize;
+      pageSize = Math.max(25, Math.floor(pageSize / 2));
+      console.warn('[catalog-read] keyset-page-retry', JSON.stringify({
+        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize,
+        durationMs, code: response.error.code,
+      }));
+      pageStartedAt = performance.now();
+      response = await supabase.rpc('get_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness?.from ?? null,
+        p_fresh_to: freshness?.to ?? null,
+        p_translation_safe: options?.translationSafe ?? false,
+      });
+      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    }
+    const { data, error } = response;
+    if (error) {
+      console.error('[catalog-read] keyset-page-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read active opportunities: ${error.message}`);
+    }
     if (!Array.isArray(data)) {
       throw new Error('Active opportunities keyset RPC returned an invalid payload');
     }
-    // Low-volume runtime evidence: confirms the production directory reader is
-    // executing the keyset RPC, while exposing counts rather than job identifiers.
     console.info('[catalog-read] keyset-page', JSON.stringify({
+      page: pageIndex,
       rows: data.length,
       pageSize,
-      hasCursor: afterSource !== null,
+      durationMs,
+      cursor,
       translationSafe: options?.translationSafe ?? false,
       freshOnly: options?.freshOnly ?? false,
     }));
+    pageIndex += 1;
     if (data.length === 0) break;
 
     const rows = data as unknown as OpportunityRow[];
@@ -297,23 +332,36 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
   const entries: SitemapJobEntry[] = [];
   // JSONB RPC batches bypass PostgREST's setof max_rows cap while keeping
   // each response bounded. The covering partial index makes this a narrow
-  // index-only seek. Keep each anonymous-role RPC well below Supabase's 3s
-  // statement timeout during crawler bursts; a 5,000-row JSON aggregate was
-  // measured at ~2.86s before any concurrent directory traffic.
-  const pageSize = 1000;
+  // index-only seek. Production 3,000-row probes completed below the 3s
+  // statement timeout; retain the bounded size and record each cursor.
+  const pageSize = 3000;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
+  let pageIndex = 0;
 
   while (true) {
+    const pageStartedAt = performance.now();
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
     const { data, error } = await supabase.rpc('get_remote_job_sitemap_page_json', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
     });
-    if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    if (error) {
+      console.error('[sitemap] batch-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    }
     if (!Array.isArray(data)) {
       throw new Error('Sitemap batch RPC returned an invalid payload');
     }
+    console.info('[sitemap] batch', JSON.stringify({
+      page: pageIndex, pageSize, rows: data.length, durationMs, cursor,
+    }));
+    pageIndex += 1;
     if (data.length === 0) break;
 
     const rows = data as Array<{
