@@ -29,7 +29,7 @@ import { aiAnalysisAllowed } from '@/lib/resume/entitlement';
  * fixed set of config names.)
  */
 
-function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'general' | 'target_job'; opportunityId?: string; candidateAnswers?: Array<{ questionId: string; answer: string }> } {
+function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'general' | 'target_job'; opportunityId?: string; candidateAnswers?: Array<{ questionId: string; question: string; answer: string }> } {
   if (!body || typeof body !== 'object') return false;
   const { resumeVersionId, mode, opportunityId } = body as Record<string, unknown>;
   if (typeof resumeVersionId !== 'string' || resumeVersionId.trim().length === 0) return false;
@@ -44,8 +44,9 @@ function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'g
       if (!item || typeof item !== 'object') return false;
       const answer = item as Record<string, unknown>;
       if (typeof answer.questionId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(answer.questionId)) return false;
+      if (typeof answer.question !== 'string' || answer.question.length > 400) return false;
       if (typeof answer.answer !== 'string' || answer.answer.length > 1200) return false;
-      total += answer.answer.length;
+      total += answer.question.length + answer.answer.length;
       if (total > 6000) return false;
     }
   }
