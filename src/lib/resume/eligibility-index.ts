@@ -44,14 +44,27 @@ export async function loadResumeEligibilityRows(supabase: SupabaseClient): Promi
   const out: ResumeEligibilityRow[] = [];
   const pageSize = 1000;
   let from = 0;
+  let pageIndex = 0;
   while (true) {
+    const pageStartedAt = performance.now();
     const { data, error } = await supabase
       .from('opportunities')
       .select(RESUME_ELIGIBILITY_COLUMNS)
       .order('source', { ascending: true })
       .order('source_id', { ascending: true })
       .range(from, from + pageSize - 1);
-    if (error) throw new Error(`Could not read resume eligibility rows: ${error.message}`);
+    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    if (error) {
+      console.error('[resume] eligibility-page-failed', JSON.stringify({
+        page: pageIndex, offset: from, pageSize, durationMs,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read resume eligibility rows: ${error.message}`);
+    }
+    console.info('[resume] eligibility-page', JSON.stringify({
+      page: pageIndex, offset: from, pageSize, rows: data?.length ?? 0, durationMs,
+    }));
+    pageIndex += 1;
     if (!data || data.length === 0) break;
     for (const r of data as unknown as Array<{ title: string; remote_type: string | null; employment_type: string | null; required_skills: string[] | null }>) {
       out.push({ title: r.title, remoteType: r.remote_type, employmentType: r.employment_type, requiredSkills: r.required_skills ?? [] });
