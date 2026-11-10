@@ -171,7 +171,7 @@ async function main() {
     if (!job) throw new Error(`ChatGPT search did not return seeded fixture ${sourceId}; response=${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}`);
     assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
-    // Pin every field supplied by the endpoint-specific database projection.
+    // Pin every field supplied by the endpoint-specific database projection; compare timestamps by instant because PostgREST may normalize timezone formatting.
     assert.equal(job.description, 'Synthetic isolated integration fixture for ChatGPT job discovery and details.');
     assert.equal(job.companyLogo, null);
     assert.equal(job.employmentType, 'Full-time');
