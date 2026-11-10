@@ -171,6 +171,10 @@ jobs:
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts
 
+      - name: Surface ChatGPT integration server errors
+        if: failure()
+        run: grep -E '\\[chatgpt-jobs\\]|PostgrestError|database search failed' /tmp/ci-dev-server.log | tail -n 80 || true
+
       - name: Live directory egress + HTTP integration
         run: npx tsx test/directory-egress-suite.ts
 
