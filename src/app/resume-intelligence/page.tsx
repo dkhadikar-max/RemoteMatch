@@ -245,6 +245,7 @@ function ResumeIntelligenceInner() {
   const [decisionBusy, setDecisionBusy] = useState<Record<string, boolean>>({});
   const [decisionErrors, setDecisionErrors] = useState<Record<string, string>>({});
   const [pasteText, setPasteText] = useState('');
+  const [candidateAnswers, setCandidateAnswers] = useState<Record<string, string>>({});
 
   const loadResume = useCallback(async () => {
     setState({ phase: 'loading_resume' });
@@ -296,7 +297,7 @@ function ResumeIntelligenceInner() {
 
   useEffect(() => { loadResume(); }, [loadResume]);
 
-  const runAnalysis = useCallback(async (forVersionId: string, forMode: AnalysisMode) => {
+  const runAnalysis = useCallback(async (forVersionId: string, forMode: AnalysisMode, answers: Record<string, string> = {}) => {
     setState({ phase: 'analyzing', versionId: forVersionId });
     try {
       const res = await fetch('/api/resume/analyses', {
@@ -306,6 +307,9 @@ function ResumeIntelligenceInner() {
           resumeVersionId: forVersionId,
           mode: forMode,
           ...(forMode === 'target_job' && opportunityId ? { opportunityId } : {}),
+          candidateAnswers: Object.entries(answers)
+            .map(([questionId, answer]) => ({ questionId, answer: answer.trim() }))
+            .filter((item) => item.answer.length > 0),
         }),
       });
       if (res.status === 503) {
@@ -595,11 +599,28 @@ function ResumeIntelligenceInner() {
             <div className="soft-card p-6 border border-[var(--line)] space-y-2">
               <p className="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">Questions that would help</p>
               {state.analysis.questionsForCandidate.map((q) => (
-                <div key={q.id} className="py-1.5 border-b border-[var(--line)] last:border-0">
+                <div key={q.id} className="py-2 border-b border-[var(--line)] last:border-0 space-y-2">
                   <p className="text-sm text-[var(--ink)]">{q.question}</p>
                   <p className="text-[11px] text-[var(--muted)]">{q.why}</p>
+                  <textarea
+                    value={candidateAnswers[q.id] ?? ''}
+                    onChange={(event) => setCandidateAnswers((prev) => ({ ...prev, [q.id]: event.target.value }))}
+                    maxLength={1200}
+                    rows={2}
+                    placeholder="Your answer (optional). Add only details you can verify."
+                    className="soft-input text-sm"
+                  />
+                  <p className="text-[10px] text-[var(--muted)] text-right">{(candidateAnswers[q.id] ?? '').length}/1200</p>
                 </div>
               ))}
+              {Object.values(candidateAnswers).some((answer) => answer.trim().length > 0) && (
+                <button
+                  onClick={() => runAnalysis(state.versionId, mode, candidateAnswers)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 min-h-[40px]"
+                >
+                  Use answers & rerun analysis
+                </button>
+              )}
             </div>
           )}
 
