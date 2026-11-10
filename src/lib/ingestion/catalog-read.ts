@@ -330,12 +330,12 @@ export interface SitemapJobEntry {
  *  with OFFSET. The database RPC runs under the caller's RLS policies. */
 export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
   const entries: SitemapJobEntry[] = [];
-  // Start with the indexed 3,000-row path, but adapt permanently downward when
-  // Postgres enforces its 3s anon statement timeout. A busy/large cursor must
-  // not make the whole sitemap fail when smaller keyset pages can complete.
-  const initialPageSize = 3000;
+  // Start at 1,000 rows: the exact production 3,000-row cursor timed out,
+  // while representative 1,000-row batches completed under the anon 3s limit.
+  // Adapt downward on SQLSTATE 57014 and retain the reduced size for later pages.
+  const initialPageSize = 1000;
   const minimumPageSize = 25;
-  const maximumTimeoutRetries = 7; // 3000 -> 1500 -> 750 -> 375 -> 187 -> 93 -> 46 -> 25
+  const maximumTimeoutRetries = 6; // 1000 -> 500 -> 250 -> 125 -> 62 -> 31 -> 25
   let pageSize = initialPageSize;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
