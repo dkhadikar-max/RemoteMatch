@@ -64,7 +64,7 @@ function normalise(value: string): string {
 export function buildAuthenticityReview(resumeText: string, bullets: ResumeBullet[]): AuthenticityReview {
   const findings: Finding[] = [];
   const questions: AuthenticityReview['questions'] = [];
-  const seenQuestions = new Set<string>();
+  const questionByKey = new Map<string, AuthenticityReview['questions'][number]>();
 
   for (const bullet of bullets) {
     const detector = BULLET_DETECTORS.find((item) => item.pattern.test(bullet.text));
@@ -74,23 +74,29 @@ export function buildAuthenticityReview(resumeText: string, bullets: ResumeBulle
     if (localIndex < 0) continue;
 
     const id = `auth-${bullet.id}-${detector.code}`;
+    const matchedPhrase = bullet.text.match(detector.pattern)?.[0] ?? bullet.text;
+    const phraseOffset = bullet.text.toLowerCase().indexOf(matchedPhrase.toLowerCase());
     findings.push({
       id,
       text: detector.message,
       criterion: 'R4',
-      evidence: [makeEvidence(bullet.text, localIndex)],
+      evidence: [makeEvidence(matchedPhrase, localIndex + Math.max(0, phraseOffset))],
       source: 'rules',
     });
 
     const key = normalise(detector.question);
-    if (!seenQuestions.has(key) && questions.length < 3) {
-      seenQuestions.add(key);
-      questions.push({
+    const existingQuestion = questionByKey.get(key);
+    if (existingQuestion) {
+      existingQuestion.refs.push(id);
+    } else if (questions.length < 3) {
+      const question = {
         id: `question-${id}`,
         question: detector.question,
         why: detector.why,
         refs: [id],
-      });
+      };
+      questions.push(question);
+      questionByKey.set(key, question);
     }
   }
 
@@ -103,21 +109,21 @@ export function buildAuthenticityReview(resumeText: string, bullets: ResumeBulle
     const match = line.match(GENERIC_CLICHE);
     if (match && findings.length < 8) {
       const id = `auth-summary-${lineIndex + 1}-generic`;
+      const phrase = match[0];
       findings.push({
         id,
         text: 'This is a broad self-description. Replace it with a concrete example of the work or result that demonstrates the quality.',
         criterion: 'R9',
-        evidence: [makeEvidence(line.trim(), offset + line.indexOf(line.trim()))],
+        evidence: [makeEvidence(phrase, offset + line.indexOf(phrase))],
         source: 'rules',
       });
-      if (questions.length < 3) {
-        questions.push({
-          id: `question-${id}`,
-          question: 'Which specific example from your work best demonstrates this description?',
-          why: 'A concrete example is more credible than a general personal label.',
-          refs: [id],
-        });
-      }
+      const question = {
+        id: `question-${id}`,
+        question: 'Which specific example from your work best demonstrates this description?',
+        why: 'A concrete example is more credible than a general personal label.',
+        refs: [id],
+      };
+      if (questions.length < 3) questions.push(question);
     }
     offset += line.length + 1;
   }
