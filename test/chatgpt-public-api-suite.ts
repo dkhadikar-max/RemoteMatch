@@ -93,6 +93,7 @@ async function main() {
     const result = await response.json() as {
       success: boolean;
       total: number;
+      totalIsEstimate: boolean;
       limit: number;
       offset: number;
       hasMore: boolean;
@@ -100,6 +101,7 @@ async function main() {
     };
 
     assert.equal(result.success, true);
+    assert.equal(result.totalIsEstimate, true, 'public search reports that its planned count is approximate');
     assert.equal(result.limit, 5);
     assert.equal(result.offset, 0);
     assert.ok(Number.isInteger(result.total) && result.total >= 1, 'combined filters must retain the seeded fixture');
