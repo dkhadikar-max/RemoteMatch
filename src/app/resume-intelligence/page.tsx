@@ -602,6 +602,7 @@ function ResumeIntelligenceInner() {
           {state.analysis.questionsForCandidate.length > 0 && (
             <div className="soft-card p-6 border border-[var(--line)] space-y-2">
               <p className="text-[11px] font-semibold text-[var(--muted)] uppercase tracking-wider">Questions that would help</p>
+              <p className="text-xs text-[var(--muted)]">Answers are used to refine this analysis and do not change your saved resume.</p>
               {state.analysis.questionsForCandidate.map((q) => (
                 <div key={q.id} className="py-2 border-b border-[var(--line)] last:border-0 space-y-2">
                   <p className="text-sm text-[var(--ink)]">{q.question}</p>
