@@ -56,6 +56,7 @@ jobs:
             test/resume-intelligence-rubric-suite.ts
             test/resume-intelligence-validation-suite.ts
             test/resume-authenticity-suite.ts
+            test/resume-candidate-answers-suite.ts
             test/resume-intelligence-decision-client-suite.ts
           )
           for suite in "${suites[@]}"; do
