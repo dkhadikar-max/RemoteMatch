@@ -184,7 +184,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('opportunities')
-      .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
+      .select(OPPORTUNITY_COLUMNS, { count: 'planned' })
       .eq('status', 'active')
       .is('superseded_by_opportunity_id', null);
 
@@ -225,20 +225,24 @@ export async function GET(request: NextRequest) {
     const { data, count, error } = await query
       .order('posted_at', { ascending: false, nullsFirst: false })
       .order('source_id', { ascending: true })
-      .range(offsetRaw, offsetRaw + limitRaw - 1);
+      .range(offsetRaw, offsetRaw + limitRaw);
 
     if (error) throw new Error(`Could not search opportunities: ${error.message}`);
-    const opportunities = ((data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][])
+    const pageRows = (data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][];
+    const hasMore = pageRows.length > limitRaw;
+    const opportunities = pageRows.slice(0, limitRaw)
       .map(rowToCanonicalOpportunity)
       .map(publicJob);
 
-    const total = count ?? 0;
+    // Planned counts are approximate; never report less than the rows we just returned.
+    const total = Math.max(count ?? 0, offsetRaw + pageRows.length);
     return NextResponse.json({
       success: true,
       total,
+      totalIsEstimate: true,
       limit: limitRaw,
       offset: offsetRaw,
-      hasMore: offsetRaw + opportunities.length < total,
+      hasMore,
       opportunities,
     }, {
       headers: { 'Cache-Control': 'no-store' },
