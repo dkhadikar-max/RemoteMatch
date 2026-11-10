@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { applyTranslationSafe, OPPORTUNITY_COLUMNS, rowToCanonicalOpportunity } from '@/lib/ingestion/catalog-read';
+import { applyTranslationSafe } from '@/lib/ingestion/catalog-read';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
-import type { CanonicalOpportunity } from '@/types/byn';
 import { jobUrl } from '@/lib/seo/job-href';
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +11,26 @@ const MAX_QUERY_LENGTH = 160;
 const MAX_TERMS = 5;
 const COUNTRY_SCAN_BATCH_SIZE = 250;
 const MAX_COUNTRY_CANDIDATES_SCANNED = 5_000;
+
+// Keep this endpoint's database projection aligned with its public response.
+// Avoid fetching internal scoring, translation, and reconciliation fields.
+const CHATGPT_JOB_COLUMNS = [
+  'title', 'company', 'company_logo', 'description', 'source', 'source_id',
+  'official_url', 'employment_type', 'remote_type', 'eligible_countries',
+  'excluded_countries', 'timezone_requirements', 'salary_min', 'salary_max',
+  'salary_currency', 'salary_period', 'required_skills', 'preferred_skills',
+  'experience_requirement', 'posted_at', 'link_checked_at',
+].join(',');
+
+type ChatGptJobRow = {
+  title: string; company: string; company_logo: string | null; description: string;
+  source: string; source_id: string; official_url: string; employment_type: string;
+  remote_type: string; eligible_countries: string[] | null; excluded_countries: string[] | null;
+  timezone_requirements: string[] | null; salary_min: number | null; salary_max: number | null;
+  salary_currency: string | null; salary_period: string | null; required_skills: string[] | null;
+  preferred_skills: string[] | null; experience_requirement: string | null;
+  posted_at: string; link_checked_at: string | null;
+};
 
 function csv(value: string | null): string[] {
   return (value ?? '').split(',').map((part) => part.trim()).filter(Boolean).slice(0, 20);
@@ -90,31 +109,31 @@ function isExcludedForCountry(excludedCountries: string[] | null | undefined, co
   return excludedCountries.some((value) => variants.has(String(value).trim().toLowerCase()));
 }
 
-function publicJob(job: CanonicalOpportunity) {
-  const detailUrl = jobUrl(job.sourceId);
+function publicJob(job: ChatGptJobRow) {
+  const detailUrl = jobUrl(job.source_id);
   const isEmployerDirect = job.source === 'employerdirect';
   return {
-    id: job.id,
+    id: `opp-${job.source}-${job.source_id}`,
     title: job.title,
     company: job.company,
-    companyLogo: job.companyLogo ?? null,
+    companyLogo: job.company_logo ?? null,
     description: job.description,
-    employmentType: job.employmentType,
-    remoteType: job.remoteType,
-    eligibleCountries: job.eligibleCountries ?? [],
-    excludedCountries: job.excludedCountries ?? [],
-    timezoneRequirements: job.timezoneRequirements ?? [],
-    salaryMin: job.salaryMin ?? null,
-    salaryMax: job.salaryMax ?? null,
-    salaryCurrency: job.salaryCurrency ?? null,
-    salaryPeriod: job.salaryPeriod ?? null,
-    requiredSkills: job.requiredSkills ?? [],
-    preferredSkills: job.preferredSkills ?? [],
-    experienceRequirement: job.experienceRequirement ?? null,
-    postedAt: job.postedAt,
-    linkCheckedAt: job.linkCheckedAt ?? null,
+    employmentType: job.employment_type,
+    remoteType: job.remote_type,
+    eligibleCountries: job.eligible_countries ?? [],
+    excludedCountries: job.excluded_countries ?? [],
+    timezoneRequirements: job.timezone_requirements ?? [],
+    salaryMin: job.salary_min ?? null,
+    salaryMax: job.salary_max ?? null,
+    salaryCurrency: job.salary_currency ?? null,
+    salaryPeriod: job.salary_period ?? null,
+    requiredSkills: job.required_skills ?? [],
+    preferredSkills: job.preferred_skills ?? [],
+    experienceRequirement: job.experience_requirement ?? null,
+    postedAt: job.posted_at,
+    linkCheckedAt: job.link_checked_at ?? null,
     jobUrl: detailUrl,
-    applicationUrl: isEmployerDirect ? detailUrl : job.officialUrl,
+    applicationUrl: isEmployerDirect ? detailUrl : job.official_url,
     applicationMethod: isEmployerDirect ? 'RemoteMatch in-platform application' : 'Employer website',
   };
 }
@@ -160,7 +179,7 @@ export async function GET(request: NextRequest) {
       // A multi-term ILIKE search can make an exact count scan the full catalog
       // twice (page + count) and hit the 3s Postgres timeout. Planned count is
       // bounded; hasMore is exact from the extra row fetched below.
-      .select(OPPORTUNITY_COLUMNS, { count: 'planned' })
+      .select(CHATGPT_JOB_COLUMNS, { count: 'planned' })
       .eq('status', 'active')
       .is('superseded_by_opportunity_id', null);
 
@@ -199,7 +218,7 @@ export async function GET(request: NextRequest) {
       .order('posted_at', { ascending: false, nullsFirst: false })
       .order('source_id', { ascending: true });
 
-    const accepted: CanonicalOpportunity[] = [];
+    const accepted: ChatGptJobRow[] = [];
     let candidateOffset = country ? 0 : offsetRaw;
     let scanned = 0;
     let estimatedCandidateCount: number | null = null;
@@ -213,12 +232,11 @@ export async function GET(request: NextRequest) {
       if (error) throw new Error(`Could not search opportunities: ${error.message}`);
       if (estimatedCandidateCount === null) estimatedCandidateCount = count ?? null;
 
-      const rows = (data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][];
+      const rows = (data ?? []) as unknown as ChatGptJobRow[];
       scanned += rows.length;
       candidateOffset += rows.length;
-      const canonicalRows = rows.map(rowToCanonicalOpportunity);
-      for (const row of canonicalRows) {
-        if (!isExcludedForCountry(row.excludedCountries, country)) accepted.push(row);
+      for (const row of rows) {
+        if (!isExcludedForCountry(row.excluded_countries, country)) accepted.push(row);
       }
 
       if (rows.length < batchSize) {
