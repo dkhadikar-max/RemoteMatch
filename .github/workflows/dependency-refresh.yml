@@ -3,6 +3,8 @@ name: Temporary dependency lockfile refresh
 on:
   push:
     branches: [security/nextjs-15-upgrade]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
