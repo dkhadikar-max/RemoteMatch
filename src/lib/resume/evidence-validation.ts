@@ -109,6 +109,7 @@ const METRIC_PATTERNS: RegExp[] = [
   /\b\d+(\.\d+)?%/g,
   /\$\d[\d,]*(\.\d+)?/g,
   /\b\d+(\.\d+)?x\b/gi,
+  /\b\d+(?:\.\d+)?\s*[kmb]\b/gi,
   /\b\d{2,}\+?\s*(users?|customers?|clients?|requests?|servers?|engineers?|employees?|downloads?|installs?|transactions?|ms|milliseconds?|seconds?)\b/gi,
 ];
 const YEAR_UNIT = /\b(years?|yrs?)\b/i;
