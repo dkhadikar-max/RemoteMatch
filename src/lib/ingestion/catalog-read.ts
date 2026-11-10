@@ -202,9 +202,13 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  const pageSize = 1000;
+  // A 1,000-row full-record batch exceeded the production 3s statement timeout.
+  // Anonymous-role EXPLAIN ANALYZE: 500 rows ~1.71s, 250 rows ~80ms, 100 rows ~12ms.
+  // Use 250 to preserve headroom when descriptions and concurrent catalog reads are present.
+  const pageSize = 250;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
+  let pageIndex = 0;
 
   // Cursor pagination seeks from the last unique (source, source_id) pair.
   // Unlike OFFSET, later pages do not rescan or skip all preceding rows.
@@ -213,6 +217,8 @@ export async function getActiveOpportunities(
   const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
 
   while (true) {
+    const pageStartedAt = performance.now();
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
     const { data, error } = await supabase.rpc('get_active_opportunities_keyset_page', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
@@ -221,19 +227,27 @@ export async function getActiveOpportunities(
       p_fresh_to: freshness?.to ?? null,
       p_translation_safe: options?.translationSafe ?? false,
     });
-    if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
+    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    if (error) {
+      console.error('[catalog-read] keyset-page-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read active opportunities: ${error.message}`);
+    }
     if (!Array.isArray(data)) {
       throw new Error('Active opportunities keyset RPC returned an invalid payload');
     }
-    // Low-volume runtime evidence: confirms the production directory reader is
-    // executing the keyset RPC, while exposing counts rather than job identifiers.
     console.info('[catalog-read] keyset-page', JSON.stringify({
+      page: pageIndex,
       rows: data.length,
       pageSize,
-      hasCursor: afterSource !== null,
+      durationMs,
+      cursor,
       translationSafe: options?.translationSafe ?? false,
       freshOnly: options?.freshOnly ?? false,
     }));
+    pageIndex += 1;
     if (data.length === 0) break;
 
     const rows = data as unknown as OpportunityRow[];
