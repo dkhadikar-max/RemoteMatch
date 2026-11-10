@@ -123,6 +123,17 @@ export interface AnalyzeRequest {
    *  rules-only analysis; it only withholds the AI layer. This is the real, load-bearing gate —
    *  the model is never called when this is false, not even to attempt a reservation. */
   aiAllowed: boolean;
+  /** Candidate responses to clarification questions; treated as a separate evidence source. */
+  candidateAnswers?: Array<{ questionId: string; answer: string }>;
+}
+
+
+function buildCandidateAnswerText(answers: AnalyzeRequest['candidateAnswers']): string {
+  return (answers ?? [])
+    .filter((item) => typeof item?.questionId === 'string' && typeof item?.answer === 'string' && item.answer.trim())
+    .slice(0, 8)
+    .map((item) => `Question ${item.questionId}\nAnswer: ${item.answer.trim().slice(0, 1200)}`)
+    .join('\n\n');
 }
 
 export interface AnalyzeResult {
@@ -340,12 +351,15 @@ export async function runModelCall(
   ledger: ReturnType<typeof getResumeIntelligenceLedger>
 ): Promise<{ raw: RawModelResumeAnalysis; model: string } | null> {
   const { redactedText } = redactForModel(req.resumeText, req.fullName);
+  const candidateText = buildCandidateAnswerText(req.candidateAnswers);
+  const redactedCandidateText = candidateText ? redactForModel(candidateText, req.fullName).redactedText : '';
   const prompt = buildRubricPrompt({
     mode: req.mode,
     redactedResumeText: redactedText.slice(0, 12000),
     jobText: req.jobText?.slice(0, 4000),
     sections: det.sections,
     bullets: det.bullets,
+    redactedCandidateText: redactedCandidateText.slice(0, 6000),
   });
 
   const reservation = await ledger.reserve('resume_intelligence', {
@@ -411,6 +425,7 @@ interface ClaimArgs {
   mode: AnalysisMode;
   opportunityId?: string;
   jobContentHash: string;
+  analysisVersion?: string;
 }
 
 interface ClaimOutcome {
@@ -443,7 +458,7 @@ async function callClaim(supabase: SupabaseClient, a: ClaimArgs): Promise<ClaimO
     p_mode: a.mode,
     p_opportunity_id: a.opportunityId ?? null,
     p_job_content_hash: a.jobContentHash,
-    p_analysis_version: RESUME_ANALYSIS_VERSION,
+    p_analysis_version: a.analysisVersion ?? RESUME_ANALYSIS_VERSION,
   });
   if (error) {
     return { id: null, wrote: false, attemptNumber: null, error: { message: error.message, code: (error as { code?: string }).code } };
@@ -595,6 +610,12 @@ export async function analyzeResume(supabase: SupabaseClient, req: AnalyzeReques
   }
 
   const jobContentHash = req.mode === 'target_job' && req.jobText ? await sha256Hex(req.jobText) : '';
+  const candidateText = buildCandidateAnswerText(req.candidateAnswers);
+  // Keep every distinct answer set in its own cache/claim key. A clarification rerun must
+  // never read or overwrite the no-answer analysis (or another candidate-answer set).
+  const analysisVersion = candidateText
+    ? `${RESUME_ANALYSIS_VERSION}-candidate-${(await sha256Hex(candidateText)).slice(0, 16)}`
+    : RESUME_ANALYSIS_VERSION;
 
   // 1. Cache lookup — a confirmed, previously-persisted success only.
   const { data: existing } = await supabase
@@ -604,7 +625,7 @@ export async function analyzeResume(supabase: SupabaseClient, req: AnalyzeReques
     .eq('resume_version_id', req.resumeVersionId)
     .eq('mode', req.mode)
     .eq('job_content_hash', jobContentHash)
-    .eq('analysis_version', RESUME_ANALYSIS_VERSION)
+    .eq('analysis_version', analysisVersion)
     .eq('status', 'success')
     .maybeSingle();
   if (existing?.result) {
@@ -619,7 +640,7 @@ export async function analyzeResume(supabase: SupabaseClient, req: AnalyzeReques
     return { status: analysis.analysisStatus, analysisId: '', persisted: false, analysis, cached: false };
   }
   const rulesOnly = buildRulesOnlyAnalysis(req);
-  const upsertBase = { resumeVersionId: req.resumeVersionId, mode: req.mode, opportunityId: req.opportunityId, jobContentHash };
+  const upsertBase = { resumeVersionId: req.resumeVersionId, mode: req.mode, opportunityId: req.opportunityId, jobContentHash, analysisVersion };
 
   // 3. Claim 'pending' — the real, database-level concurrency guard (Finding C). If another
   // request already holds a live claim for this EXACT key, stop here: no quota reserved, no
@@ -689,6 +710,9 @@ export async function analyzeResume(supabase: SupabaseClient, req: AnalyzeReques
     redactedResumeText: redactForModel(req.resumeText, req.fullName).redactedText,
     redactionSpans: redactForModel(req.resumeText, req.fullName).spans,
     jobText: req.jobText ?? '',
+    candidateText,
+    redactedCandidateText: candidateText ? redactForModel(candidateText, req.fullName).redactedText : '',
+    candidateRedactionSpans: candidateText ? redactForModel(candidateText, req.fullName).spans : [],
     // G2 (decided 2026-10-30): the server's OWN known-correct identifiers, never the model's
     // echoed values — req.opportunityId is what the caller actually requested, and jobContentHash
     // is computed above (step 0) from the server's own req.jobText, before the model ever saw it.
