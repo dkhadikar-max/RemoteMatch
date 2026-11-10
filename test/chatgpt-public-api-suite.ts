@@ -86,7 +86,7 @@ async function main() {
     employment_type: 'Full-time',
     remote_type: 'worldwide',
     eligible_countries: [],
-    excluded_countries: ['IN', 'India'],
+    excluded_countries: ['IN', 'India', 'EU'],
     timezone_requirements: [],
     salary_min: null,
     salary_max: null,
@@ -134,6 +134,12 @@ async function main() {
     const indiaExclusionResult = await indiaExclusionResponse.json() as { opportunities: Array<{ id: string }> };
     assert.equal(indiaExclusionResult.opportunities.some((item) => item.id === `opp-remotive-${exclusionSourceId}`), false,
       'a worldwide job explicitly excluding India must not appear in India results');
+
+    const euExclusionResponse = await get('/api/integrations/chatgpt/jobs?q=Country%20Exclusion%20Test&country=Germany&limit=5');
+    assert.equal(euExclusionResponse.status, 200, 'Germany country-filtered search should succeed');
+    const euExclusionResult = await euExclusionResponse.json() as { opportunities: Array<{ id: string }> };
+    assert.equal(euExclusionResult.opportunities.some((item) => item.id === `opp-remotive-${exclusionSourceId}`), false,
+      'a worldwide job excluding the EU must not appear for an EU member country');
 
     const usExclusionResponse = await get('/api/integrations/chatgpt/jobs?q=Country%20Exclusion%20Test&country=US&limit=5');
     assert.equal(usExclusionResponse.status, 200, 'US country-filtered search should succeed');
