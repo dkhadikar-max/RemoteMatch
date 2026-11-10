@@ -38,6 +38,7 @@ assert(!rewriteIsSupported('Managed a team of 12.', 'Supported a team.', resume,
 assert(rewriteIsSupported('Supported a team during sales campaigns.', 'Supported a team during sales campaigns.', resume, []), 'preserves accurate support-level language');
 assert(!rewriteIsSupported('Managed a team to deliver the project.', 'Led a team to deliver the project.', resume, []), 'does not silently swap one leadership claim for another');
 assert(!rewriteIsSupported('Led a team of 12 to deliver the project.', 'Led a team to deliver the project.', resume, []), 'rejects a new standalone headcount number');
+assert(!rewriteIsSupported('Generated 40k leads.', 'Generated leads.', resume, []), 'rejects an unsupported abbreviated metric');
 assert(rewriteIsSupported('Led a team of 6 to deliver the project.', 'Led a team to deliver the project.', resume + '\nLed a team of 6.', []), 'allows a number that is present in the resume evidence');
 
 console.log(`\nAuthenticity suite: ${passed} passed, ${failed} failed`);
