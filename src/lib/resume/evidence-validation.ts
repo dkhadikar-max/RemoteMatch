@@ -195,7 +195,7 @@ function hasUnsupportedOwnershipClaim(proposed: string, original: string, candid
     if (originalVerbs.has(verb)) return false;
     if (!candidateVerbs.has(verb)) return true;
     // A negated clarification is not affirmative evidence of ownership.
-    const negatedBefore = new RegExp('\\b(?:not|never|didn\\'t|don\\'t|cannot|can\\'t|wasn\\'t|weren\\'t)\\b.{0,40}\\b' + verb + '\\b', 'i');
+    const negatedBefore = new RegExp('\\b(?:not|never|didn.t|don.t|cannot|can.t|wasn.t|weren.t)\\b.{0,40}\\b' + verb + '\\b', 'i');
     const negatedAfter = new RegExp('\\b' + verb + '\\b.{0,25}\\b(?:not|never)\\b', 'i');
     return negatedBefore.test(candidateText) || negatedAfter.test(candidateText);
   });
