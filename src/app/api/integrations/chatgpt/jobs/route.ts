@@ -199,11 +199,11 @@ export async function GET(request: NextRequest) {
       .order('source_id', { ascending: true });
 
     const accepted: CanonicalOpportunity[] = [];
-    let candidateOffset = 0;
+    let candidateOffset = country ? 0 : offsetRaw;
     let scanned = 0;
     let estimatedCandidateCount: number | null = null;
     let exhausted = false;
-    const requiredAccepted = offsetRaw + limitRaw + 1;
+    const requiredAccepted = country ? offsetRaw + limitRaw + 1 : limitRaw + 1;
     const scanBudget = country ? MAX_COUNTRY_CANDIDATES_SCANNED : requiredAccepted;
 
     while (accepted.length < requiredAccepted && scanned < scanBudget) {
@@ -235,11 +235,14 @@ export async function GET(request: NextRequest) {
     }
 
     const hasMore = accepted.length > offsetRaw + limitRaw;
-    const opportunities = accepted.slice(offsetRaw, offsetRaw + limitRaw).map(publicJob);
+    const opportunities = (country
+      ? accepted.slice(offsetRaw, offsetRaw + limitRaw)
+      : accepted.slice(0, limitRaw)).map(publicJob);
 
     // The planner count is an estimate of eligible candidates before exclusions.
-    // Never report less than the filtered page boundary; hasMore is exact from look-ahead.
-    const total = Math.max(estimatedCandidateCount ?? 0, offsetRaw + opportunities.length + (hasMore ? 1 : 0));
+    // Never report less than the page boundary; hasMore is exact from look-ahead.
+    const total = Math.max(estimatedCandidateCount ?? 0,
+      offsetRaw + opportunities.length + (hasMore ? 1 : 0));
     return NextResponse.json({
       success: true,
       total,
