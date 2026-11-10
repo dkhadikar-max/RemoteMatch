@@ -22,8 +22,10 @@ export const CHUNK_PATH_PREFIX = '/sitemaps';
 
 export const SITEMAP_RESPONSE_HEADERS = {
   'Content-Type': 'application/xml; charset=utf-8',
-  // What Next's built-in sitemap route sent before: always revalidate (the data is cached in-process, see sitemap-data.ts).
-  'Cache-Control': 'public, max-age=0, must-revalidate',
+  // Browsers revalidate, while shared edge caches keep the expensive catalogue
+  // snapshot for 30 minutes and may serve it stale for one hour during refresh.
+  // This prevents crawler bursts from triggering repeated full-catalogue reads.
+  'Cache-Control': 'public, max-age=0, s-maxage=1800, stale-while-revalidate=3600',
 } as const;
 
 export interface SplitOptions {
