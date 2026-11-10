@@ -24,11 +24,11 @@ async function main() {
     const calls: Args[] = [];
     const client = fakeClient(async (args) => {
       calls.push(args);
-      if (args.p_page_size === 3000) return { data: null, error: { code: '57014', message: 'statement timeout' } };
+      if (args.p_page_size === 1000) return { data: null, error: { code: '57014', message: 'statement timeout' } };
       return { data: [row], error: null };
     });
     const entries = await getSitemapJobEntries(client);
-    assert.deepEqual(calls.map((c) => c.p_page_size), [3000, 1500]);
+    assert.deepEqual(calls.map((c) => c.p_page_size), [1000, 500]);
     assert.deepEqual(entries, [{
       sourceId: row.source_id,
       title: row.title,
@@ -39,21 +39,21 @@ async function main() {
 
   {
     const calls: Args[] = [];
-    const firstPage: Row[] = Array.from({ length: 3000 }, (_, index) => ({
+    const firstPage: Row[] = Array.from({ length: 1000 }, (_, index) => ({
       ...row,
       source_id: `greenhouse-test-${String(index).padStart(4, '0')}`,
     }));
     const client = fakeClient(async (args) => {
       calls.push(args);
       if (args.p_after_source === null) return { data: firstPage, error: null };
-      if (args.p_page_size === 3000) return { data: null, error: { code: '57014', message: 'statement timeout' } };
+      if (args.p_page_size === 1000) return { data: null, error: { code: '57014', message: 'statement timeout' } };
       return { data: [row], error: null };
     });
     const entries = await getSitemapJobEntries(client);
     assert.equal(entries.length, 3001);
-    assert.deepEqual(calls.map((c) => c.p_page_size), [3000, 3000, 1500]);
+    assert.deepEqual(calls.map((c) => c.p_page_size), [1000, 1000, 500]);
     assert.equal(calls[1].p_after_source, 'greenhouse');
-    assert.equal(calls[1].p_after_source_id, 'greenhouse-test-2999');
+    assert.equal(calls[1].p_after_source_id, 'greenhouse-test-0999');
     assert.equal(calls[2].p_after_source, calls[1].p_after_source,
       'retry must retain the source cursor of the failed page');
     assert.equal(calls[2].p_after_source_id, calls[1].p_after_source_id,
@@ -68,7 +68,7 @@ async function main() {
       return { data: [row], error: null };
     });
     await getSitemapJobEntries(client);
-    assert.deepEqual(calls.map((c) => c.p_page_size), [3000, 1500, 750, 375, 187, 93, 46, 25]);
+    assert.deepEqual(calls.map((c) => c.p_page_size), [1000, 500, 250, 125, 62, 31, 25]);
   }
 
   {
@@ -81,7 +81,7 @@ async function main() {
     assert.equal(calls, 1, 'non-timeout errors must not be retried');
   }
 
-  console.log('Sitemap reader adaptive timeout retry suite passed: 3,000->1,500 fallback, bounded reduction to 25, second-page cursor preservation, and non-timeout fail-fast.');
+  console.log('Sitemap reader adaptive timeout retry suite passed: 1,000->500 fallback, bounded reduction to 25, second-page cursor preservation, and non-timeout fail-fast.');
 }
 
 main().catch((error) => {
