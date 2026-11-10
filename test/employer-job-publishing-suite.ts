@@ -37,7 +37,7 @@ check(/CREATE OR REPLACE FUNCTION public\.review_employer_job_submission/.test(m
 check(/v_company\.verification_status <> 'verified'/.test(migration), 'publication requires a verified company');
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
-check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');
+check(/getAuthenticatedEmployer\(req, (?:params\.id|id)\)/.test(createRoute) && /const \{ id \} = await params/.test(createRoute), 'draft creation and listing require company membership');
 check(!/required\('applicationUrl'/.test(createRoute) && !/applicationUrl/.test(createRoute), 'external application URL is not part of the employer job form or API contract');
 check(/company\.verification_status !== 'verified'/.test(jobRoute), 'employers cannot submit drafts before company verification');
 check(/eq\('status', 'draft'\)/.test(jobRoute), 'only drafts can be edited or submitted');
