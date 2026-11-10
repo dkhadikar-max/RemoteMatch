@@ -151,7 +151,7 @@ const COMMON_SENTENCE_WORDS = new Set([
 
 /** True iff `proposed` introduces no number, organisation name, or tool/skill name that isn't
  *  already traceable to `original`, the wider resume text, or the candidate's declared skills. */
-const LEADERSHIP_OWNERSHIP_VERB = /\\b(?:led|managed|supervised|directed|headed|spearheaded|owned|oversaw|mentored|coached)\\b/i;
+const LEADERSHIP_OWNERSHIP_VERB = /\b(?:led|managed|supervised|directed|headed|spearheaded|owned|oversaw|mentored|coached)\b/i;
 
 export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[]): boolean {
   // A rewrite must not upgrade collaboration/support into leadership or ownership.
