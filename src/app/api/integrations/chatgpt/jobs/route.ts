@@ -234,7 +234,9 @@ export async function GET(request: NextRequest) {
       }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
     }
 
-    const hasMore = accepted.length > offsetRaw + limitRaw;
+    const hasMore = country
+      ? accepted.length > offsetRaw + limitRaw
+      : accepted.length > limitRaw;
     const opportunities = (country
       ? accepted.slice(offsetRaw, offsetRaw + limitRaw)
       : accepted.slice(0, limitRaw)).map(publicJob);
