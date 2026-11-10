@@ -123,6 +123,12 @@ export async function respondSitemapRoot(load: () => Promise<readonly SitemapUrl
 
 /** The HTTP response for `/sitemaps/{param}`: 404 (plain text) whenever there is no such chunk. */
 export async function respondSitemapChunk(load: () => Promise<readonly SitemapUrlEntry[]>, param: unknown, opts: SplitOptions = {}): Promise<Response> {
+  // Reject malformed child paths before touching the catalog. Crawlers and
+  // scanners request paths such as /.env; these must be cheap 404s, not
+  // full sitemap refreshes that can hit the database statement timeout.
+  if (parseChunkParam(param) === null) {
+    return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
   const xml = renderSitemapChunk(await load(), param, opts);
   if (xml === null) return new Response('Not Found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   return new Response(xml, { headers: SITEMAP_RESPONSE_HEADERS });
