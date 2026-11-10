@@ -188,7 +188,14 @@ function collectOwnershipVerbs(text: string): string[] {
   return verbs;
 }
 
-function hasUnsupportedOwnershipClaim(proposed: string, original: string): boolean {
+function hasUnsupportedOwnershipClaim(proposed: string, original: string, candidateText = ''): boolean {
+  const originalVerbs = new Set(collectOwnershipVerbs(original));
+  const candidateVerbs = new Set(collectOwnershipVerbs(candidateText));
+  return collectOwnershipVerbs(proposed).some((verb) => {
+    if (originalVerbs.has(verb)) return false;
+    if (!candidateVerbs.has(verb)) return true;
+    // A negated clarification is not affirmative evidence of ownership.
+    const escaped = verb.replace(/[.*+?^${}()|[\]\\]/g, '\\function hasUnsupportedOwnershipClaim(proposed: string, original: string): boolean {
   const originalVerbs = new Set(collectOwnershipVerbs(original));
   return collectOwnershipVerbs(proposed).some((verb) => !originalVerbs.has(verb));
 }
@@ -196,7 +203,17 @@ function hasUnsupportedOwnershipClaim(proposed: string, original: string): boole
 export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[], candidateText = ''): boolean {
   // Do not upgrade collaboration/support into leadership or ownership. The exact
   // ownership verb must already appear in this original bullet.
-  if (hasUnsupportedOwnershipClaim(proposed, `${original}\n${candidateText}`)) return false;
+  if (hasUnsupportedOwnershipClaim(proposed, `${original}\n${candidateText}`)) return false;');
+    const negatedBefore = new RegExp(`\\b(?:not|never|didn't|don't|cannot|can't|wasn't|weren't)\\b.{0,40}\\b${escaped}\\b`, 'i');
+    const negatedAfter = new RegExp(`\\b${escaped}\\b.{0,25}\\b(?:not|never)\\b`, 'i');
+    return negatedBefore.test(candidateText) || negatedAfter.test(candidateText);
+  });
+}
+
+export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[], candidateText = ''): boolean {
+  // Do not upgrade collaboration/support into leadership or ownership unless the original
+  // bullet or an affirmative candidate clarification supports the exact ownership verb.
+  if (hasUnsupportedOwnershipClaim(proposed, original, candidateText)) return false;
   const context = `${original}\n${resumeText}\n${candidateText}`;
   // Catch unsupported standalone numbers too (e.g. "managed 12 people"), not
   // only numbers followed by a unit or percentage.
