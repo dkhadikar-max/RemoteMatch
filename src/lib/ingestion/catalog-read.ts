@@ -202,11 +202,11 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  // Full-record batches are sensitive to description size. Production anonymous-role
-  // probes: 1,000 rows timed out; 500 rows took ~1.71s; a later 250-row cursor timed
-  // out; the same cursor completed in ~0.53s at 100 rows. Start at 100 and fall back
-  // to 50/25 on SQLSTATE 57014 so one unusually large page cannot fail the feed.
-  const initialPageSize = 100;
+  // The fresh + translation-safe feed path has a key-first database plan:
+  // it selects bounded keys from the partial covering index before fetching wide rows.
+  // Other catalog callers retain 100-row batches. If a page still hits the 3s
+  // statement timeout, halve it progressively down to 25 rows.
+  const initialPageSize = options?.freshOnly && options?.translationSafe ? 1000 : 100;
   let pageSize = initialPageSize;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
@@ -230,7 +230,7 @@ export async function getActiveOpportunities(
       p_translation_safe: options?.translationSafe ?? false,
     });
     let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
-    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 5; retry++) {
       const failedPageSize = pageSize;
       pageSize = Math.max(25, Math.floor(pageSize / 2));
       console.warn('[catalog-read] keyset-page-retry', JSON.stringify({
