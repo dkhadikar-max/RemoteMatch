@@ -311,23 +311,36 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
   const entries: SitemapJobEntry[] = [];
   // JSONB RPC batches bypass PostgREST's setof max_rows cap while keeping
   // each response bounded. The covering partial index makes this a narrow
-  // index-only seek. Use 3,000-row batches: production probes returned 3,000
-  // rows in ~1s under concurrent load, leaving headroom below Supabase's 3s
-  // statement timeout while cutting cold-cache RPC round trips by 62.5%.
+  // index-only seek. Production 3,000-row probes completed below the 3s
+  // statement timeout; retain the bounded size and record each cursor.
   const pageSize = 3000;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
+  let pageIndex = 0;
 
   while (true) {
+    const pageStartedAt = performance.now();
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
     const { data, error } = await supabase.rpc('get_remote_job_sitemap_page_json', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
     });
-    if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    if (error) {
+      console.error('[sitemap] batch-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    }
     if (!Array.isArray(data)) {
       throw new Error('Sitemap batch RPC returned an invalid payload');
     }
+    console.info('[sitemap] batch', JSON.stringify({
+      page: pageIndex, pageSize, rows: data.length, durationMs, cursor,
+    }));
+    pageIndex += 1;
     if (data.length === 0) break;
 
     const rows = data as Array<{
