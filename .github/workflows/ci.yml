@@ -113,6 +113,11 @@ jobs:
   # shape validation is enforced on every PR. The live tier uses `next dev`
   # only because it needs an isolated test server with CI credentials.
   employer-live-integration:
+    # All PRs share one isolated Supabase project. Serialize this live tier globally
+    # so concurrent search/catalog probes do not contend on the same 3s DB timeout.
+    concurrency:
+      group: remotematch-shared-supabase-live-integration
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # Job-level `if:` cannot reference the secrets context at all -- GitHub
     # Actions rejects the ENTIRE workflow file at parse time if it does
