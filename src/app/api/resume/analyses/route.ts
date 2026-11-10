@@ -47,7 +47,7 @@ function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'g
       if (typeof answer.question !== 'string' || answer.question.length > 400) return false;
       if (typeof answer.answer !== 'string' || answer.answer.length > 1200) return false;
       total += answer.question.length + answer.answer.length;
-      if (total > 6000) return false;
+      if (total > 4000) return false;
     }
   }
   return true;
