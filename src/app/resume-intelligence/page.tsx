@@ -297,7 +297,7 @@ function ResumeIntelligenceInner() {
 
   useEffect(() => { loadResume(); }, [loadResume]);
 
-  const runAnalysis = useCallback(async (forVersionId: string, forMode: AnalysisMode, answers: Record<string, string> = {}) => {
+  const runAnalysis = useCallback(async (forVersionId: string, forMode: AnalysisMode, answers: Record<string, string> = {}, questions: ResumeAnalysis['questionsForCandidate'] = []) => {
     setState({ phase: 'analyzing', versionId: forVersionId });
     try {
       const res = await fetch('/api/resume/analyses', {
@@ -308,8 +308,12 @@ function ResumeIntelligenceInner() {
           mode: forMode,
           ...(forMode === 'target_job' && opportunityId ? { opportunityId } : {}),
           candidateAnswers: Object.entries(answers)
-            .map(([questionId, answer]) => ({ questionId, answer: answer.trim() }))
-            .filter((item) => item.answer.length > 0),
+            .map(([questionId, answer]) => ({
+              questionId,
+              question: questions.find((item) => item.id === questionId)?.question ?? '',
+              answer: answer.trim(),
+            }))
+            .filter((item) => item.answer.length > 0 && item.question.length > 0),
         }),
       });
       if (res.status === 503) {
@@ -615,7 +619,7 @@ function ResumeIntelligenceInner() {
               ))}
               {Object.values(candidateAnswers).some((answer) => answer.trim().length > 0) && (
                 <button
-                  onClick={() => runAnalysis(state.versionId, mode, candidateAnswers)}
+                  onClick={() => runAnalysis(state.versionId, mode, candidateAnswers, state.analysis.questionsForCandidate)}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 min-h-[40px]"
                 >
                   Use answers & rerun analysis
