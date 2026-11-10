@@ -165,7 +165,7 @@ export function rewriteIsSupported(proposed: string, original: string, resumeTex
   // Do not upgrade collaboration/support into leadership or ownership. The exact
   // ownership verb must already appear in this original bullet.
   if (hasUnsupportedOwnershipClaim(proposed, original)) return false;
-  const context = \`\${original}\\n\${resumeText}\`;
+  const context = `${original}\n${resumeText}`;
   // Catch unsupported standalone numbers too (e.g. "managed 12 people"), not
   // only numbers followed by a unit or percentage.
   const contextNumbers = new Set(context.match(/\b\d+(?:[.,]\d+)?\b/g) ?? []);
