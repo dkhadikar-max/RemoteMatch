@@ -60,6 +60,7 @@ function pgArray(values: string[]): string {
 
 function countryVariants(country: string): string[] {
   const variants = COUNTRY_ALIASES[country] ?? [country];
+  if (EU_EEA_COUNTRIES.has(country)) variants.push('EU', 'EEA', 'EU/EEA');
   return Array.from(new Set(variants.flatMap((value) => [
     value.toLowerCase(),
     value.toUpperCase(),
