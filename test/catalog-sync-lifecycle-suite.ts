@@ -34,7 +34,7 @@ delete process.env.CATALOG_SYNC_MODE;
 import fs from 'fs';
 import path from 'path';
 import { syncOpportunitiesToCatalog, resolveSyncMode, ProviderFetchResult } from '../src/lib/ingestion/catalog-sync';
-import { planCatalogSyncReadOnly, buildCatalogPlan, insertRowsIgnoringDuplicates, readApprovedEmployers, RunContext, RollbackEntry } from '../src/lib/ingestion/catalog-sync-apply';
+import { planCatalogSyncReadOnly, buildCatalogPlan, insertRowsIgnoringDuplicates, readApprovedEmployers, bulkUpdateByIds, RunContext, RollbackEntry } from '../src/lib/ingestion/catalog-sync-apply';
 import { getApprovedEmployers } from '../src/lib/ingestion/employer-registry';
 import {
   CONTENT_FIELD_NAMES,
@@ -501,6 +501,51 @@ async function section2Failures() {
   assert(/requires the fetch result to carry fetchStartedAt/.test(bkErr), 'forcing bookkeeping evidence without a fetch start time is a loud programming error, never a silent downgrade');
 }
 // ===========================================================================
+async function section2bTouchTimeoutRetries() {
+  console.log('\\n2b. WRITE RETRY — timed-out touch batches are bisected without parallelism');
+  const attempted: number[] = [];
+  const fakeUpdateAdmin = {
+    from: () => ({
+      update: () => ({
+        in: (_column: string, ids: string[]) => ({
+          select: () => ({
+            then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => {
+              attempted.push(ids.length);
+              const result = ids.length > 6
+                ? { data: null, error: { message: 'canceling statement due to statement timeout', code: '57014' } }
+                : { data: ids.map((id) => ({ id })), error: null };
+              return Promise.resolve(result).then(resolve, reject);
+            },
+          }),
+        }),
+      }),
+    }),
+  } as any;
+  const ctx = new RunContext();
+  const ids = Array.from({ length: 25 }, (_, i) => `touch-${i}`);
+  const written = await bulkUpdateByIds(fakeUpdateAdmin, ctx, 'touch', ids, { last_seen_in_feed_at: iso(0), consecutive_absences: 0 });
+  assert(written === 25, `a timed-out 25-id batch recovers all rows through smaller idempotent updates (written=${written})`);
+  assert(attempted.length === 9 && attempted[0] === 25 && attempted.slice(1).every((n) => n <= 13), `retry work is bounded and sequential (requests=${attempted.length}, batches=${attempted.join(',')})`);
+  assert(ctx.requests === attempted.length && ctx.writeFailures === 0 && ctx.errors.length === 0, 'recovered timeout is not reported as a write failure');
+
+  const persistentAdmin = {
+    from: () => ({
+      update: () => ({
+        in: (_column: string, batch: string[]) => ({
+          select: () => ({
+            then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+              Promise.resolve({ data: null, error: { message: 'canceling statement due to statement timeout', code: '57014' } }).then(resolve, reject),
+          }),
+        }),
+      }),
+    }),
+  } as any;
+  const persistent = new RunContext();
+  const failedWrites = await bulkUpdateByIds(persistentAdmin, persistent, 'touch', ['a', 'b', 'c'], { last_seen_in_feed_at: iso(0) });
+  assert(failedWrites === 0 && persistent.writeFailures === 3 && persistent.errors.some((e) => e.op === 'touch' && e.count === 3 && e.code === '57014'),
+    'persistent timeout is reported against the exact terminal rows, not swallowed');
+}
+
 const SRC_C = 'curated';
 const SRC_R = 'remotive';
 
@@ -912,6 +957,7 @@ async function main() {
   await section0Static();
   await section1Planner();
   await section2Failures();
+  await section2bTouchTimeoutRetries();
   await section3RealInfra();
   console.log('\n' + '='.repeat(78));
   console.log(`${passed} passed, ${failed} failed`);
