@@ -610,7 +610,42 @@ export async function insertRowsIgnoringDuplicates(
   return out;
 }
 
-async function bulkUpdateByIds(
+/**
+ * Apply an idempotent update batch. PostgREST/Postgres can cancel a 25-row
+ * touch UPDATE under transient write pressure (SQLSTATE 57014). Retry only
+ * that failure by bisecting the batch, keeping concurrency at one and
+ * bounding retries to three split levels (at most 15 requests for 25 ids).
+ * A timeout aborts the SQL statement atomically, so retrying the same patch
+ * against smaller id sets cannot double-apply a partial update.
+ */
+async function updateBatchWithTimeoutFallback(
+  admin: Admin,
+  ctx: RunContext,
+  op: string,
+  batch: readonly string[],
+  patch: Record<string, unknown>,
+  splitDepth = 0
+): Promise<number> {
+  ctx.requests++;
+  const res = await admin.from('opportunities').update(patch).in('id', [...batch]).select('id');
+  if (res.error) {
+    const isStatementTimeout = res.error.code === '57014' || /statement timeout/i.test(res.error.message ?? '');
+    if (isStatementTimeout && batch.length > 1 && splitDepth < 3) {
+      const midpoint = Math.ceil(batch.length / 2);
+      const left = await updateBatchWithTimeoutFallback(admin, ctx, op, batch.slice(0, midpoint), patch, splitDepth + 1);
+      const right = await updateBatchWithTimeoutFallback(admin, ctx, op, batch.slice(midpoint), patch, splitDepth + 1);
+      return left + right;
+    }
+    ctx.recordError(op, res.error, batch.length);
+    return 0;
+  }
+
+  const n = (res.data ?? []).length;
+  if (n !== batch.length) ctx.recordError(`${op}:rowcount`, `expected ${batch.length} rows, database changed ${n}`, batch.length - n);
+  return n;
+}
+
+export async function bulkUpdateByIds(
   admin: Admin,
   ctx: RunContext,
   op: string,
@@ -619,15 +654,7 @@ async function bulkUpdateByIds(
 ): Promise<number> {
   let written = 0;
   await runPool(chunk(ids, UPDATE_ID_CHUNK), 1, async (batch) => {
-    ctx.requests++;
-    const res = await admin.from('opportunities').update(patch).in('id', batch).select('id');
-    if (res.error) {
-      ctx.recordError(op, res.error, batch.length);
-      return;
-    }
-    const n = (res.data ?? []).length;
-    written += n;
-    if (n !== batch.length) ctx.recordError(`${op}:rowcount`, `expected ${batch.length} rows, database changed ${n}`, batch.length - n);
+    written += await updateBatchWithTimeoutFallback(admin, ctx, op, batch, patch);
   });
   return written;
 }
