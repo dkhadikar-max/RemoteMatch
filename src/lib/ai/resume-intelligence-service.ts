@@ -68,6 +68,7 @@ import { getResumeIntelligenceProvider, getResumeIntelligenceLedger } from './pr
 import type { ModelCallFailureKind } from './providers/types';
 import { recordAiCallEvent, type AiCallOutcome } from '@/lib/observability/ai-events';
 import { runDeterministicAnalysis } from '@/lib/resume/rubric';
+import { buildAuthenticityReview } from '@/lib/resume/authenticity';
 import { redactForModel } from '@/lib/resume/redaction';
 import { validateModelOutput, type ValidationContext } from '@/lib/resume/evidence-validation';
 import { buildRubricPrompt, RESUME_SYSTEM_PROMPT } from '@/lib/resume/prompt';
@@ -187,6 +188,7 @@ function emptyAnalysis(mode: AnalysisMode, status: AnalysisStatus, limitations: 
  *  is layered on top of (never replaces). */
 function buildRulesOnlyAnalysis(req: AnalyzeRequest, status: AnalysisStatus = 'success'): ResumeAnalysis {
   const det = runDeterministicAnalysis(req.resumeText, req.declaredSkills);
+  const authenticityReview = buildAuthenticityReview(req.resumeText, det.bullets);
   if (det.charCount === 0) {
     return emptyAnalysis(req.mode, 'insufficient_input', [{ code: 'empty_input', message: 'No resume text was provided.' }]);
   }
@@ -239,6 +241,8 @@ function buildRulesOnlyAnalysis(req: AnalyzeRequest, status: AnalysisStatus = 's
       evidence: [],
     },
     sectionReviews,
+    improvements: authenticityReview.findings,
+    questionsForCandidate: authenticityReview.questions,
     skillsEvidence: { demonstrated, weaklySupported, notEvidenced },
     formattingIssues,
     limitations,
@@ -255,7 +259,10 @@ function mergeRulesAndAi(rulesOnly: ResumeAnalysis, aiBody: Awaited<ReturnType<t
     overallSummary: aiBody.overallSummary.text ? aiBody.overallSummary : rulesOnly.overallSummary,
     sectionReviews: aiBody.sectionReviews.length > 0 ? aiBody.sectionReviews : rulesOnly.sectionReviews,
     strengths: aiBody.strengths,
-    improvements: aiBody.improvements,
+    // Keep deterministic authenticity findings; AI must add value, not replace them.
+    improvements: [...rulesOnly.improvements, ...aiBody.improvements]
+      .filter((item, index, all) => all.findIndex((other) => other.text.trim().toLowerCase() === item.text.trim().toLowerCase()) === index)
+      .slice(0, 12),
     bulletRewrites: aiBody.bulletRewrites,
     skillsEvidence: {
       demonstrated: aiBody.skillsEvidence.demonstrated.length > 0 ? aiBody.skillsEvidence.demonstrated : rulesOnly.skillsEvidence.demonstrated,
@@ -266,7 +273,9 @@ function mergeRulesAndAi(rulesOnly: ResumeAnalysis, aiBody: Awaited<ReturnType<t
     targetJobFit: aiBody.targetJobFit,
     keywordAlignment: aiBody.keywordAlignment,
     actionPlan: aiBody.actionPlan,
-    questionsForCandidate: aiBody.questionsForCandidate,
+    questionsForCandidate: [...rulesOnly.questionsForCandidate, ...aiBody.questionsForCandidate]
+      .filter((item, index, all) => all.findIndex((other) => other.question.trim().toLowerCase() === item.question.trim().toLowerCase()) === index)
+      .slice(0, 5),
     limitations: [...rulesOnly.limitations, ...aiBody.limitations],
   };
 }
