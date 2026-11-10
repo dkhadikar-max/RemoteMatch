@@ -128,6 +128,11 @@ async function main() {
     'directory and search reject crawler pages above 100 before querying Postgres');
   assert(/const pageSize = 1000;/.test(sitemapReaderSource),
     'sitemap reads use 1,000-row batches to stay below the anon 3s statement timeout');
+  assert(
+    catalogReaderSource.includes('const initialPageSize = options?.freshOnly && options?.translationSafe ? 1000 : 100;') &&
+    catalogReaderSource.includes('retry < 5'),
+    'fresh translation-safe feed uses 1,000-row key-first pages with progressive timeout fallback'
+  );
   const db = new PGlite();
 
   try {
