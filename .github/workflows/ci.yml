@@ -114,6 +114,10 @@ jobs:
   # shape validation is enforced on every PR. The live tier uses `next dev`
   # only because it needs an isolated test server with CI credentials.
   employer-live-integration:
+    # All PRs share one isolated Supabase project; serialize live probes globally.
+    concurrency:
+      group: remotematch-shared-supabase-live-integration
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # Job-level `if:` cannot reference the secrets context at all -- GitHub
     # Actions rejects the ENTIRE workflow file at parse time if it does
@@ -171,6 +175,10 @@ jobs:
 
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts
+
+      - name: Surface ChatGPT integration server errors
+        if: failure()
+        run: grep -E '\\[chatgpt-jobs\\]|PostgrestError|database search failed' /tmp/ci-dev-server.log | tail -n 80 || true
 
       - name: Live directory egress + HTTP integration
         run: npx tsx test/directory-egress-suite.ts
