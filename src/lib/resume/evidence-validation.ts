@@ -21,6 +21,11 @@ export interface ValidationContext {
   redactionSpans: RedactionSpan[];
   /** The job's title + description text, when mode === 'target_job'. */
   jobText: string;
+  /** Original candidate-provided clarification answers; evidence offsets point into this text. */
+  candidateText?: string;
+  /** Redacted candidate answers shown to the model, with offsets mapped back to candidateText. */
+  redactedCandidateText?: string;
+  candidateRedactionSpans?: RedactionSpan[];
   /** G2 (decided 2026-10-30): the server's OWN, already-known-correct opportunity id and
    *  job-content hash — never the model's. Set by the caller from its own request/context
    *  (never from anything the model returned) whenever mode === 'target_job'; left undefined in
@@ -74,6 +79,28 @@ function resolveQuoteInJob(quote: string, jobText: string): EvidenceRef | null {
   const realIdx = findRealOffset(jobText, quote, idx);
   if (realIdx === null) return null;
   return { doc: 'job', quote, start: realIdx, end: realIdx + quote.length };
+}
+
+/** Candidate answers are a separate evidence document, never mislabeled as resume text. */
+function resolveQuoteInCandidate(quote: string, ctx: ValidationContext): EvidenceRef | null {
+  const original = ctx.candidateText ?? '';
+  const redacted = ctx.redactedCandidateText ?? '';
+  if (!quote || quote.length > 300 || !redacted || containsPlaceholder(quote)) return null;
+  const needle = normalizeForSearch(quote);
+  const haystack = normalizeForSearch(redacted);
+  const idx = haystack.indexOf(needle);
+  if (idx === -1) return null;
+  const realIdx = findRealOffset(redacted, quote, idx);
+  if (realIdx === null) return null;
+  const start = mapRedactedOffsetToOriginal(ctx.candidateRedactionSpans ?? [], realIdx);
+  const finish = mapRedactedOffsetToOriginal(ctx.candidateRedactionSpans ?? [], realIdx + quote.length);
+  return { doc: 'candidate', quote, start, end: finish };
+}
+
+function resolveEvidence(evidence: EvidenceRef, ctx: ValidationContext): EvidenceRef | null {
+  if (evidence.doc === 'job') return resolveQuoteInJob(evidence.quote, ctx.jobText);
+  if (evidence.doc === 'candidate') return resolveQuoteInCandidate(evidence.quote, ctx);
+  return resolveQuoteInResume(evidence.quote, ctx);
 }
 
 /** A best-effort walk to find the real (case/space-preserving) offset near a normalized-index
@@ -167,11 +194,11 @@ function hasUnsupportedOwnershipClaim(proposed: string, original: string): boole
   return collectOwnershipVerbs(proposed).some((verb) => !originalVerbs.has(verb));
 }
 
-export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[]): boolean {
+export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[], candidateText = ''): boolean {
   // Do not upgrade collaboration/support into leadership or ownership. The exact
   // ownership verb must already appear in this original bullet.
-  if (hasUnsupportedOwnershipClaim(proposed, original)) return false;
-  const context = `${original}\n${resumeText}`;
+  if (hasUnsupportedOwnershipClaim(proposed, `${original}\n${candidateText}`)) return false;
+  const context = `${original}\n${resumeText}\n${candidateText}`;
   // Catch unsupported standalone numbers too (e.g. "managed 12 people"), not
   // only numbers followed by a unit or percentage.
   const contextNumbers = new Set(context.match(/\b\d+(?:[.,]\d+)?\b/g) ?? []);
@@ -227,7 +254,7 @@ function validateFinding(f: Finding, ctx: ValidationContext, report: ValidationR
   if (leaksHiringScore(f.text)) { dropCounter(report, `${dropKey}_score_leak`); return null; }
   const resolvedEvidence: EvidenceRef[] = [];
   for (const e of f.evidence ?? []) {
-    const resolved = e.doc === 'job' ? resolveQuoteInJob(e.quote, ctx.jobText) : resolveQuoteInResume(e.quote, ctx);
+    const resolved = resolveEvidence(e, ctx);
     if (resolved) resolvedEvidence.push({ ...resolved, sectionId: e.sectionId, bulletId: e.bulletId });
   }
   // A material finding with NO evidence it submitted (vs a rules-sourced one, which is exempt —
@@ -254,7 +281,7 @@ export function validateModelOutput(
   const report: ValidationReport = { droppedCounts: {}, limitations: [] };
 
   const resumeTypeEvidence = (raw.resumeType?.evidence ?? [])
-    .map((e) => resolveQuoteInResume(e.quote, ctx))
+    .map((e) => resolveEvidence(e, ctx))
     .filter((e): e is EvidenceRef => e !== null);
 
   const overallSummaryEvidence = (raw.overallSummary?.evidence ?? [])
@@ -288,7 +315,7 @@ export function validateModelOutput(
     .map((r) => {
       if (!r.proposed || !r.original) { dropCounter(report, 'rewrite_missing_text'); return null; }
       if (assertsAbsenceOfAbility(r.proposed) || leaksHiringScore(r.proposed)) { dropCounter(report, 'rewrite_wording'); return null; }
-      if (!rewriteIsSupported(r.proposed, r.original, ctx.resumeText, declaredSkills)) {
+      if (!rewriteIsSupported(r.proposed, r.original, ctx.resumeText, declaredSkills, ctx.candidateText ?? '')) {
         dropCounter(report, 'rewrite_unsupported_fact');
         return null;
       }
@@ -334,10 +361,10 @@ export function validateModelOutput(
       jobContentHash: ctx.jobContentHash ?? '',
       requirements,
       prioritize: (raw.targetJobFit.prioritize ?? []).map((f) => validateFinding(f, ctx, report, 'prioritize')).filter((f): f is Finding => f !== null),
-      summaryEdit: raw.targetJobFit.summaryEdit && rewriteIsSupported(raw.targetJobFit.summaryEdit.proposed, raw.targetJobFit.summaryEdit.original, ctx.resumeText, declaredSkills)
+      summaryEdit: raw.targetJobFit.summaryEdit && rewriteIsSupported(raw.targetJobFit.summaryEdit.proposed, raw.targetJobFit.summaryEdit.original, ctx.resumeText, declaredSkills, ctx.candidateText ?? '')
         ? { ...raw.targetJobFit.summaryEdit, evidence: (raw.targetJobFit.summaryEdit.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null) }
         : undefined,
-      skillsEdit: raw.targetJobFit.skillsEdit && rewriteIsSupported(raw.targetJobFit.skillsEdit.proposed, raw.targetJobFit.skillsEdit.original, ctx.resumeText, declaredSkills)
+      skillsEdit: raw.targetJobFit.skillsEdit && rewriteIsSupported(raw.targetJobFit.skillsEdit.proposed, raw.targetJobFit.skillsEdit.original, ctx.resumeText, declaredSkills, ctx.candidateText ?? '')
         ? { ...raw.targetJobFit.skillsEdit, evidence: (raw.targetJobFit.skillsEdit.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null) }
         : undefined,
       // V8: dangling refs removed.
