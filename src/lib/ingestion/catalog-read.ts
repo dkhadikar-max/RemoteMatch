@@ -590,6 +590,11 @@ export async function searchActiveOpportunitiesPage(
   let query = supabase
     .from('opportunities')
     .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
+    // Match the partial-index predicate used by the public-search trigram and
+    // ordering indexes. Superseded rows are not part of the active public
+    // catalogue; stating this explicitly lets Postgres use those indexes
+    // instead of scanning every active description for each ILIKE term.
+    .is('superseded_by_opportunity_id', null)
     .or(TRANSLATION_SAFE_OR)
     .or(TRANSLATION_NOT_ERROR_OR);
   for (const t of terms) {
