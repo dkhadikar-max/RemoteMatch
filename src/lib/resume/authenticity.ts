@@ -10,7 +10,7 @@ import type { EvidenceRef, Finding } from '@/types/resume-intelligence';
 import type { ResumeBullet } from './rubric';
 
 export interface AuthenticityReview {
-  findings: Finding[];
+  findings: Array<Finding & { severity: 'high' | 'medium' | 'low'; priority: number }>;
   questions: Array<{ id: string; question: string; why: string; refs: string[] }>;
 }
 
@@ -82,6 +82,8 @@ export function buildAuthenticityReview(resumeText: string, bullets: ResumeBulle
       criterion: 'R4',
       evidence: [makeEvidence(matchedPhrase, localIndex + Math.max(0, phraseOffset))],
       source: 'rules',
+      severity: detector.code === 'responsibility_only' ? 'high' : 'medium',
+      priority: detector.code === 'responsibility_only' ? 1 : 2,
     });
 
     const key = normalise(detector.question);
@@ -116,6 +118,8 @@ export function buildAuthenticityReview(resumeText: string, bullets: ResumeBulle
         criterion: 'R9',
         evidence: [makeEvidence(phrase, offset + line.indexOf(phrase))],
         source: 'rules',
+        severity: 'low',
+        priority: 6,
       });
       const question = {
         id: `question-${id}`,
