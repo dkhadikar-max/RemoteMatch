@@ -171,6 +171,23 @@ async function main() {
     if (!job) throw new Error(`ChatGPT search did not return seeded fixture ${sourceId}; response=${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}`);
     assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
+    // Pin every field supplied by the endpoint-specific database projection.
+    assert.equal(job.description, 'Synthetic isolated integration fixture for ChatGPT job discovery and details.');
+    assert.equal(job.companyLogo, null);
+    assert.equal(job.employmentType, 'Full-time');
+    assert.equal(job.remoteType, 'Specific countries');
+    assert.deepEqual(job.eligibleCountries, ['IN']);
+    assert.deepEqual(job.excludedCountries, []);
+    assert.deepEqual(job.timezoneRequirements, []);
+    assert.equal(job.salaryMin, 100000);
+    assert.equal(job.salaryMax, 120000);
+    assert.equal(job.salaryCurrency, 'USD');
+    assert.equal(job.salaryPeriod, 'yearly');
+    assert.deepEqual(job.requiredSkills, ['TypeScript']);
+    assert.deepEqual(job.preferredSkills, ['Node.js']);
+    assert.equal(job.experienceRequirement, '2-3');
+    assert.equal(job.postedAt, postedAt);
+    assert.equal(job.linkCheckedAt, postedAt);
     assert.ok(job.jobUrl.startsWith('https://'));
     assert.ok(job.applicationUrl.startsWith('https://'));
     assert.equal(job.applicationMethod, 'Employer website');
