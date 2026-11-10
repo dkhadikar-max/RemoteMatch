@@ -90,6 +90,9 @@ async function main() {
   assert(/getFeedCatalog\(\)/.test(feedRoute) && !/getActiveOpportunities\(/.test(feedRoute) && !/createSupabaseServerClient/.test(feedRoute), 'the feed route reads through the shared cache (no per-request catalog read)');
   const resumeRoute = noComments(read('src/app/api/resume/opportunities/route.ts'));
   assert(/getResumeEligibilityRows\(\)/.test(resumeRoute) && !/getActiveOpportunities/.test(resumeRoute), 'the resume route reads the slim cached rows (no whole-catalog read)');
+  const resumeIndexSource = noComments(read('src/lib/resume/eligibility-index.ts'));
+  assert(/rpc\('get_resume_eligibility_page'/.test(resumeIndexSource) && !/\.range\(/.test(resumeIndexSource), 'the resume catalog cache uses keyset RPC pagination, not OFFSET');
+  assert(/p_after_source/.test(resumeIndexSource) && /p_after_source_id/.test(resumeIndexSource), 'the resume loader advances by the composite (source, source_id) cursor');
   for (const f of ['src/app/api/opportunities/sync/route.ts', 'src/app/api/opportunities/sync/career-pages/route.ts']) {
     const src = noComments(read(f));
     assert(/invalidateCatalogCaches\(\)/.test(src) && /try\s*\{\s*invalidateCatalogCaches\(\);\s*\}\s*catch/.test(src), `${f.split('/').slice(-3).join('/')}: invalidates the catalog caches after writing, in a try/catch (a cache can never fail a sync)`);
@@ -202,7 +205,11 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (
+      u.includes('/rest/v1/opportunities') ||
+      u.includes('/rest/v1/rpc/get_active_opportunities_keyset_page') ||
+      u.includes('/rest/v1/rpc/get_resume_eligibility_page')
+    ) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
