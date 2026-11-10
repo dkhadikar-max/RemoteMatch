@@ -84,7 +84,7 @@ async function main() {
     canonical_url_hash: `chatgpt-country-${exclusionSourceId}`,
     content_hash: `chatgpt-country-content-${exclusionSourceId}`,
     employment_type: 'Full-time',
-    remote_type: 'Worldwide',
+    remote_type: 'worldwide',
     eligible_countries: [],
     excluded_countries: ['IN', 'India'],
     timezone_requirements: [],
