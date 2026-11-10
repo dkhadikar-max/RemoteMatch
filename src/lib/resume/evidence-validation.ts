@@ -151,14 +151,26 @@ const COMMON_SENTENCE_WORDS = new Set([
 
 /** True iff `proposed` introduces no number, organisation name, or tool/skill name that isn't
  *  already traceable to `original`, the wider resume text, or the candidate's declared skills. */
-const LEADERSHIP_OWNERSHIP_VERB = /\b(?:led|managed|supervised|directed|headed|spearheaded|owned|oversaw|mentored|coached)\b/i;
+const LEADERSHIP_OWNERSHIP_VERBS = /\b(?:led|lead|leading|leads|managed|manages|managing|supervised|supervises|supervising|directed|directs|directing|headed|heads|heading|spearheaded|owned|owns|owning|oversaw|oversees|mentored|mentors|coached|coaches)\b/gi;
+
+function hasUnsupportedOwnershipClaim(proposed: string, original: string): boolean {
+  const proposedVerbs = [...proposed.matchAll(new RegExp(LEADERSHIP_OWNERSHIP_VERBS.source, 'gi'))]
+    .map((match) => match[0].toLowerCase());
+  const originalVerbs = new Set([...original.matchAll(new RegExp(LEADERSHIP_OWNERSHIP_VERBS.source, 'gi'))]
+    .map((match) => match[0].toLowerCase()));
+  return proposedVerbs.some((verb) => !originalVerbs.has(verb));
+}
 
 export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[]): boolean {
-  // A rewrite must not upgrade collaboration/support into leadership or ownership.
-  // This is intentionally checked against the original bullet, not unrelated
-  // statements elsewhere in the resume.
-  if (LEADERSHIP_OWNERSHIP_VERB.test(proposed) && !LEADERSHIP_OWNERSHIP_VERB.test(original)) return false;
-  const context = `${original}\n${resumeText}`;
+  // Do not upgrade collaboration/support into leadership or ownership. The exact
+  // ownership verb must already appear in this original bullet.
+  if (hasUnsupportedOwnershipClaim(proposed, original)) return false;
+  const context = \`\${original}\\n\${resumeText}\`;
+  // Catch unsupported standalone numbers too (e.g. "managed 12 people"), not
+  // only numbers followed by a unit or percentage.
+  const contextNumbers = new Set(context.match(/\b\d+(?:[.,]\d+)?\b/g) ?? []);
+  const proposedNumbers = proposed.match(/\b\d+(?:[.,]\d+)?\b/g) ?? [];
+  if (proposedNumbers.some((number) => !contextNumbers.has(number))) return false;
   if (findUnsupportedMetric(proposed, context)) return false;
   if (findUnsupportedOrg(proposed, context)) return false;
   // Any capitalised, tool/skill-shaped token must already be traceable — on the declared skills
