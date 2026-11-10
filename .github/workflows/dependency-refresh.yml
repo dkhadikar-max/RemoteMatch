@@ -50,6 +50,7 @@ jobs:
 
           npm audit --json > /tmp/npm-audit.json 2>/tmp/npm-audit-stderr.txt
           AUDIT_EXIT=$?
+          export LOCKFILE_EXIT INSTALL_EXIT TYPECHECK_EXIT BUILD_EXIT SUITES_EXIT AUDIT_EXIT
           node - <<'NODE'
           const fs = require('fs');
           let audit = {};
@@ -84,10 +85,3 @@ jobs:
           git add package-lock.json .security-upgrade-validation.md .github/workflows/dependency-refresh.yml
           git commit -m "chore: refresh Next.js 15.5.29 dependency lockfile" || true
           git push origin "HEAD:${GITHUB_REF_NAME}"
-        env:
-          LOCKFILE_EXIT: ${LOCKFILE_EXIT}
-          INSTALL_EXIT: ${INSTALL_EXIT}
-          TYPECHECK_EXIT: ${TYPECHECK_EXIT}
-          BUILD_EXIT: ${BUILD_EXIT}
-          SUITES_EXIT: ${SUITES_EXIT}
-          AUDIT_EXIT: ${AUDIT_EXIT}
