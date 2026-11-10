@@ -5,11 +5,11 @@ import { jobUrl } from '@/lib/seo/job-href';
 export const dynamic = 'force-dynamic';
 
 interface RouteContext {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
-  const { id: encodedId } = context.params;
+  const { id: encodedId } = await context.params;
   let id: string;
   try {
     // Next.js preserves encoded dynamic route segments. Decode once so source
