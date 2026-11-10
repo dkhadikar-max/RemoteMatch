@@ -32,6 +32,11 @@ jobs:
           else
             echo "No synchronous dynamic route params remain."
           fi
+      - name: Inventory page searchParams usage
+        shell: bash
+        run: |
+          echo "Page searchParams declarations and usage for Next.js 15 async migration review:"
+          grep -RIn 'searchParams' src/app --include='page.tsx' || true
       - name: Production build
         run: npm run build
       - name: Self-contained regression suites
