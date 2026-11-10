@@ -25,8 +25,13 @@ jobs:
       - name: Inventory synchronous dynamic route params
         shell: bash
         run: |
-          echo "Remaining route-handler params declarations (must be Promise-based in Next.js 15):"
-          grep -RIn 'params: {' src/app --include='route.ts' || true
+          echo "Checking for synchronous dynamic route params..."
+          if grep -RIn 'params: {' src/app --include='route.ts'; then
+            echo "Found synchronous route params. Convert each to Promise-based params and await it."
+            exit 1
+          else
+            echo "No synchronous dynamic route params remain."
+          fi
       - name: Production build
         run: npm run build
       - name: Self-contained regression suites
