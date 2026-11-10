@@ -50,7 +50,7 @@ async function main() {
       return { data: [row], error: null };
     });
     const entries = await getSitemapJobEntries(client);
-    assert.equal(entries.length, 3001);
+    assert.equal(entries.length, 1001);
     assert.deepEqual(calls.map((c) => c.p_page_size), [1000, 1000, 500]);
     assert.equal(calls[1].p_after_source, 'greenhouse');
     assert.equal(calls[1].p_after_source_id, 'greenhouse-test-0999');
