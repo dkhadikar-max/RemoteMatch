@@ -64,6 +64,7 @@ jobs:
             test/catalog-touch-update-retry-suite.ts
             test/job-filter-data-quality-suite.ts
             test/ttl-cache-stale-invalidation-suite.ts
+            test/sitemap-read-retry-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
