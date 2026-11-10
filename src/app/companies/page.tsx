@@ -9,7 +9,7 @@ import Pagination from '@/components/seo/Pagination';
 import CompanyRadarViewBeacon from './CompanyRadarViewBeacon';
 
 interface Props {
-  searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
+  searchParams?: Promise<{ q?: string; page?: string }>;
 }
 
 /**
@@ -34,7 +34,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export const dynamic = 'force-dynamic';
 
 export default async function CompanySearchPage({ searchParams }: Props) {
-  const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
+  const resolvedParams = searchParams ? await searchParams : {};
   const q = (typeof resolvedParams.q === 'string' ? resolvedParams.q : '').trim();
   const page = Math.min(Math.max(parsePageParam(resolvedParams.page), 1), MAX_DIRECTORY_PAGE);
 
