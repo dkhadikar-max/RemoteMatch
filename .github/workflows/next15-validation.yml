@@ -22,6 +22,11 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Inventory synchronous dynamic route params
+        shell: bash
+        run: |
+          echo "Remaining route-handler params declarations (must be Promise-based in Next.js 15):"
+          grep -RInE 'params:[[:space:]]*\\{[^}]*\\}' src/app --include='route.ts' || true
       - name: Production build
         run: npm run build
       - name: Self-contained regression suites
