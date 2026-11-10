@@ -233,6 +233,75 @@ async function main() {
     assert(emptyIdBody.targetJobFit?.jobContentHash === '', 'G2: an explicitly empty server jobContentHash stays empty, never the model\'s value', emptyIdBody.targetJobFit?.jobContentHash);
   }
 
+  console.log('\nCandidate clarification evidence — answers remain a separate, traceable source');
+  {
+    const candidateText = 'I directly managed a team of 6 engineers and coordinated weekly delivery reviews.';
+    const redactedCandidate = redactForModel(candidateText, 'Jane Doe');
+    const candidateCtx: ValidationContext = {
+      ...ctx,
+      candidateText,
+      redactedCandidateText: redactedCandidate.redactedText,
+      candidateRedactionSpans: redactedCandidate.spans,
+    };
+    const answerBacked = minimalRaw({
+      strengths: [{
+        id: 'candidate-strength',
+        text: 'Confirmed direct team-management experience.',
+        evidence: [{ doc: 'candidate', quote: 'directly managed a team of 6 engineers', start: 0, end: 0 }],
+        source: 'ai',
+      }],
+      bulletRewrites: [{
+        id: 'candidate-rewrite',
+        bulletId: 'experience-1',
+        original: 'Worked with the engineering team.',
+        problem: 'The original does not show the candidate\'s ownership.',
+        proposed: 'Managed a team of 6 engineers and coordinated weekly delivery reviews.',
+        rationale: 'Uses the candidate\'s clarification to make ownership explicit.',
+        evidence: [{ doc: 'candidate', quote: 'directly managed a team of 6 engineers', start: 0, end: 0 }],
+        missingFacts: [],
+      }],
+    });
+    const { body: answerBody } = validateModelOutput(answerBacked, candidateCtx, []);
+    assert(answerBody.strengths.length === 1, 'candidate-provided evidence can support a finding');
+    assert(answerBody.strengths[0].evidence[0]?.doc === 'candidate', 'candidate evidence is never mislabeled as resume evidence');
+    assert(candidateText.slice(answerBody.strengths[0].evidence[0].start, answerBody.strengths[0].evidence[0].end) === 'directly managed a team of 6 engineers', 'candidate evidence offsets resolve to the exact answer substring');
+    assert(answerBody.bulletRewrites.length === 1, 'an ownership clarification can support a rewrite');
+    assert(answerBody.bulletRewrites[0].evidence.some((item) => item.doc === 'candidate'), 'answer-backed rewrite retains candidate evidence');
+
+    const unsupportedCandidateCtx: ValidationContext = {
+      ...candidateCtx,
+      candidateText: 'I supported the team but did not manage anyone.',
+      redactedCandidateText: 'I supported the team but did not manage anyone.',
+      candidateRedactionSpans: [],
+    };
+    const unsupportedOwnership = minimalRaw({
+      bulletRewrites: [{
+        id: 'unsupported-ownership',
+        bulletId: 'experience-1',
+        original: 'Worked with the engineering team.',
+        problem: 'Ownership is unclear.',
+        proposed: 'Managed a team of 6 engineers.',
+        rationale: 'Claims direct management.',
+        evidence: [{ doc: 'candidate', quote: 'supported the team', start: 0, end: 0 }],
+        missingFacts: [],
+      }],
+    });
+    const { body: unsupportedBody } = validateModelOutput(unsupportedOwnership, unsupportedCandidateCtx, []);
+    assert(unsupportedBody.bulletRewrites.length === 0, 'a clarification that explicitly denies ownership cannot authorize a leadership rewrite');
+
+    const fakeCandidateCtx: ValidationContext = { ...candidateCtx, candidateText: 'I worked with the team.', redactedCandidateText: 'I worked with the team.', candidateRedactionSpans: [] };
+    const fakeEvidence = minimalRaw({
+      strengths: [{
+        id: 'fake-candidate-evidence',
+        text: 'Managed a team.',
+        evidence: [{ doc: 'candidate', quote: 'managed 12 engineers', start: 0, end: 0 }],
+        source: 'ai',
+      }],
+    });
+    const { body: fakeCandidateBody } = validateModelOutput(fakeEvidence, fakeCandidateCtx, []);
+    assert(fakeCandidateBody.strengths.length === 0, 'fabricated candidate evidence is rejected when the quote is absent from the answer');
+  }
+
   console.log('\nRobustness — malformed / minimal / adversarial model output never throws');
   let threw = false;
   try {
