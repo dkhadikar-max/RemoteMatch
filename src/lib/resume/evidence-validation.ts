@@ -83,7 +83,6 @@ function resolveQuoteInJob(quote: string, jobText: string): EvidenceRef | null {
 
 /** Candidate answers are a separate evidence document, never mislabeled as resume text. */
 function resolveQuoteInCandidate(quote: string, ctx: ValidationContext): EvidenceRef | null {
-  const original = ctx.candidateText ?? '';
   const redacted = ctx.redactedCandidateText ?? '';
   if (!quote || quote.length > 300 || !redacted || containsPlaceholder(quote)) return null;
   const needle = normalizeForSearch(quote);
@@ -285,7 +284,7 @@ export function validateModelOutput(
     .filter((e): e is EvidenceRef => e !== null);
 
   const overallSummaryEvidence = (raw.overallSummary?.evidence ?? [])
-    .map((e) => resolveQuoteInResume(e.quote, ctx))
+    .map((e) => resolveEvidence(e, ctx))
     .filter((e): e is EvidenceRef => e !== null);
   const overallSummaryOk =
     typeof raw.overallSummary?.text === 'string' &&
@@ -297,7 +296,7 @@ export function validateModelOutput(
     heading: sr.heading,
     criteria: (sr.criteria ?? []).map((c) => ({
       ...c,
-      evidence: (c.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null),
+      evidence: (c.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null),
     })),
     findings: (sr.findings ?? []).map((f) => validateFinding(f, ctx, report, 'section_finding')).filter((f): f is Finding => f !== null),
     recommendations: (sr.recommendations ?? []).map((f) => validateFinding(f, ctx, report, 'section_recommendation')).filter((f): f is Finding => f !== null),
@@ -319,7 +318,7 @@ export function validateModelOutput(
         dropCounter(report, 'rewrite_unsupported_fact');
         return null;
       }
-      const evidence = (r.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null);
+      const evidence = (r.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null);
       return { ...r, evidence, status: 'suggested' as const };
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -327,11 +326,11 @@ export function validateModelOutput(
   const skillsEvidence = {
     demonstrated: (raw.skillsEvidence?.demonstrated ?? []).map((s) => ({
       skill: s.skill,
-      evidence: (s.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null),
+      evidence: (s.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null),
     })),
     weaklySupported: (raw.skillsEvidence?.weaklySupported ?? []).map((s) => ({
       skill: s.skill,
-      evidence: (s.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null),
+      evidence: (s.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null),
     })),
     notEvidenced: (raw.skillsEvidence?.notEvidenced ?? []).map((s) => ({ skill: s.skill, note: 'not demonstrated in this resume' as const })),
   };
@@ -346,7 +345,7 @@ export function validateModelOutput(
       .map((r) => {
         const jobEvidence = (r.jobEvidence ?? []).map((e) => resolveQuoteInJob(e.quote, ctx.jobText)).filter((e): e is EvidenceRef => e !== null);
         if (jobEvidence.length === 0) { dropCounter(report, 'requirement_unverifiable_job_evidence'); return null; }
-        const resumeEvidence = (r.resumeEvidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null);
+        const resumeEvidence = (r.resumeEvidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null);
         return { ...r, jobEvidence, resumeEvidence };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -362,10 +361,10 @@ export function validateModelOutput(
       requirements,
       prioritize: (raw.targetJobFit.prioritize ?? []).map((f) => validateFinding(f, ctx, report, 'prioritize')).filter((f): f is Finding => f !== null),
       summaryEdit: raw.targetJobFit.summaryEdit && rewriteIsSupported(raw.targetJobFit.summaryEdit.proposed, raw.targetJobFit.summaryEdit.original, ctx.resumeText, declaredSkills, ctx.candidateText ?? '')
-        ? { ...raw.targetJobFit.summaryEdit, evidence: (raw.targetJobFit.summaryEdit.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null) }
+        ? { ...raw.targetJobFit.summaryEdit, evidence: (raw.targetJobFit.summaryEdit.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null) }
         : undefined,
       skillsEdit: raw.targetJobFit.skillsEdit && rewriteIsSupported(raw.targetJobFit.skillsEdit.proposed, raw.targetJobFit.skillsEdit.original, ctx.resumeText, declaredSkills, ctx.candidateText ?? '')
-        ? { ...raw.targetJobFit.skillsEdit, evidence: (raw.targetJobFit.skillsEdit.evidence ?? []).map((e) => resolveQuoteInResume(e.quote, ctx)).filter((e): e is EvidenceRef => e !== null) }
+        ? { ...raw.targetJobFit.skillsEdit, evidence: (raw.targetJobFit.skillsEdit.evidence ?? []).map((e) => resolveEvidence(e, ctx)).filter((e): e is EvidenceRef => e !== null) }
         : undefined,
       // V8: dangling refs removed.
       bulletEdits: (raw.targetJobFit.bulletEdits ?? []).filter((id) => bulletEditIds.has(id)),
