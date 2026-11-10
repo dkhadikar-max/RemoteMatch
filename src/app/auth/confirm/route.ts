@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
   // primary recovery signal.
   const isRecoveryFlow = searchParams.get('next') === 'recovery';
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   if (!supabase) {
     return NextResponse.redirect(`${origin}/login?verified=error`);
   }
