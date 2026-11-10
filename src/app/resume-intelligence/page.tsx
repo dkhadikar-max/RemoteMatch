@@ -618,16 +618,18 @@ function ResumeIntelligenceInner() {
                 </div>
               ))}
               {Object.values(candidateAnswers).some((answer) => answer.trim().length > 0) && (
-                <button
-                  onClick={() => runAnalysis(state.versionId, mode, candidateAnswers, state.analysis.questionsForCandidate)}
-                  disabled={state.analysis.questionsForCandidate.reduce((total, q) => total + q.question.length + (candidateAnswers[q.id] ?? '').trim().length, 0) > 4000}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Use answers & rerun analysis
-                </button>
-                {state.analysis.questionsForCandidate.reduce((total, q) => total + q.question.length + (candidateAnswers[q.id] ?? '').trim().length, 0) > 4000 && (
-                  <p className="text-[11px] text-[var(--danger)]">Keep the combined questions and answers under 4,000 characters.</p>
-                )}
+                <>
+                  <button
+                    onClick={() => runAnalysis(state.versionId, mode, candidateAnswers, state.analysis.questionsForCandidate)}
+                    disabled={state.analysis.questionsForCandidate.reduce((total, q) => total + q.question.length + (candidateAnswers[q.id] ?? '').trim().length, 0) > 4000}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Use answers & rerun analysis
+                  </button>
+                  {state.analysis.questionsForCandidate.reduce((total, q) => total + q.question.length + (candidateAnswers[q.id] ?? '').trim().length, 0) > 4000 && (
+                    <p className="text-[11px] text-[var(--danger)]">Keep the combined questions and answers under 4,000 characters.</p>
+                  )}
+                </>
               )}
             </div>
           )}
