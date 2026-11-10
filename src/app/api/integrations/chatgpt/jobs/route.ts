@@ -145,7 +145,10 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('opportunities')
-      .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
+      // A multi-term ILIKE search can make an exact count scan the full catalog
+      // twice (page + count) and hit the 3s Postgres timeout. Planned count is
+      // bounded; hasMore is exact from the extra row fetched below.
+      .select(OPPORTUNITY_COLUMNS, { count: 'planned' })
       .eq('status', 'active')
       .is('superseded_by_opportunity_id', null);
 
@@ -183,20 +186,25 @@ export async function GET(request: NextRequest) {
     const { data, count, error } = await query
       .order('posted_at', { ascending: false, nullsFirst: false })
       .order('source_id', { ascending: true })
-      .range(offsetRaw, offsetRaw + limitRaw - 1);
+      // Fetch one look-ahead row so hasMore remains exact without an exact count.
+      .range(offsetRaw, offsetRaw + limitRaw);
 
     if (error) throw new Error(`Could not search opportunities: ${error.message}`);
-    const opportunities = ((data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][])
+    const pageRows = (data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][];
+    const hasMore = pageRows.length > limitRaw;
+    const opportunities = pageRows.slice(0, limitRaw)
       .map(rowToCanonicalOpportunity)
       .map(publicJob);
 
-    const total = count ?? 0;
+    // Planned counts are approximate; never report less than the rows we just returned.
+    const total = Math.max(count ?? 0, offsetRaw + pageRows.length);
     return NextResponse.json({
       success: true,
       total,
+      totalIsEstimate: true,
       limit: limitRaw,
       offset: offsetRaw,
-      hasMore: offsetRaw + opportunities.length < total,
+      hasMore,
       opportunities,
     }, {
       headers: { 'Cache-Control': 'no-store' },
