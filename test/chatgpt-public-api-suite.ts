@@ -171,6 +171,25 @@ async function main() {
     if (!job) throw new Error(`ChatGPT search did not return seeded fixture ${sourceId}; response=${JSON.stringify({ total: result.total, opportunities: result.opportunities.map(({ id, title, company }) => ({ id, title, company })) })}`);
     assert.ok(job.title.toLowerCase().includes('chatgpt api test'), `unexpected fixture title returned: ${JSON.stringify(job.title)}`);
     assert.equal(job.company, 'RemoteMatch Integration Test');
+    // Pin every field supplied by the endpoint-specific database projection; compare timestamps by instant because PostgREST may normalize timezone formatting.
+    assert.equal(job.description, 'Synthetic isolated integration fixture for ChatGPT job discovery and details.');
+    assert.equal(job.companyLogo, null);
+    assert.equal(job.employmentType, 'Full-time');
+    assert.equal(job.remoteType, 'Specific countries');
+    assert.deepEqual(job.eligibleCountries, ['IN']);
+    assert.deepEqual(job.excludedCountries, []);
+    assert.deepEqual(job.timezoneRequirements, []);
+    assert.equal(job.salaryMin, 100000);
+    assert.equal(job.salaryMax, 120000);
+    assert.equal(job.salaryCurrency, 'USD');
+    assert.equal(job.salaryPeriod, 'yearly');
+    assert.deepEqual(job.requiredSkills, ['TypeScript']);
+    assert.deepEqual(job.preferredSkills, ['Node.js']);
+    assert.equal(job.experienceRequirement, '2-3');
+    assert.ok(Number.isFinite(Date.parse(String(job.postedAt))), 'postedAt must be a valid timestamp');
+    assert.ok(Number.isFinite(Date.parse(String(job.linkCheckedAt))), 'linkCheckedAt must be a valid timestamp');
+    assert.equal(Date.parse(String(job.postedAt)), Date.parse(postedAt), 'postedAt must preserve the seeded instant');
+    assert.equal(Date.parse(String(job.linkCheckedAt)), Date.parse(postedAt), 'linkCheckedAt must preserve the seeded instant');
     assert.ok(job.jobUrl.startsWith('https://'));
     assert.ok(job.applicationUrl.startsWith('https://'));
     assert.equal(job.applicationMethod, 'Employer website');
