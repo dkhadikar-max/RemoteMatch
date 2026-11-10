@@ -154,12 +154,17 @@ const COMMON_SENTENCE_WORDS = new Set([
  *  already traceable to `original`, the wider resume text, or the candidate's declared skills. */
 const LEADERSHIP_OWNERSHIP_VERBS = /\b(?:led|lead|leading|leads|managed|manages|managing|supervised|supervises|supervising|directed|directs|directing|headed|heads|heading|spearheaded|owned|owns|owning|oversaw|oversees|mentored|mentors|coached|coaches)\b/gi;
 
+function collectOwnershipVerbs(text: string): string[] {
+  const pattern = new RegExp(LEADERSHIP_OWNERSHIP_VERBS.source, 'gi');
+  const verbs: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) verbs.push(match[0].toLowerCase());
+  return verbs;
+}
+
 function hasUnsupportedOwnershipClaim(proposed: string, original: string): boolean {
-  const proposedVerbs = [...proposed.matchAll(new RegExp(LEADERSHIP_OWNERSHIP_VERBS.source, 'gi'))]
-    .map((match) => match[0].toLowerCase());
-  const originalVerbs = new Set([...original.matchAll(new RegExp(LEADERSHIP_OWNERSHIP_VERBS.source, 'gi'))]
-    .map((match) => match[0].toLowerCase()));
-  return proposedVerbs.some((verb) => !originalVerbs.has(verb));
+  const originalVerbs = new Set(collectOwnershipVerbs(original));
+  return collectOwnershipVerbs(proposed).some((verb) => !originalVerbs.has(verb));
 }
 
 export function rewriteIsSupported(proposed: string, original: string, resumeText: string, declaredSkills: string[]): boolean {
