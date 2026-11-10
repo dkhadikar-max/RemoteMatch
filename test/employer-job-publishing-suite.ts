@@ -52,7 +52,7 @@ check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider d
 check(/CREATE TABLE IF NOT EXISTS public\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
 check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
 check(/employerdirect/.test(applyRoute) && /getAuthenticatedUser/.test(applyRoute), 'native apply endpoint authenticates candidates and accepts only active direct-employer jobs');
-check(/getAuthenticatedEmployer\(req, params\.id\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
+check(/const \{ id \} = await params/.test(employerApplicationsRoute) && /getAuthenticatedEmployer\(req, id\)/.test(employerApplicationsRoute), 'applicant inbox awaits the company route param and scopes access to authorized company members');
 check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employerApplicationsRoute), 'employers can update applicant status only within their own company');
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');
 check(/EMPLOYER_INDUSTRIES/.test(taxonomy) && /EMPLOYER_COMPANY_SIZES/.test(taxonomy), 'industry and employee ranges use standardized filter values');
