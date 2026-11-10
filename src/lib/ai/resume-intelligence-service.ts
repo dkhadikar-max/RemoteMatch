@@ -124,7 +124,7 @@ export interface AnalyzeRequest {
    *  the model is never called when this is false, not even to attempt a reservation. */
   aiAllowed: boolean;
   /** Candidate responses to clarification questions; treated as a separate evidence source. */
-  candidateAnswers?: Array<{ questionId: string; answer: string }>;
+  candidateAnswers?: Array<{ questionId: string; question: string; answer: string }>;
 }
 
 
@@ -132,7 +132,15 @@ function buildCandidateAnswerText(answers: AnalyzeRequest['candidateAnswers']): 
   return (answers ?? [])
     .filter((item) => typeof item?.questionId === 'string' && typeof item?.answer === 'string' && item.answer.trim())
     .slice(0, 8)
-    .map((item) => `Question ${item.questionId}\nAnswer: ${item.answer.trim().slice(0, 1200)}`)
+    .map((item) => `Answer ${item.questionId}: ${item.answer.trim().slice(0, 1200)}`)
+    .join('\n\n');
+}
+
+function buildCandidatePromptText(answers: AnalyzeRequest['candidateAnswers']): string {
+  return (answers ?? [])
+    .filter((item) => typeof item?.questionId === 'string' && typeof item?.question === 'string' && typeof item?.answer === 'string' && item.answer.trim())
+    .slice(0, 8)
+    .map((item) => `Question: ${item.question.trim().slice(0, 400)}\nCandidate answer: ${item.answer.trim().slice(0, 1200)}`)
     .join('\n\n');
 }
 
@@ -351,8 +359,8 @@ export async function runModelCall(
   ledger: ReturnType<typeof getResumeIntelligenceLedger>
 ): Promise<{ raw: RawModelResumeAnalysis; model: string } | null> {
   const { redactedText } = redactForModel(req.resumeText, req.fullName);
-  const candidateText = buildCandidateAnswerText(req.candidateAnswers);
-  const redactedCandidateText = candidateText ? redactForModel(candidateText, req.fullName).redactedText : '';
+  const candidatePromptText = buildCandidatePromptText(req.candidateAnswers);
+  const redactedCandidateText = candidatePromptText ? redactForModel(candidatePromptText, req.fullName).redactedText : '';
   const prompt = buildRubricPrompt({
     mode: req.mode,
     redactedResumeText: redactedText.slice(0, 12000),
@@ -611,10 +619,11 @@ export async function analyzeResume(supabase: SupabaseClient, req: AnalyzeReques
 
   const jobContentHash = req.mode === 'target_job' && req.jobText ? await sha256Hex(req.jobText) : '';
   const candidateText = buildCandidateAnswerText(req.candidateAnswers);
-  // Keep every distinct answer set in its own cache/claim key. A clarification rerun must
-  // never read or overwrite the no-answer analysis (or another candidate-answer set).
-  const analysisVersion = candidateText
-    ? `${RESUME_ANALYSIS_VERSION}-candidate-${(await sha256Hex(candidateText)).slice(0, 16)}`
+  const candidatePromptText = buildCandidatePromptText(req.candidateAnswers);
+  // Keep every distinct question/answer set in its own cache/claim key. A clarification rerun
+  // must never read or overwrite the no-answer analysis (or another answer set).
+  const analysisVersion = candidatePromptText
+    ? `${RESUME_ANALYSIS_VERSION}-candidate-${(await sha256Hex(candidatePromptText)).slice(0, 16)}`
     : RESUME_ANALYSIS_VERSION;
 
   // 1. Cache lookup — a confirmed, previously-persisted success only.
