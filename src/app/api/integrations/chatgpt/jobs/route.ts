@@ -10,6 +10,8 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 25;
 const MAX_QUERY_LENGTH = 160;
 const MAX_TERMS = 5;
+const COUNTRY_SCAN_BATCH_SIZE = 250;
+const MAX_COUNTRY_CANDIDATES_SCANNED = 5_000;
 
 function csv(value: string | null): string[] {
   return (value ?? '').split(',').map((part) => part.trim()).filter(Boolean).slice(0, 20);
@@ -56,19 +58,19 @@ function pgArray(values: string[]): string {
   return `{${values.map((value) => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`;
 }
 
-function applyCountryFilter<T extends { or(filters: string): T; not(column: string, operator: string, value: string): T }>(
-  query: T,
-  country: string
-): T {
-  if (!country) return query;
+function countryVariants(country: string): string[] {
   const variants = COUNTRY_ALIASES[country] ?? [country];
-  // Country arrays contain a mix of ISO codes and display names; PostgreSQL
-  // array overlap is case-sensitive, unlike the previous in-memory matcher.
-  const arrayVariants = Array.from(new Set(variants.flatMap((value) => [
-    value,
+  return Array.from(new Set(variants.flatMap((value) => [
+    value.toLowerCase(),
     value.toUpperCase(),
     value.charAt(0).toUpperCase() + value.slice(1),
   ])));
+}
+
+function applyCountryFilter<T extends { or(filters: string): T }>(query: T, country: string): T {
+  if (!country) return query;
+  const variants = COUNTRY_ALIASES[country] ?? [country];
+  const arrayVariants = countryVariants(country);
   const clauses = [
     'remote_type.eq.worldwide',
     `eligible_countries.ov.${pgArray(arrayVariants)}`,
@@ -78,10 +80,13 @@ function applyCountryFilter<T extends { or(filters: string): T; not(column: stri
   if (EU_EEA_COUNTRIES.has(country)) {
     clauses.push('eligible_countries.ov.{"EU","EEA","EU/EEA"}', 'remote_type.eq.eu/eea');
   }
-  query = query.or(clauses.join(','));
-  // Exclusions always win, including for worldwide and regional listings.
-  query = query.or(`excluded_countries.is.null,excluded_countries.not.ov.${pgArray(arrayVariants)}`);
-  return query;
+  return query.or(clauses.join(','));
+}
+
+function isExcludedForCountry(excludedCountries: string[] | null | undefined, country: string): boolean {
+  if (!country || !Array.isArray(excludedCountries) || excludedCountries.length === 0) return false;
+  const variants = new Set(countryVariants(country).map((value) => value.toLowerCase()));
+  return excludedCountries.some((value) => variants.has(String(value).trim().toLowerCase()));
 }
 
 function publicJob(job: CanonicalOpportunity) {
@@ -189,21 +194,52 @@ export async function GET(request: NextRequest) {
     }
     if (minSalary !== null) query = query.gte('salary_min', minSalary);
 
-    const { data, count, error } = await query
+    query = query
       .order('posted_at', { ascending: false, nullsFirst: false })
-      .order('source_id', { ascending: true })
-      // Fetch one look-ahead row so hasMore remains exact without an exact count.
-      .range(offsetRaw, offsetRaw + limitRaw);
+      .order('source_id', { ascending: true });
 
-    if (error) throw new Error(`Could not search opportunities: ${error.message}`);
-    const pageRows = (data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][];
-    const hasMore = pageRows.length > limitRaw;
-    const opportunities = pageRows.slice(0, limitRaw)
-      .map(rowToCanonicalOpportunity)
-      .map(publicJob);
+    const accepted: CanonicalOpportunity[] = [];
+    let candidateOffset = 0;
+    let scanned = 0;
+    let estimatedCandidateCount: number | null = null;
+    let exhausted = false;
+    const requiredAccepted = offsetRaw + limitRaw + 1;
+    const scanBudget = country ? MAX_COUNTRY_CANDIDATES_SCANNED : requiredAccepted;
 
-    // Planned counts are approximate; never report less than the rows we just returned.
-    const total = Math.max(count ?? 0, offsetRaw + pageRows.length);
+    while (accepted.length < requiredAccepted && scanned < scanBudget) {
+      const batchSize = Math.min(COUNTRY_SCAN_BATCH_SIZE, scanBudget - scanned);
+      const { data, count, error } = await query.range(candidateOffset, candidateOffset + batchSize - 1);
+      if (error) throw new Error(`Could not search opportunities: ${error.message}`);
+      if (estimatedCandidateCount === null) estimatedCandidateCount = count ?? null;
+
+      const rows = (data ?? []) as unknown as Parameters<typeof rowToCanonicalOpportunity>[0][];
+      scanned += rows.length;
+      candidateOffset += rows.length;
+      const canonicalRows = rows.map(rowToCanonicalOpportunity);
+      for (const row of canonicalRows) {
+        if (!isExcludedForCountry(row.excludedCountries, country)) accepted.push(row);
+      }
+
+      if (rows.length < batchSize) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    // Do not return a silently incomplete page when exclusions consume the bounded scan budget.
+    if (accepted.length < requiredAccepted && !exhausted && scanned >= scanBudget) {
+      return NextResponse.json({
+        success: false,
+        error: 'Country-filtered search is temporarily too broad. Narrow your search and retry.',
+      }, { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    }
+
+    const hasMore = accepted.length > offsetRaw + limitRaw;
+    const opportunities = accepted.slice(offsetRaw, offsetRaw + limitRaw).map(publicJob);
+
+    // The planner count is an estimate of eligible candidates before exclusions.
+    // Never report less than the filtered page boundary; hasMore is exact from look-ahead.
+    const total = Math.max(estimatedCandidateCount ?? 0, offsetRaw + opportunities.length + (hasMore ? 1 : 0));
     return NextResponse.json({
       success: true,
       total,
