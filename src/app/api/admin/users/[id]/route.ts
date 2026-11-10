@@ -13,7 +13,8 @@ import { queryErrorResponse } from '@/lib/admin/sections';
  *  "User not found" (404) now means the lookup succeeded and matched no row.
  *  A failed query is a 500 — previously every error, including a database
  *  outage, was reported as "User not found." */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   try {
     await getAuthenticatedAdmin(req);
   } catch (err) {
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       await admin
         .from('profiles')
         .select('id, email, full_name, plan_tier, created_at, onboarding_completed_at, usage_date')
-        .eq('id', params.id)
+        .eq('id', id)
         .maybeSingle(),
       'profiles'
     );
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const [applications, swipes] = await Promise.all([
       fetchAllRows<{ id: string; status: string }>(
         (afterId, pageSize) => {
-          let q = admin.from('applications').select('id, status').eq('profile_id', params.id).order('id', { ascending: true }).limit(pageSize);
+          let q = admin.from('applications').select('id, status').eq('profile_id', id).order('id', { ascending: true }).limit(pageSize);
           if (afterId) q = q.gt('id', afterId);
           return q;
         },
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       ),
       fetchAllRows<{ id: string; action: string }>(
         (afterId, pageSize) => {
-          let q = admin.from('swipes').select('id, action').eq('profile_id', params.id).order('id', { ascending: true }).limit(pageSize);
+          let q = admin.from('swipes').select('id, action').eq('profile_id', id).order('id', { ascending: true }).limit(pageSize);
           if (afterId) q = q.gt('id', afterId);
           return q;
         },
