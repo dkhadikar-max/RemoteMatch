@@ -36,6 +36,7 @@ import {
   Bookmark,
   Compass,
   ShieldCheck,
+  FileSearch,
 } from 'lucide-react';
 import { DidYouApplyModal } from '../feedback/did-you-apply-modal';
 import { trackApplyClick } from '@/lib/funnel/client';
@@ -637,6 +638,18 @@ ${initialResumeTweaks.bulletRewrites
                     <span>Tailored application materials</span>
                     {showApplicationReview ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                   </button>
+
+                  {/* Resume Intelligence (PR B) — a writing checklist against THIS job's
+                      requirements. Separate feature from the match score above and says so;
+                      never recomputes or displays a fit score itself. */}
+                  <Link
+                    href={`/resume-intelligence?job=${encodeURIComponent(opportunity.id)}`}
+                    className="w-full rounded-xl bg-[var(--surface-soft)] hover:bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] text-xs font-semibold py-2.5 px-3 transition-colors flex items-center justify-center gap-1.5 min-h-[44px]"
+                  >
+                    <FileSearch size={14} />
+                    <span>Tailor resume for this job</span>
+                  </Link>
+                  <p className="text-[11px] text-[var(--muted)] text-center leading-snug">Doesn&rsquo;t change your match score above.</p>
                 </div>
               </div>
 
