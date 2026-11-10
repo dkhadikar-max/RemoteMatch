@@ -32,7 +32,7 @@ export type CriterionRating = 'meets' | 'partly' | 'not_yet' | 'not_applicable';
 /** A quote the server has verified occurs verbatim in the normalized source text, with
  *  computed offsets — never trusted from the model past V2 in evidence-validation.ts. */
 export interface EvidenceRef {
-  doc: 'resume' | 'job';
+  doc: 'resume' | 'job' | 'candidate';
   quote: string;
   start: number;
   end: number;
