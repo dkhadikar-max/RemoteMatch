@@ -202,10 +202,12 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  // A 1,000-row full-record batch exceeded the production 3s statement timeout.
-  // Anonymous-role EXPLAIN ANALYZE: 500 rows ~1.71s, 250 rows ~80ms, 100 rows ~12ms.
-  // Use 250 to preserve headroom when descriptions and concurrent catalog reads are present.
-  const pageSize = 250;
+  // Full-record batches are sensitive to description size. Production anonymous-role
+  // probes: 1,000 rows timed out; 500 rows took ~1.71s; a later 250-row cursor timed
+  // out; the same cursor completed in ~0.53s at 100 rows. Start at 100 and fall back
+  // to 50/25 on SQLSTATE 57014 so one unusually large page cannot fail the feed.
+  const initialPageSize = 100;
+  let pageSize = initialPageSize;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
   let pageIndex = 0;
@@ -217,9 +219,9 @@ export async function getActiveOpportunities(
   const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
 
   while (true) {
-    const pageStartedAt = performance.now();
     const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
-    const { data, error } = await supabase.rpc('get_active_opportunities_keyset_page', {
+    let pageStartedAt = performance.now();
+    let response = await supabase.rpc('get_active_opportunities_keyset_page', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
@@ -227,7 +229,26 @@ export async function getActiveOpportunities(
       p_fresh_to: freshness?.to ?? null,
       p_translation_safe: options?.translationSafe ?? false,
     });
-    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
+      const failedPageSize = pageSize;
+      pageSize = Math.max(25, Math.floor(pageSize / 2));
+      console.warn('[catalog-read] keyset-page-retry', JSON.stringify({
+        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize,
+        durationMs, code: response.error.code,
+      }));
+      pageStartedAt = performance.now();
+      response = await supabase.rpc('get_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness?.from ?? null,
+        p_fresh_to: freshness?.to ?? null,
+        p_translation_safe: options?.translationSafe ?? false,
+      });
+      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    }
+    const { data, error } = response;
     if (error) {
       console.error('[catalog-read] keyset-page-failed', JSON.stringify({
         page: pageIndex, pageSize, durationMs, cursor,
