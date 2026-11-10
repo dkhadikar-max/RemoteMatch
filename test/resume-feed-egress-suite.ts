@@ -83,7 +83,7 @@ async function main() {
   const csStart = skillSrc.indexOf('export function computeSkillOpportunities');
   const csFields = fieldReads(noComments(skillSrc.slice(csStart)), 'opp');
   assert(Array.from(csFields).join() === 'requiredSkills', `computeSkillOpportunities() reads only requiredSkills (found: ${Array.from(csFields).join(',')})`);
-  assert(RESUME_ELIGIBILITY_COLUMNS.split(',').map((c) => c.trim()).sort().join() === 'employment_type,remote_type,required_skills,title', 'the resume read selects exactly those four columns');
+  assert(RESUME_ELIGIBILITY_COLUMNS.split(',').map((c) => c.trim()).sort().join() === 'employment_type,remote_type,required_skills,title', 'the resume eligibility payload is limited to exactly those four business columns');
   assert(!/description/.test(RESUME_ELIGIBILITY_COLUMNS), 'the resume read does not select description');
 
   const feedRoute = noComments(read('src/app/api/opportunities/feed/route.ts'));
