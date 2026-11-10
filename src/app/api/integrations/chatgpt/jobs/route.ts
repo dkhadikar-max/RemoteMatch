@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { applyTranslationSafe, OPPORTUNITY_COLUMNS, rowToCanonicalOpportunity } from '@/lib/ingestion/catalog-read';
-import { createSupabasePublicClient } from '@/lib/supabase/server';
+import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 import type { CanonicalOpportunity } from '@/types/byn';
 import { jobUrl } from '@/lib/seo/job-href';
 
@@ -138,7 +138,13 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = createSupabasePublicClient();
+    // This is a deliberately public, session-independent catalogue endpoint.
+    // Use the server-only service client so PostgreSQL can use the catalogue's
+    // partial trigram indexes; anon RLS security quals prevent those indexes
+    // from being selected for ILIKE predicates. Public visibility is enforced
+    // explicitly below (active, not superseded, translation-safe), and only
+    // the allow-listed publicJob projection is returned.
+    const supabase = getSupabaseAdminClient();
     if (!supabase) {
       return NextResponse.json({ success: false, error: 'Job catalogue temporarily unavailable.' }, { status: 503 });
     }
