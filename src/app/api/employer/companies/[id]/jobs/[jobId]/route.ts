@@ -36,6 +36,7 @@ function toRow(b: Record<string, unknown>) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string; jobId: string }> }) {
+  const { id, jobId } = await params;
   try { await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   const db = getSupabaseAdminClient();
