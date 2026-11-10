@@ -35,21 +35,22 @@ function toRow(b: Record<string, unknown>) {
   };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string; jobId: string } }) {
-  try { await getAuthenticatedEmployer(req, params.id); }
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string; jobId: string }> }) {
+  try { await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
     const job = must(await db.from('employer_job_submissions').select(COLUMNS)
-      .eq('company_id', params.id).eq('id', params.jobId).maybeSingle(), 'employer_job_submissions').data;
+      .eq('company_id', id).eq('id', jobId).maybeSingle(), 'employer_job_submissions').data;
     return job ? NextResponse.json({ job }) : NextResponse.json({ error: 'Job not found.' }, { status: 404 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string; jobId: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; jobId: string }> }) {
   let employer;
-  try { employer = await getAuthenticatedEmployer(req, params.id); }
+  const { id, jobId } = await params;
+  try { employer = await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   if (employer.role === 'member') return NextResponse.json({ error: 'Only company owners and admins can edit vacancies.' }, { status: 403 });
   let body: unknown;
@@ -60,24 +61,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
     const job = must(await db.from('employer_job_submissions').update({ ...toRow(body), updated_at: new Date().toISOString() })
-      .eq('company_id', params.id).eq('id', params.jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
+      .eq('company_id', id).eq('id', jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
     return job ? NextResponse.json({ job }) : NextResponse.json({ error: 'Only a draft can be edited.' }, { status: 409 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Could not update draft.' }, { status: 500 }); }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string; jobId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string; jobId: string }> }) {
   let employer;
-  try { employer = await getAuthenticatedEmployer(req, params.id); }
+  const { id, jobId } = await params;
+  try { employer = await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   if (employer.role === 'member') return NextResponse.json({ error: 'Only company owners and admins can submit vacancies.' }, { status: 403 });
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
-    const company = must(await db.from('companies').select('verification_status').eq('id', params.id).maybeSingle(), 'companies').data;
+    const company = must(await db.from('companies').select('verification_status').eq('id', id).maybeSingle(), 'companies').data;
     if (!company) return NextResponse.json({ error: 'Company not found.' }, { status: 404 });
     if (company.verification_status !== 'verified') return NextResponse.json({ error: 'Company verification must be complete before a vacancy can be submitted for review. Your draft is saved.' }, { status: 409 });
     const job = must(await db.from('employer_job_submissions').update({ status: 'submitted', submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-      .eq('company_id', params.id).eq('id', params.jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
+      .eq('company_id', id).eq('id', jobId).eq('status', 'draft').select(COLUMNS).maybeSingle(), 'employer_job_submissions').data;
     return job ? NextResponse.json({ job }) : NextResponse.json({ error: 'Draft not found or already submitted.' }, { status: 409 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Could not submit job.' }, { status: 500 }); }
 }
