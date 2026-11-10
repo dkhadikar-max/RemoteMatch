@@ -65,6 +65,7 @@ const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\
 function fakeSearchClient(error: { code: string | null; message: string }): any {
   const builder: any = {
     select: () => builder,
+    is: () => builder,
     or: () => builder,
     order: () => builder,
     range: async () => ({ data: null, count: null, error }),
