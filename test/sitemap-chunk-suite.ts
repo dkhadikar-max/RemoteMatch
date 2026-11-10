@@ -200,6 +200,9 @@ console.log('\n4. The root document (/sitemap.xml)');
   assert(total === 120_001 && seen.size === 120_001 && maxItems < 45_000 && maxBytes < 50 * 1024 * 1024, `the 3 chunks hold all 120,001 URLs exactly once; largest chunk ${maxItems} URLs / ${(maxBytes / 1048576).toFixed(1)} MB`);
   const miss = await respondSitemapChunk(async () => huge, '3.xml');
   assert(miss.status === 404 && (await miss.text()) === 'Not Found', '/sitemaps/3.xml (out of range) -> 404');
+  let malformedLoadCalled = false;
+  const malformed = await respondSitemapChunk(async () => { malformedLoadCalled = true; return huge; }, '.env');
+  assert(malformed.status === 404 && !malformedLoadCalled, 'malformed /sitemaps/.env is rejected before the catalog loader runs');
 }
 
 console.log('\n5. The chunk documents (/sitemaps/{n}.xml)');
