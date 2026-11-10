@@ -19,10 +19,10 @@ export const isSupabaseConfigured = Boolean(
  * state" — see src/lib/db/mock-seed.ts for why that fallback is exactly the
  * P0 defect this migration removes.
  */
-export function createSupabaseServerClient(): SupabaseClient | null {
+export async function createSupabaseServerClient(): Promise<SupabaseClient | null> {
   if (!isSupabaseConfigured) return null;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
 
   return createServerClient(supabaseUrl!, supabaseAnonKey!, {
     cookies: {
