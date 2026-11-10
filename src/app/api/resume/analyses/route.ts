@@ -29,13 +29,26 @@ import { aiAnalysisAllowed } from '@/lib/resume/entitlement';
  * fixed set of config names.)
  */
 
-function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'general' | 'target_job'; opportunityId?: string } {
+function isValidBody(body: unknown): body is { resumeVersionId: string; mode: 'general' | 'target_job'; opportunityId?: string; candidateAnswers?: Array<{ questionId: string; answer: string }> } {
   if (!body || typeof body !== 'object') return false;
   const { resumeVersionId, mode, opportunityId } = body as Record<string, unknown>;
   if (typeof resumeVersionId !== 'string' || resumeVersionId.trim().length === 0) return false;
   if (mode !== 'general' && mode !== 'target_job') return false;
   if (mode === 'target_job' && (typeof opportunityId !== 'string' || opportunityId.trim().length === 0)) return false;
   if (opportunityId !== undefined && typeof opportunityId !== 'string') return false;
+  const candidateAnswers = (body as Record<string, unknown>).candidateAnswers;
+  if (candidateAnswers !== undefined) {
+    if (!Array.isArray(candidateAnswers) || candidateAnswers.length > 8) return false;
+    let total = 0;
+    for (const item of candidateAnswers) {
+      if (!item || typeof item !== 'object') return false;
+      const answer = item as Record<string, unknown>;
+      if (typeof answer.questionId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(answer.questionId)) return false;
+      if (typeof answer.answer !== 'string' || answer.answer.length > 1200) return false;
+      total += answer.answer.length;
+      if (total > 6000) return false;
+    }
+  }
   return true;
 }
 
@@ -96,6 +109,7 @@ export async function POST(req: NextRequest) {
     opportunityId: body.opportunityId,
     jobText,
     aiAllowed,
+    candidateAnswers: body.candidateAnswers?.filter((item) => item.answer.trim()),
   });
 
   return NextResponse.json({
