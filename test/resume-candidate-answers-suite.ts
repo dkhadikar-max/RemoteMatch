@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { redactForModel } from '../src/lib/resume/redaction';
 import { buildRubricPrompt } from '../src/lib/resume/prompt';
-import { validateModelOutput, type ValidationContext } from '../src/lib/resume/evidence-validation';
+import { rewriteIsSupported, validateModelOutput, type ValidationContext } from '../src/lib/resume/evidence-validation';
 import type { RawModelResumeAnalysis } from '../src/types/resume-intelligence';
 
 const resumeText = 'Worked with engineering team.';
@@ -48,6 +48,11 @@ assert.equal(result.body.bulletRewrites.length, 1, 'candidate answer can support
 const evidence = result.body.bulletRewrites[0].evidence[0];
 assert.equal(evidence.doc, 'candidate');
 assert.equal(candidateText.slice(evidence.start, evidence.end), evidence.quote, 'candidate evidence offsets map to the original answer');
+assert.equal(
+  rewriteIsSupported('Managed 4 engineers.', 'Worked with engineering team.', resumeText, [], 'I did not manage engineers.'),
+  false,
+  'a negated candidate clarification cannot authorize an ownership upgrade',
+);
 assert(!redactedCandidate.redactedText.includes('deep@example.com'), 'PII is redacted before model context is built');
 
 const fabricated = {
