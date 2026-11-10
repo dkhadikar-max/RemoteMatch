@@ -1,0 +1,37 @@
+name: Next.js 15 upgrade validation
+
+on:
+  push:
+    branches: [security/nextjs-15-upgrade]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Production build
+        run: npm run build
+      - name: Self-contained regression suites
+        shell: bash
+        run: |
+          set -e
+          for f in test/swipe-limits-rolling-24h-suite.ts test/catalog-hub-db-pagination-suite.ts test/catalog-touch-update-retry-suite.ts test/job-filter-data-quality-suite.ts test/ttl-cache-stale-invalidation-suite.ts test/main-feed-characterization-suite.ts test/main-feed-benchmark.ts test/employer-company-accounts-suite.ts test/employer-job-publishing-suite.ts; do
+            if [ -f "$f" ]; then
+              echo "::group::$f"
+              npx tsx "$f"
+              echo "::endgroup::"
+            fi
+          done
+      - name: Dependency audit
+        run: npm audit --audit-level=high
