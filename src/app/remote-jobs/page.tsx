@@ -76,8 +76,8 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
       route: 'public_job_directory',
       stage: searchQuery ? 'search_page' : 'hub_page',
       durationMs: performance.now() - directoryStartedAt,
-      outcome: hub.searchTimedOut ? 'timeout' : 'success',
-      resultCount: hub.jobs.length,
+      outcome: hub?.searchTimedOut ? 'timeout' : 'success',
+      resultCount: hub?.jobs.length ?? 0,
     });
   } catch (error) {
     recordRouteMetric({
