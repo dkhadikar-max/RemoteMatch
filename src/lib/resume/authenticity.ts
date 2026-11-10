@@ -62,7 +62,7 @@ function normalise(value: string): string {
  * descriptions when no further facts are available.
  */
 export function buildAuthenticityReview(resumeText: string, bullets: ResumeBullet[]): AuthenticityReview {
-  const findings: Finding[] = [];
+  const findings: AuthenticityReview['findings'] = [];
   const questions: AuthenticityReview['questions'] = [];
   const questionByKey = new Map<string, AuthenticityReview['questions'][number]>();
 
