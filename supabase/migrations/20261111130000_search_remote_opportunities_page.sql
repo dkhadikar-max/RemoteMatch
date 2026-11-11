@@ -49,6 +49,32 @@ BEGIN
         AND superseded_by_opportunity_id IS NULL
         AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
         AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_short_fts
+      ON public.opportunities USING gin (
+        to_tsvector('simple', concat_ws(' ', title, company, remote_type, array_to_string(required_skills, ' ')))
+      )
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_title_prefix
+      ON public.opportunities (lower(title) text_pattern_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_company_prefix
+      ON public.opportunities (lower(company) text_pattern_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_remote_type_prefix
+      ON public.opportunities (lower(remote_type) text_pattern_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
   END IF;
 END;
 $indexes$;
@@ -92,27 +118,64 @@ BEGIN
     END LOOP;
   END IF;
 
-  -- Build one indexable OR expression per term; terms are ANDed. The
-  -- input has already been reduced to a strict allowlist and is then quoted
-  -- with %L. Embedding the safe literal lets pg_trgm extract trigrams at plan
-  -- time; parameterized '%' || $1[n] || '%' hides the pattern and forces scans.
+  -- Terms of three or more characters use substring matching and the
+  -- pg_trgm indexes across all five searchable fields. One/two-character
+  -- terms are too short for trigrams; use token-prefix FTS, indexed field
+  -- prefixes, and exact skill-tag matching instead of scanning descriptions.
   FOR v_i IN 1..COALESCE(CARDINALITY(v_terms), 0) LOOP
-    v_predicate := v_predicate || FORMAT(
-      ' AND (
-        o.title ILIKE %L
-        OR o.company ILIKE %L
-        OR o.description ILIKE %L
-        OR o.remote_type ILIKE %L
-        OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
-      )',
-      '%' || v_terms[v_i] || '%',
-      '%' || v_terms[v_i] || '%',
-      '%' || v_terms[v_i] || '%',
-      '%' || v_terms[v_i] || '%',
-      v_terms[v_i],
-      INITCAP(v_terms[v_i]),
-      UPPER(v_terms[v_i])
-    );
+    IF LENGTH(v_terms[v_i]) < 3 THEN
+      IF v_terms[v_i] ~ '^[a-z0-9]+$' THEN
+        v_predicate := v_predicate || FORMAT(
+          ' AND (
+            to_tsvector(''simple'', concat_ws('' '', o.title, o.company, o.remote_type, array_to_string(o.required_skills, '' '')))
+              @@ to_tsquery(''simple'', %L)
+            OR lower(o.title) LIKE %L
+            OR lower(o.company) LIKE %L
+            OR lower(o.remote_type) LIKE %L
+            OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+          )',
+          v_terms[v_i] || ':*',
+          v_terms[v_i] || '%',
+          v_terms[v_i] || '%',
+          v_terms[v_i] || '%',
+          v_terms[v_i],
+          INITCAP(v_terms[v_i]),
+          UPPER(v_terms[v_i])
+        );
+      ELSE
+        v_predicate := v_predicate || FORMAT(
+          ' AND (
+            lower(o.title) LIKE %L
+            OR lower(o.company) LIKE %L
+            OR lower(o.remote_type) LIKE %L
+            OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+          )',
+          v_terms[v_i] || '%',
+          v_terms[v_i] || '%',
+          v_terms[v_i] || '%',
+          v_terms[v_i],
+          INITCAP(v_terms[v_i]),
+          UPPER(v_terms[v_i])
+        );
+      END IF;
+    ELSE
+      v_predicate := v_predicate || FORMAT(
+        ' AND (
+          o.title ILIKE %L
+          OR o.company ILIKE %L
+          OR o.description ILIKE %L
+          OR o.remote_type ILIKE %L
+          OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+        )',
+        '%' || v_terms[v_i] || '%',
+        '%' || v_terms[v_i] || '%',
+        '%' || v_terms[v_i] || '%',
+        '%' || v_terms[v_i] || '%',
+        v_terms[v_i],
+        INITCAP(v_terms[v_i]),
+        UPPER(v_terms[v_i])
+      );
+    END IF;
   END LOOP;
 
   -- A query containing only stripped punctuation has no searchable terms.
