@@ -45,7 +45,7 @@ function bm25LikeScore(queryTerms: string[], fields: Array<{ text: string; weigh
   for (const field of fields) {
     const counts = new Map<string, number>();
     for (const token of tokens(field.text)) counts.set(token, (counts.get(token) ?? 0) + 1);
-    for (const [term, count] of counts) {
+    for (const [term, count] of Array.from(counts.entries())) {
       termFrequency.set(term, (termFrequency.get(term) ?? 0) + count * field.weight);
     }
   }
