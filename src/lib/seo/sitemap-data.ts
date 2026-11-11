@@ -35,6 +35,9 @@ const jobEntries = getOrCreateCatalogCache('sitemap-entries', () => createAsyncT
   {
     ttlMs: catalogTtlMs(SITEMAP_TTL_MS),
     maxStaleMs: SITEMAP_MAX_STALE_MS,
+    // Crawler requests serve the previous complete snapshot immediately while
+    // a single refresh runs; never hold a sitemap request open for 80+ RPCs.
+    staleWhileRevalidate: true,
     onStaleServed: (err) =>
       console.warn('[sitemap] refresh failed; serving the last good job list:', err instanceof Error ? err.message : err),
   }
