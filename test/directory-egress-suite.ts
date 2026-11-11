@@ -218,7 +218,7 @@ async function main() {
   // This proves shape fidelity against established precedent, not a live-reproduced timeout —
   // actually triggering one would require an expensive production query, out of scope.
   {
-    let capturedSearchCall: { name: string; args: Record<string, unknown> } | null = null;
+    const capturedSearchCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const searchFixture = {
       type: 'job', title: 'Senior Engineer', company: 'Example Co', description: 'Build systems',
       source: 'remotive', source_id: 'search-fixture-1', official_url: 'https://example.com/apply',
@@ -233,12 +233,12 @@ async function main() {
       is_permanently_removed: false, link_checked_at: null, superseded_by_opportunity_id: null,
     };
     const indexedClient = fakeSearchClient(null, { jobs: [searchFixture], total: 31 }, (name, args) => {
-      capturedSearchCall = { name, args };
+      capturedSearchCalls.push({ name, args });
     });
     const indexedPage = await searchActiveOpportunitiesPage(indexedClient, ['engineer', 'typescript'], { from: 24, to: 47 });
     assert(
-      capturedSearchCall?.name === 'get_remote_job_search_page' &&
-      JSON.stringify(capturedSearchCall.args) === JSON.stringify({ p_terms: ['engineer', 'typescript'], p_offset: 24, p_page_size: 24 }),
+      capturedSearchCalls[0]?.name === 'get_remote_job_search_page' &&
+      JSON.stringify(capturedSearchCalls[0]?.args) === JSON.stringify({ p_terms: ['engineer', 'typescript'], p_offset: 24, p_page_size: 24 }),
       'directory search uses the indexed RPC with sanitized terms and bounded page arguments'
     );
     assert(
