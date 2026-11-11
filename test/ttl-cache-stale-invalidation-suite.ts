@@ -34,7 +34,9 @@ async function main() {
     }
   );
 
+  assert(!cache.hasValue(), 'a new TTL cache starts without a snapshot');
   assert(await cache.get() === 'snapshot-1', 'initial successful load is cached');
+  assert(cache.hasValue(), 'a successful load exposes a complete cached snapshot');
   now += 101;
   cache.invalidate();
   shouldFail = true;
