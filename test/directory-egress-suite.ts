@@ -466,7 +466,7 @@ async function main() {
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
     const s2 = (await loadSearchPage('engineer', '2'))!;
-    assert(s2.page === 2 && s2.jobs.length > 0 && s2.jobs[0].sourceId !== eng.jobs[0].sourceId, 'search page 2 is a different slice of the same result set');
+    assert(eng.jobs.length > 0 && s2.page === 2 && s2.jobs.length > 0 && s2.jobs[0].sourceId !== eng.jobs[0]?.sourceId, 'search page 2 is a different slice of the same result set');
     assert(eng.jobs.every((j, i, a) => i === 0 || a[i - 1].postedAt >= j.postedAt), 'search results are newest first');
     for (const hostile of ['a,b)(c', '%', '_', '*', 'x"y', "'; drop table opportunities; --", 'title.eq.1,or(id.eq.1', '\\', '😀', '()', ',,,']) {
       let ok = true; let r: any;
