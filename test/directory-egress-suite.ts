@@ -342,9 +342,9 @@ async function main() {
     mk(`${PREFIX}s-desc`, 6, { title: 'Plain Role Two', company: 'Plain Co', description: `This role involves ${SEARCH_TOKEN} research. ` + desc(6), required_skills: [] }),
     mk(`${PREFIX}s-skill`, 7, { title: 'Plain Role Three', company: 'Plain Co', description: desc(7), required_skills: [SEARCH_TOKEN] }),
     mk(`${PREFIX}s-skill-lc`, 8, { title: 'Plain Role Four', company: 'Plain Co', description: desc(8), required_skills: [SEARCH_TOKEN.toLowerCase()] }),
-    mk(`${PREFIX}s-go`, 9, { title: 'Senior Go Developer', required_skills: ['Go'] }),
-    mk(`${PREFIX}s-csharp`, 10, { title: 'C# Developer', required_skills: ['C#'] }),
-    mk(`${PREFIX}s-cpp`, 11, { title: 'C++ Developer', required_skills: ['C++'] }),
+    mk(`${PREFIX}s-go`, 9, { title: 'Senior Go Developer', required_skills: ['Go'], posted_at: new Date('2026-11-20T00:00:00Z').toISOString() }),
+    mk(`${PREFIX}s-csharp`, 10, { title: 'C# Developer', required_skills: ['C#'], posted_at: new Date('2026-11-21T00:00:00Z').toISOString() }),
+    mk(`${PREFIX}s-cpp`, 11, { title: 'C++ Developer', required_skills: ['C++'], posted_at: new Date('2026-11-22T00:00:00Z').toISOString() }),
   ];
   const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`, `${PREFIX}s-go`, `${PREFIX}s-csharp`, `${PREFIX}s-cpp`]);
   const mine = <T extends { sourceId: string }>(a: T[]) => a.filter((x) => x.sourceId.startsWith(PREFIX));
@@ -354,7 +354,7 @@ async function main() {
       const { error } = await admin.from('opportunities').insert(rows.slice(i, i + 200));
       if (error) { assert(false, `seed batch ${i / 200 + 1}`, error.message); return finish(); }
     }
-    assert(true, `seeded ${rows.length} isolated synthetic rows (${N} bulk + expired + untranslated-German + translated-German + 5 single-field search fixtures)`);
+    assert(true, `seeded ${rows.length} isolated synthetic rows (${N} bulk + expired + untranslated-German + translated-German + 5 single-field + 3 short-term search fixtures)`);
     resetDirectoryCachesForTests();
 
     // --- 3a. index ---
