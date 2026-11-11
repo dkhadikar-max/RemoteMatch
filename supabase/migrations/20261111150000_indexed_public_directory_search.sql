@@ -190,3 +190,18 @@ $function$;
 REVOKE ALL ON FUNCTION public.get_remote_job_search_page(text[], integer, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_remote_job_search_page(text[], integer, integer)
   TO anon, authenticated, service_role;
+
+
+-- The live directory integration also exercises category hubs. Keep the
+-- software-engineering membership predicate on an ordered partial index so
+-- its exact COUNT(*) and newest-first page query do not scan the full
+-- 82k+ row catalog projection on every cold hub request. This is deliberately
+-- on the slim projection (not opportunities), matching get_remote_job_hub_page.
+CREATE INDEX IF NOT EXISTS opportunity_catalog_index_software_engineering_hub_order
+  ON public.opportunity_catalog_index (posted_at DESC NULLS LAST, source_id ASC, source ASC)
+  WHERE lower(title) LIKE '%software engineering%'
+     OR lower(title) LIKE '%engineer%'
+     OR lower(title) LIKE '%developer%'
+     OR required_skills_lower && ARRAY[
+       'react', 'typescript', 'node.js', 'go', 'python', 'kubernetes', 'distributed systems'
+     ]::text[];
