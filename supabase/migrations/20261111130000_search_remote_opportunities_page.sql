@@ -118,9 +118,9 @@ BEGIN
     END LOOP;
   END IF;
 
-  -- Terms of three or more characters use substring matching and the
-  -- pg_trgm indexes across all five searchable fields. One/two-character
-  -- terms are too short for trigrams; use token-prefix FTS, indexed field
+  -- Terms with at least three alphanumeric characters use substring matching
+  -- and the pg_trgm indexes across all five searchable fields. Shorter terms
+  -- use token-prefix FTS (for two-character alphanumeric terms), indexed field
   -- prefixes, and exact skill-tag matching instead of scanning descriptions.
   FOR v_i IN 1..COALESCE(CARDINALITY(v_terms), 0) LOOP
     IF LENGTH(REGEXP_REPLACE(v_terms[v_i], '[^a-z0-9]', '', 'g')) < 3 THEN
