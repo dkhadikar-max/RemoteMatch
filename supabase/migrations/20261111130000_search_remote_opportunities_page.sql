@@ -123,7 +123,7 @@ BEGIN
   -- terms are too short for trigrams; use token-prefix FTS, indexed field
   -- prefixes, and exact skill-tag matching instead of scanning descriptions.
   FOR v_i IN 1..COALESCE(CARDINALITY(v_terms), 0) LOOP
-    IF LENGTH(v_terms[v_i]) < 3 THEN
+    IF LENGTH(REGEXP_REPLACE(v_terms[v_i], '[^a-z0-9]', '', 'g')) < 3 THEN
       IF v_terms[v_i] ~ '^[a-z0-9]+$' THEN
         v_predicate := v_predicate || FORMAT(
           ' AND (
