@@ -342,8 +342,11 @@ async function main() {
     mk(`${PREFIX}s-desc`, 6, { title: 'Plain Role Two', company: 'Plain Co', description: `This role involves ${SEARCH_TOKEN} research. ` + desc(6), required_skills: [] }),
     mk(`${PREFIX}s-skill`, 7, { title: 'Plain Role Three', company: 'Plain Co', description: desc(7), required_skills: [SEARCH_TOKEN] }),
     mk(`${PREFIX}s-skill-lc`, 8, { title: 'Plain Role Four', company: 'Plain Co', description: desc(8), required_skills: [SEARCH_TOKEN.toLowerCase()] }),
+    mk(`${PREFIX}s-go`, 9, { title: 'Senior Go Developer', required_skills: ['Go'] }),
+    mk(`${PREFIX}s-csharp`, 10, { title: 'C# Developer', required_skills: ['C#'] }),
+    mk(`${PREFIX}s-cpp`, 11, { title: 'C++ Developer', required_skills: ['C++'] }),
   ];
-  const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`]);
+  const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`, `${PREFIX}s-go`, `${PREFIX}s-csharp`, `${PREFIX}s-cpp`]);
   const mine = <T extends { sourceId: string }>(a: T[]) => a.filter((x) => x.sourceId.startsWith(PREFIX));
 
   try {
@@ -428,6 +431,12 @@ async function main() {
     assert(!found.has(`${PREFIX}x-expired`) && !found.has(`${PREFIX}x-de-error`), 'search never returns expired or untranslated-German listings');
     const z = (await loadSearchPage(GERMAN_TOKEN.toLowerCase(), '1'))!;
     assert(z.jobs.map((j) => j.sourceId).join() === `${PREFIX}t-de-ok`, 'only the TRANSLATED German listing matches its title word (the untranslated one stays hidden)');
+    const shortGo = (await loadSearchPage('go', '1'))!;
+    assert(shortGo.jobs.some((job) => job.sourceId === `${PREFIX}s-go`), 'short Go search uses indexed token-prefix/skill matching');
+    const shortCsharp = (await loadSearchPage('c#', '1'))!;
+    assert(shortCsharp.jobs.some((job) => job.sourceId === `${PREFIX}s-csharp`), 'short C# search uses indexed prefix/skill matching');
+    const shortCpp = (await loadSearchPage('c++', '1'))!;
+    assert(shortCpp.jobs.some((job) => job.sourceId === `${PREFIX}s-cpp`), 'short C++ search avoids a broad trigram scan');
     const eng = (await loadSearchPage('engineer', '1'))!;
     // Search is unchanged by this PR. Its pre-existing PostgREST path uses
     // exact skill-tag matching while the legacy in-memory path also matches
