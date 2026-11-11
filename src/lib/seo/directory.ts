@@ -15,9 +15,11 @@
  *           The SECURITY INVOKER RPC returns only the requested full rows.
  *   cache   requested hub pages are cached in-process (LRU + 30 min TTL) and
  *           invalidated by the existing catalog-sync invalidation path.
- *   search  a `?q=` query is answered by the DATABASE (ilike on title, company,
- *           description, remote type, plus skill tags) with LIMIT/OFFSET and an
- *           exact count — never by loading the catalog.
+ *   search  a `?q=` query is answered by a narrowly scoped public-search RPC.
+ *           It applies active, non-superseded, translation-safe visibility inside
+ *           a SECURITY DEFINER boundary so Postgres can use pg_trgm GIN indexes
+ *           despite the opportunities RLS barrier. It returns an exact count
+ *           and at most 24 full rows — never the whole catalog.
  *
  * Behavior differences from the old whole-catalog path (deliberate, tested):
  *   - listings are ordered newest first (the old order was unspecified);
