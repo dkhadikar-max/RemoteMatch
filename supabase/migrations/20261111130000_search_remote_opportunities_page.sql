@@ -133,7 +133,7 @@ BEGIN
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
             OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
-            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
+            OR EXISTS (SELECT 1 FROM public.opportunity_catalog_index AS skill_match WHERE skill_match.opportunity_id = o.id AND skill_match.required_skills_lower @> ARRAY[%L]::text[])
           )',
           v_terms[v_i] || ':*',
           v_terms[v_i] || '%',
@@ -151,7 +151,7 @@ BEGIN
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
             OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
-            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
+            OR EXISTS (SELECT 1 FROM public.opportunity_catalog_index AS skill_match WHERE skill_match.opportunity_id = o.id AND skill_match.required_skills_lower @> ARRAY[%L]::text[])
           )',
           v_terms[v_i] || '%',
           v_terms[v_i] || '%',
@@ -170,7 +170,7 @@ BEGIN
           OR o.description ILIKE %L
           OR o.remote_type ILIKE %L
           OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
-            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
+            OR EXISTS (SELECT 1 FROM public.opportunity_catalog_index AS skill_match WHERE skill_match.opportunity_id = o.id AND skill_match.required_skills_lower @> ARRAY[%L]::text[])
         )',
         '%' || v_terms[v_i] || '%',
         '%' || v_terms[v_i] || '%',
