@@ -137,11 +137,16 @@ BEGIN
       SELECT DISTINCT source_id FROM unique_page_ids
     ),
     first_match AS MATERIALIZED (
-      SELECT DISTINCT ON (i.source_id) i.source_id, i.source
-      FROM public.opportunity_catalog_index AS i
-      JOIN requested_ids AS requested USING (source_id)
-      WHERE %s
-      ORDER BY i.source_id ASC, i.source ASC
+      SELECT requested.source_id, first.source
+      FROM requested_ids AS requested
+      CROSS JOIN LATERAL (
+        SELECT i.source
+        FROM public.opportunity_catalog_index AS i
+        WHERE i.source_id = requested.source_id
+          AND %s
+        ORDER BY i.source ASC
+        LIMIT 1
+      ) AS first
     ),
     resolved AS (
       SELECT
