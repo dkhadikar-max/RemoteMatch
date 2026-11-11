@@ -126,12 +126,132 @@ COMMENT ON FUNCTION public.get_active_opportunities_keyset_page(text, text, inte
   'RLS-scoped bounded keyset page for full-catalog reads, ordered by unique (source, source_id).';
 
 
+-- Keep normalized skill tags in the public projection so search can use a GIN
+-- index rather than unnesting every opportunity's array during every search.
+CREATE OR REPLACE FUNCTION public.sync_opportunity_catalog_index()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM public.opportunity_catalog_index
+    WHERE opportunity_id = OLD.id;
+    RETURN OLD;
+  END IF;
+
+  IF NEW.status = 'active'
+     AND NEW.superseded_by_opportunity_id IS NULL
+     AND (
+       NEW.source_language IS NULL
+       OR NEW.source_language = 'en'
+       OR NEW.translation_status = 'ok'
+     )
+     AND (
+       NEW.translation_status IS NULL
+       OR NEW.translation_status <> 'error'
+     ) THEN
+    INSERT INTO public.opportunity_catalog_index (
+      opportunity_id, source, source_id, title, posted_at,
+      required_skills, required_skills_lower, remote_type,
+      eligible_countries, experience_requirement
+    )
+    VALUES (
+      NEW.id, NEW.source, NEW.source_id, NEW.title, NEW.posted_at,
+      COALESCE(NEW.required_skills, ARRAY[]::text[]),
+      ARRAY(
+        SELECT lower(btrim(skill))
+        FROM unnest(COALESCE(NEW.required_skills, ARRAY[]::text[])) AS skills(skill)
+      ),
+      NEW.remote_type,
+      COALESCE(NEW.eligible_countries, ARRAY[]::text[]),
+      NEW.experience_requirement
+    )
+    ON CONFLICT (opportunity_id) DO UPDATE SET
+      source = EXCLUDED.source,
+      source_id = EXCLUDED.source_id,
+      title = EXCLUDED.title,
+      posted_at = EXCLUDED.posted_at,
+      required_skills = EXCLUDED.required_skills,
+      required_skills_lower = EXCLUDED.required_skills_lower,
+      remote_type = EXCLUDED.remote_type,
+      eligible_countries = EXCLUDED.eligible_countries,
+      experience_requirement = EXCLUDED.experience_requirement;
+  ELSE
+    DELETE FROM public.opportunity_catalog_index
+    WHERE opportunity_id = NEW.id;
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+UPDATE public.opportunity_catalog_index AS catalog
+SET required_skills_lower = ARRAY(
+  SELECT lower(btrim(skill))
+  FROM unnest(catalog.required_skills) AS skills(skill)
+)
+WHERE catalog.required_skills_lower IS DISTINCT FROM ARRAY(
+  SELECT lower(btrim(skill))
+  FROM unnest(catalog.required_skills) AS skills(skill)
+);
+
+CREATE INDEX IF NOT EXISTS opportunity_catalog_index_required_skills_lower_gin
+  ON public.opportunity_catalog_index USING gin (required_skills_lower);
+
+ANALYZE public.opportunity_catalog_index;
+
+
 -- Fix deep sitemap pagination by separating the first-page and continuation plans.
 -- The optional-cursor OR caused generic plans to apply the cursor as a filter
 -- instead of an index condition. Dynamic EXECUTE replans the continuation with
 -- the supplied cursor. The public RPC contract and RLS behavior are preserved.
 -- Default and maximum batch size are reduced to 1,000; callers already request
 -- explicit batches <= 1,000 and the application retries down to 25 on 57014.
+
+-- Keep the legacy set-returning sitemap RPC aligned with the same visibility
+-- predicate as the JSONB batch reader. Both are public sitemap entry points.
+CREATE OR REPLACE FUNCTION public.get_remote_job_sitemap_page(
+  p_after_source text DEFAULT NULL,
+  p_after_source_id text DEFAULT NULL,
+  p_page_size integer DEFAULT 1000
+)
+RETURNS TABLE (
+  source text,
+  source_id text,
+  title text,
+  posted_at timestamptz,
+  required_skills text[]
+)
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $
+  SELECT
+    o.source,
+    o.source_id,
+    o.title,
+    o.posted_at,
+    COALESCE(o.required_skills, ARRAY[]::text[])
+  FROM public.opportunities AS o
+  WHERE o.status = 'active'
+    AND o.superseded_by_opportunity_id IS NULL
+    AND (o.source_language IS NULL OR o.source_language = 'en' OR o.translation_status = 'ok')
+    AND (o.translation_status IS NULL OR o.translation_status <> 'error')
+    AND (
+      p_after_source IS NULL
+      OR (o.source, o.source_id) > (p_after_source, COALESCE(p_after_source_id, ''))
+    )
+  ORDER BY o.source ASC, o.source_id ASC
+  LIMIT LEAST(GREATEST(COALESCE(p_page_size, 1000), 1), 1000);
+$;
+
+REVOKE ALL ON FUNCTION public.get_remote_job_sitemap_page(text, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_remote_job_sitemap_page(text, text, integer)
+  TO anon, authenticated, service_role;
+
 
 CREATE OR REPLACE FUNCTION public.get_remote_job_sitemap_page_json(
   p_after_source text DEFAULT NULL,
