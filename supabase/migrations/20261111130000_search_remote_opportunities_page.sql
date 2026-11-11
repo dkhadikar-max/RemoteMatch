@@ -93,20 +93,26 @@ BEGIN
     END LOOP;
   END IF;
 
-  -- Build one indexable OR expression per term; terms are ANDed. Each
-  -- parameter is passed as data (never interpolated into SQL text), allowing
-  -- the planner to combine the existing title/company/description/remote-type
-  -- trigram indexes and required_skills GIN index with BitmapOr.
+  -- Build one indexable OR expression per term; terms are ANDed. The
+  -- input has already been reduced to a strict allowlist and is then quoted
+  -- with %L. Embedding the safe literal lets pg_trgm extract trigrams at plan
+  -- time; parameterized '%' || $1[n] || '%' hides the pattern and forces scans.
   FOR v_i IN 1..COALESCE(CARDINALITY(v_terms), 0) LOOP
     v_predicate := v_predicate || FORMAT(
       ' AND (
-        o.title ILIKE (''%%'' || $1[%s] || ''%%'')
-        OR o.company ILIKE (''%%'' || $1[%s] || ''%%'')
-        OR o.description ILIKE (''%%'' || $1[%s] || ''%%'')
-        OR o.remote_type ILIKE (''%%'' || $1[%s] || ''%%'')
-        OR o.required_skills @> ARRAY[$1[%s], INITCAP($1[%s]), UPPER($1[%s])]::text[]
+        o.title ILIKE %L
+        OR o.company ILIKE %L
+        OR o.description ILIKE %L
+        OR o.remote_type ILIKE %L
+        OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
       )',
-      v_i, v_i, v_i, v_i, v_i, v_i, v_i
+      '%' || v_terms[v_i] || '%',
+      '%' || v_terms[v_i] || '%',
+      '%' || v_terms[v_i] || '%',
+      '%' || v_terms[v_i] || '%',
+      v_terms[v_i],
+      INITCAP(v_terms[v_i]),
+      UPPER(v_terms[v_i])
     );
   END LOOP;
 
@@ -120,8 +126,7 @@ BEGIN
         AND %s',
     v_predicate
   )
-  INTO v_total
-  USING v_terms;
+  INTO v_total;
 
   EXECUTE FORMAT(
     'SELECT COALESCE(
@@ -153,12 +158,12 @@ BEGIN
            AND (o.translation_status IS NULL OR o.translation_status <> ''error'')
            AND %s
          ORDER BY o.posted_at DESC NULLS LAST, o.source_id ASC, o.source ASC
-         LIMIT $2 OFFSET $3
+         LIMIT $1 OFFSET $2
        ) AS page_row',
     v_predicate
   )
   INTO v_jobs
-  USING v_terms, v_page_size, v_offset;
+  USING v_page_size, v_offset;
 
   RETURN JSONB_BUILD_OBJECT(
     'total', v_total,
