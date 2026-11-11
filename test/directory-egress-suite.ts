@@ -56,12 +56,7 @@ const skip = (m: string) => { skipped++; console.log(`  – SKIP: ${m}`); };
 const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8').replace(/\r\n/g, '\n');
 const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-/** Stub of the chainable Supabase query builder surface. Covers exactly the five methods
- *  searchActiveOpportunitiesPage calls, verified against its current source (src/lib/ingestion/
- *  catalog-read.ts): .from() once, then .select()/.or()/.order() each called multiple times
- *  (always the same method, chainable), terminating in the one awaited call, .range(), which
- *  resolves to { data, count, error }. If that function ever adds a method this stub lacks, the
- *  call throws "query.X is not a function" — the test fails loudly on the mock, not silently. */
+/** Minimal Supabase RPC stub for search timeout/error handling. */
 function fakeSearchClient(error: { code: string | null; message: string }): any {
   return {
     rpc: async () => ({ data: null, error }),
