@@ -15,7 +15,7 @@ function opportunity(id: string, title: string, requiredSkills: string[], descri
     officialUrl: "https://example.com/" + id, canonicalUrlHash: id, contentHash: id,
     employmentType: "Full-time", remoteType: "Worldwide", eligibleCountries: [],
     excludedCountries: [], timezoneRequirements: [], requiredSkills, preferredSkills: [],
-    qualityScore: 80, status: "active",
+    qualityScore: 80, status: "active", postedAt: "2026-01-01T00:00:00Z", lastVerifiedAt: "2026-01-01T00:00:00Z",
   } as CanonicalOpportunity;
 }
 const profile = {
