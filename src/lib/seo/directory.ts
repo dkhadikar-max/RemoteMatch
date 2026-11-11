@@ -17,9 +17,9 @@
  *           invalidated by the existing catalog-sync invalidation path.
  *   search  a `?q=` query is answered by a narrowly scoped public-search RPC.
  *           It applies active, non-superseded, translation-safe visibility inside
- *           a SECURITY DEFINER boundary so Postgres can use pg_trgm GIN indexes
- *           despite the opportunities RLS barrier. It returns an exact count
- *           and at most 24 full rows — never the whole catalog.
+ *           a SECURITY DEFINER boundary so Postgres can use trigram and short-token
+ *           prefix indexes despite the opportunities RLS barrier. It returns an
+ *           exact count and at most 24 full rows — never the whole catalog.
  *
  * Behavior differences from the old whole-catalog path (deliberate, tested):
  *   - listings are ordered newest first (the old order was unspecified);
