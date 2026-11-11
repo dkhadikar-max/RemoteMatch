@@ -497,7 +497,13 @@ async function main() {
       assert((await get('/remote-jobs?q=engineer&page=101')).status === 404, 'a deep search page -> 404 before a DB query');
       assert((await get('/remote-jobs?page=abc')).status === 200, 'a garbage page param -> page 1 (200)');
       const dq = await get('/remote-jobs?q=' + encodeURIComponent(SEARCH_TOKEN.toLowerCase()));
-      assert(dq.status === 200 && /Showing 5 verified positions/.test(dq.text) && dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()), 'GET /remote-jobs with a unique search token -> the 5 fixtures');
+      assert(
+        dq.status === 200 &&
+          /Showing 5 verified positions/.test(dq.text) &&
+          dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()),
+        'GET /remote-jobs with a unique search token -> the 5 fixtures',
+        `status=${dq.status}; expectedCountLabel=${/Showing 5 verified positions/.test(dq.text)}; tokenInHtml=${dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase())}; excerpt=${dq.text.match(/.{0,100}Showing.{0,120}/i)?.[0] ?? dq.text.slice(0, 300)}`
+      );
       assert((await get('/remote-jobs?q=%25%27%22%2C()')).status === 200, 'hostile ?q= renders (200), no 500');
       const c1 = await get('/remote-jobs/software-engineering');
       assert(c1.status === 200 && (c1.text.match(/<article/g) || []).length === 24 && /Showing 1–24 of \d+ verified active positions/.test(c1.text), 'GET /remote-jobs/software-engineering -> 200 with a 24-card first page');
