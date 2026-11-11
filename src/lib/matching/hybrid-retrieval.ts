@@ -100,14 +100,14 @@ export function retrieveHybridCandidates<T extends CanonicalOpportunity>(
   const scored = opportunities.map((opportunity, originalIndex) => {
     const document = documents[originalIndex];
     const evidence: RetrievalEvidence[] = [];
-    const exactSkills = profileSkills.filter((skill) => document.required.includes(skill));
-    if (exactSkills.length) evidence.push({ channel: "skill_exact", score: exactSkills.length * 8, matchedTerms: exactSkills });
-
     const rawProfileSkills = (profile.skills ?? []).map((skill) => normalizeSkillLabel(skill.skillName));
     const rawRequired = (opportunity.requiredSkills ?? []).map(normalizeSkillLabel);
+    const exactSkills = profileSkills.filter((skill) => rawProfileSkills.some((raw) => canonicalSkillKey(raw) === skill && rawRequired.includes(raw)));
+    if (exactSkills.length) evidence.push({ channel: "skill_exact", score: exactSkills.length * 8, matchedTerms: exactSkills });
+
     const aliasMatches = profileSkills.filter((skill) =>
-      rawRequired.some((raw) => canonicalSkillKey(raw) === skill) &&
-      !rawProfileSkills.includes(skill),
+      rawProfileSkills.some((profileRaw) => canonicalSkillKey(profileRaw) === skill) &&
+      rawRequired.some((requiredRaw) => canonicalSkillKey(requiredRaw) === skill && !rawProfileSkills.includes(requiredRaw)),
     );
     if (aliasMatches.length) evidence.push({ channel: "skill_alias", score: aliasMatches.length * 7, matchedTerms: aliasMatches });
 
