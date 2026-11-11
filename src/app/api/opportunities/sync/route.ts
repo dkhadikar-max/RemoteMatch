@@ -39,9 +39,8 @@ export async function POST(req: NextRequest) {
 
     if (action === 'revalidate') {
       const result = await revalidateStaleLinks();
-      // Link checks can expire listings: refresh product caches, but let the sitemap's
-      // 6-hour TTL expire naturally. Its stale-while-revalidate path avoids a 40s
-      // cold rebuild blocking a crawler after a revalidation pass.
+      // Link checks can expire listings: refresh product caches immediately. If
+      // any listing expired, refresh an already-warm sitemap in the background.
       try {
         invalidateCatalogCaches(['sitemap-entries']);
         if (result.expiredByLinkFailure > 0) refreshSitemapEntriesInBackground();
@@ -78,12 +77,15 @@ export async function POST(req: NextRequest) {
     const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
     const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
 
-    // The sync wrote to the catalog: refresh product-facing caches immediately. The sitemap
-    // deliberately keeps its last complete snapshot until its 6-hour TTL, then refreshes in
-    // the background while crawlers continue receiving valid XML. This prevents every 3-hour
-    // ingestion run from forcing the next crawler through 80+ sequential database RPCs.
+    // The sync wrote to the catalog: refresh product-facing caches immediately.
+    // Refresh an already-warm sitemap off the crawler path; the stale-while-
+    // revalidate cache serves the previous complete XML while its 80+ batches run.
+    // If this process has never served the sitemap, do not create unused egress.
     // Best effort — a cache must never fail a sync that has already written.
-    try { invalidateCatalogCaches(['sitemap-entries']); } catch { /* ignore */ }
+    try {
+      invalidateCatalogCaches(['sitemap-entries']);
+      if (anyProviderSucceeded) refreshSitemapEntriesInBackground();
+    } catch { /* ignore */ }
 
     return NextResponse.json({ success: true, action: 'sync', ...result, translation, reconciliation });
 
