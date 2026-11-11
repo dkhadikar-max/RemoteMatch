@@ -22,8 +22,9 @@ import { SITE_URL } from '@/lib/site';
 const SITEMAP_TTL_MS = 6 * 60 * 60 * 1000;
 const SITEMAP_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
-// Process-wide (see catalog-caches.ts): one instance however Next bundles the routes, and
-// dropped by the sync route when ingestion has written new rows.
+// Process-wide (see catalog-caches.ts): one instance however Next bundles the routes.
+// After a sync, an existing sitemap snapshot is refreshed in the background so the
+// crawler path never pays the cold-read cost.
 const jobEntries = getOrCreateCatalogCache('sitemap-entries', () => createAsyncTtlCache<SitemapJobEntry[]>(
   async () => {
     const supabase = createSupabasePublicClient();
@@ -46,6 +47,20 @@ const jobEntries = getOrCreateCatalogCache('sitemap-entries', () => createAsyncT
 // The URL list built from one cached job list is reused by every request until the cache refreshes (the index and each chunk are
 // separate requests); keyed by the cached array's identity, so a refresh or an invalidation rebuilds it.
 let built: { jobs: SitemapJobEntry[]; entries: MetadataRoute.Sitemap } | null = null;
+
+/**
+ * Refresh an already-warm sitemap snapshot after catalog writes without making
+ * the sync request or the next crawler request wait for its 80+ keyset batches.
+ * If this process has never served the sitemap, leave it cold; the first GET
+ * will build the initial complete snapshot rather than creating unused egress.
+ */
+export function refreshSitemapEntriesInBackground(): void {
+  if (!built) return;
+  jobEntries.invalidate();
+  void jobEntries.get().catch((err) => {
+    console.warn('[sitemap] background refresh could not start:', err instanceof Error ? err.message : err);
+  });
+}
 
 /** The complete, ordered, de-duplicated sitemap URL list (static + hubs + every eligible listing + guides). */
 export async function getSitemapEntries(): Promise<MetadataRoute.Sitemap> {
