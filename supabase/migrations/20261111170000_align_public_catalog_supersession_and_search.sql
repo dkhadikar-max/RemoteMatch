@@ -133,7 +133,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $
+AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     DELETE FROM public.opportunity_catalog_index
@@ -185,7 +185,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$$;
 
 UPDATE public.opportunity_catalog_index AS catalog
 SET required_skills_lower = ARRAY(
@@ -228,7 +228,7 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = pg_catalog, public
-AS $
+AS $$
   SELECT
     o.source,
     o.source_id,
@@ -246,7 +246,7 @@ AS $
     )
   ORDER BY o.source ASC, o.source_id ASC
   LIMIT LEAST(GREATEST(COALESCE(p_page_size, 1000), 1), 1000);
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.get_remote_job_sitemap_page(text, text, integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_remote_job_sitemap_page(text, text, integer)
