@@ -77,7 +77,7 @@ export interface TtlCache<T> {
 
 export function createAsyncTtlCache<T>(
   load: () => Promise<T>,
-  options: { ttlMs: number; maxStaleMs: number; now?: () => number; onStaleServed?: (err: unknown) => void }
+  options: { ttlMs: number; maxStaleMs: number; now?: () => number; onStaleServed?: (err: unknown) => void; staleWhileRevalidate?: boolean }
 ): TtlCache<T> {
   const now = options.now ?? Date.now;
   let value: { v: T; at: number } | null = null;
@@ -110,15 +110,27 @@ export function createAsyncTtlCache<T>(
     }
   }
 
+  function startRefresh(): Promise<T> {
+    if (!inflight) {
+      inflight = refresh().finally(() => {
+        inflight = null;
+      });
+    }
+    return inflight;
+  }
+
   return {
     async get() {
       if (value && !invalidated && now() - value.at < options.ttlMs) return value.v;
-      if (!inflight) {
-        inflight = refresh().finally(() => {
-          inflight = null;
-        });
+      // For large shared snapshots (the sitemap), do not make the request that
+      // discovers expiry pay the full refresh cost. Serve the last good snapshot
+      // immediately while one background refresh runs. A cold process still
+      // waits for its first successful load; stale data is never fabricated.
+      if (options.staleWhileRevalidate && value && now() - value.at < options.maxStaleMs) {
+        void startRefresh().catch(() => undefined);
+        return value.v;
       }
-      return inflight;
+      return startRefresh();
     },
     invalidate() {
       // Do not discard the last-known-good value. Mark it stale so the next
