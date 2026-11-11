@@ -124,7 +124,7 @@ BEGIN
   -- prefixes, and exact skill-tag matching instead of scanning descriptions.
   FOR v_i IN 1..COALESCE(CARDINALITY(v_terms), 0) LOOP
     IF LENGTH(REGEXP_REPLACE(v_terms[v_i], '[^a-z0-9]', '', 'g')) < 3 THEN
-      IF LENGTH(REGEXP_REPLACE(v_terms[v_i], '[^a-z0-9]', '', 'g')) = 2 AND v_terms[v_i] ~ '^[a-z0-9]+
+      IF LENGTH(REGEXP_REPLACE(v_terms[v_i], '[^a-z0-9]', '', 'g')) = 2 AND v_terms[v_i] ~ '^[a-z0-9]+$' THEN
         v_predicate := v_predicate || FORMAT(
           ' AND (
             to_tsvector(''simple''::regconfig, COALESCE(o.title, '''') || '' '' || COALESCE(o.company, '''') || '' '' || COALESCE(o.remote_type, ''''))
