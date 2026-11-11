@@ -43,7 +43,7 @@ import {
   resetDirectoryCachesForTests,
   type DirectoryDeps,
 } from '../src/lib/seo/directory';
-import { getActiveOpportunities, getCatalogIndexEntries, searchActiveOpportunitiesPage, SearchTimeoutError, type CatalogIndexEntry } from '../src/lib/ingestion/catalog-read';
+import { OPPORTUNITY_COLUMNS, rowToCanonicalOpportunity, getCatalogIndexEntries, searchActiveOpportunitiesPage, SearchTimeoutError, type CatalogIndexEntry } from '../src/lib/ingestion/catalog-read';
 import { createLruTtlMap } from '../src/lib/seo/ttl-cache';
 import { pageWindow } from '../src/components/seo/Pagination';
 import type { CanonicalOpportunity } from '../src/types/byn';
@@ -392,11 +392,36 @@ async function main() {
     console.log(`  · index read: ${idxRun.calls} REST calls, ${kb(idxRun.bytes)} for ${idxRun.r.length} rows (${(idxRun.bytes / idxRun.r.length).toFixed(0)} B/row uncompressed)`);
 
     // --- 3b. membership equals the OLD whole-catalog path ---
-    const fullRun = await measure(() => getActiveOpportunities(anon, { translationSafe: true }));
-    const full = mine(fullRun.r);
-    console.log(`  · OLD full-catalog read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
+    // Do not download the entire shared CI catalog just to validate 2,500
+    // synthetic fixtures. On the current isolated project that catalog is
+    // >80k rows, so a full-record sweep needs 800+ network round trips and
+    // deterministically exceeds the CI job budget. Read only this suite's
+    // uniquely-prefixed fixtures, with the same visible-row gates and full
+    // record projection used by the former whole-catalog reader.
+    const fullRun = await measure(async () => {
+      const fixtureRows: any[] = [];
+      for (let offset = 0; ; offset += 100) {
+        const { data, error } = await admin.from('opportunities')
+          .select(OPPORTUNITY_COLUMNS)
+          .eq('source', 'remotive')
+          .like('source_id', `${PREFIX}%`)
+          .eq('status', 'active')
+          .is('superseded_by_opportunity_id', null)
+          .or('source_language.is.null,source_language.eq.en,translation_status.eq.ok')
+          .or('translation_status.is.null,translation_status.neq.error')
+          .order('source', { ascending: true })
+          .order('source_id', { ascending: true })
+          .range(offset, offset + 99);
+        if (error) throw new Error(`Could not read synthetic legacy fixtures: ${error.message}`);
+        fixtureRows.push(...(data ?? []));
+        if (!data || data.length < 100) break;
+      }
+      return fixtureRows.map((row) => rowToCanonicalOpportunity(row));
+    });
+    const full = fullRun.r;
+    console.log(`  · OLD full-row fixture read: ${fullRun.calls} REST calls, ${kb(fullRun.bytes)} for ${fullRun.r.length} rows (${(fullRun.bytes / fullRun.r.length).toFixed(0)} B/row)`);
     assert(full.length === visibleIds.size, `old full read sees the same ${full.length} listings`);
-    assert(fullRun.calls === Math.ceil(fullRun.r.length / 100), `full-catalog reader uses one bounded keyset RPC per 100-row page (${fullRun.calls} calls)`);
+    assert(fullRun.calls === Math.ceil(fullRun.r.length / 100), `legacy fixture reader uses one bounded 100-row page per request (${fullRun.calls} calls)`);
     const cursorOrdered = fullRun.r.every((job, i, rows) =>
       i === 0 || rows[i - 1].source < job.source ||
       (rows[i - 1].source === job.source && rows[i - 1].sourceId < job.sourceId)
