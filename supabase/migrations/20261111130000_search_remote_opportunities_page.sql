@@ -132,7 +132,7 @@ BEGIN
             OR lower(o.title) LIKE %L
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
-            OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+            OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
           )',
           v_terms[v_i] || ':*',
           v_terms[v_i] || '%',
@@ -148,7 +148,7 @@ BEGIN
             lower(o.title) LIKE %L
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
-            OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+            OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
           )',
           v_terms[v_i] || '%',
           v_terms[v_i] || '%',
@@ -165,7 +165,7 @@ BEGIN
           OR o.company ILIKE %L
           OR o.description ILIKE %L
           OR o.remote_type ILIKE %L
-          OR o.required_skills @> ARRAY[%L, %L, %L]::text[]
+          OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
         )',
         '%' || v_terms[v_i] || '%',
         '%' || v_terms[v_i] || '%',
