@@ -197,6 +197,8 @@ async function main() {
     assert(true, 'category hub RPC separates exact totals from bounded page retrieval');
     await db.exec(read('supabase/migrations/20261111130000_search_remote_opportunities_page.sql'));
     assert(true, 'public search RPC applies the visibility gate and returns a bounded exact-count page');
+    await db.exec(read('supabase/migrations/20261111150000_exclude_superseded_catalog_rows.sql'));
+    assert(true, 'catalog projection trigger excludes superseded rows on insert and update');
     const usCountIndex = await db.query(`
       SELECT indexdef FROM pg_indexes
       WHERE schemaname = 'public' AND indexname = 'opportunity_catalog_index_united_states_count';
@@ -301,7 +303,8 @@ async function main() {
       indexedSearch.total === 5 &&
       indexedSearch.jobs.length === 5 &&
       ['search-title', 'search-company', 'search-description', 'search-remote', 'search-skill'].every((id) => indexedSearchIds.has(id)),
-      'public search matches title, company, description, remote type and whole skill tags'
+      'public search matches title, company, description, remote type and whole skill tags',
+      { total: indexedSearch.total, returned: indexedSearch.jobs.length, ids: [...indexedSearchIds] }
     );
     assert(
       !indexedSearchIds.has('search-hidden-expired') &&
@@ -322,7 +325,8 @@ async function main() {
     });
     assert(
       secondSearchPage.total === 5 && secondSearchPage.jobs.length === 0,
-      'search pagination preserves the exact total when the requested page is empty'
+      'search pagination preserves the exact total when the requested page is empty',
+      { total: secondSearchPage.total, returned: secondSearchPage.jobs.length }
     );
     const shortGoSearch = await searchRpc(db, {
       p_terms: ['go'], p_offset: 0, p_page_size: 24,
