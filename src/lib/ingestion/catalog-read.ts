@@ -593,8 +593,18 @@ export async function searchActiveOpportunitiesPage(
   // The RPC explicitly reapplies active + non-superseded + translation-safe
   // visibility and uses trigram or short-token prefix indexes as appropriate.
   const pageSize = Math.min(Math.max(range.to - range.from + 1, 1), 24);
+  // Normalize at the RPC boundary as well as in buildSearchTerms(). This keeps
+  // callers that supply a multi-word array entry from accidentally turning it
+  // into one impossible database token; the SQL RPC still independently
+  // validates every term before building its indexed predicates.
+  const rpcTerms = Array.from(new Set(terms
+    .flatMap((term) => String(term ?? '').toLowerCase().trim().split(/\\s+/))
+    .map((term) => term.replace(/[^a-z0-9+#./-]/g, '').slice(0, 40))
+    .filter(Boolean)))
+    .slice(0, 5);
+  if (rpcTerms.length === 0) return { rows: [], total: 0 };
   const { data, error } = await supabase.rpc('get_remote_job_search_page', {
-    p_terms: terms,
+    p_terms: rpcTerms,
     p_offset: Math.max(range.from, 0),
     p_page_size: pageSize,
   });
