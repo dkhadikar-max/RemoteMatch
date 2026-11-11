@@ -62,10 +62,12 @@ export function getOrCreateCatalogCache<T extends Invalidatable>(name: string, c
   return created;
 }
 
-/** Drops every registered catalog cache; returns their names. Never throws. */
-export function invalidateCatalogCaches(): string[] {
+/** Drops registered catalog caches except explicitly excluded names; returns invalidated names. Never throws. */
+export function invalidateCatalogCaches(exceptNames: readonly string[] = []): string[] {
   const names: string[] = [];
+  const excluded = new Set(exceptNames);
   for (const [name, cache] of Array.from(registry().entries())) {
+    if (excluded.has(name)) continue;
     try {
       cache.invalidate();
       names.push(name);
