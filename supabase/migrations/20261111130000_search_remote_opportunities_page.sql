@@ -51,7 +51,7 @@ BEGIN
         AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
     EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_short_fts
       ON public.opportunities USING gin (
-        to_tsvector('simple', concat_ws(' ', title, company, remote_type, array_to_string(required_skills, ' ')))
+        to_tsvector('simple'::regconfig, COALESCE(title, '') || ' ' || COALESCE(company, '') || ' ' || COALESCE(remote_type, ''))
       )
       WHERE status = 'active'
         AND superseded_by_opportunity_id IS NULL
@@ -127,7 +127,7 @@ BEGIN
       IF v_terms[v_i] ~ '^[a-z0-9]+$' THEN
         v_predicate := v_predicate || FORMAT(
           ' AND (
-            to_tsvector(''simple'', concat_ws('' '', o.title, o.company, o.remote_type, array_to_string(o.required_skills, '' '')))
+            to_tsvector(''simple''::regconfig, COALESCE(o.title, '''') || '' '' || COALESCE(o.company, '''') || '' '' || COALESCE(o.remote_type, ''''))
               @@ to_tsquery(''simple'', %L)
             OR lower(o.title) LIKE %L
             OR lower(o.company) LIKE %L
