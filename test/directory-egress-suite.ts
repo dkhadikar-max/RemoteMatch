@@ -457,7 +457,7 @@ async function main() {
       const upper = term.toUpperCase();
       return [job.title, job.company, job.description, job.remoteType]
         .some((field) => field.toLowerCase().includes(term)) ||
-        (job.requiredSkills ?? []).some((skill) => skill === term || skill === cap || skill === upper);
+        (job.requiredSkills ?? []).some((skill) => skill.trim().toLowerCase() === term);
     }));
     assert(
       multi.total === expectedMulti.length && multi.total > 0 && oldMulti.length >= multi.total,
@@ -522,9 +522,25 @@ async function main() {
       console.log(`  · HTML sizes: directory page 1 ${kb(d1.bytes)}, category page 1 ${kb(c1.bytes)}`);
     }
   } finally {
-    const { error } = await admin.from('opportunities').delete().like('source_id', `${PREFIX}%`);
-    const { count } = await admin.from('opportunities').select('source_id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);
-    assert(!error && (count ?? 0) === 0, `cleanup: all synthetic rows removed (${count ?? 0} remain)`, error?.message);
+    let cleanupError: string | undefined;
+    // Delete in bounded batches: the isolated project enforces a short statement
+    // timeout, and one broad DELETE can time out after a large synthetic run.
+    for (let batch = 0; batch < 30; batch++) {
+      const { data: doomed, error: selectError } = await admin
+        .from('opportunities')
+        .select('id')
+        .like('source_id', `${PREFIX}%`)
+        .limit(100);
+      if (selectError) { cleanupError = selectError.message; break; }
+      if (!doomed?.length) break;
+      const { error: deleteError } = await admin
+        .from('opportunities')
+        .delete()
+        .in('id', doomed.map((row) => row.id));
+      if (deleteError) { cleanupError = deleteError.message; break; }
+    }
+    const { count, error: countError } = await admin.from('opportunities').select('source_id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);
+    assert(!cleanupError && !countError && (count ?? 0) === 0, `cleanup: all synthetic rows removed (${count ?? 0} remain)`, cleanupError ?? countError?.message);
     globalThis.fetch = realFetch;
   }
 
