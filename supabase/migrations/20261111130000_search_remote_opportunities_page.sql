@@ -6,10 +6,54 @@
 -- count repeatedly scans the active catalog and times out for common terms.
 --
 -- This SECURITY DEFINER function is deliberately narrow: it returns only
--- active, translation-safe public rows, applies the same substring/whole-skill
+-- active, translation-safe, non-superseded public rows, applies the same substring/whole-skill
 -- matching semantics, and returns at most 24 rows plus the exact total.
 -- Its owner must be the migration owner (postgres/table owner), which bypasses
 -- RLS; row_security=off makes an unexpected non-bypass owner fail closed.
+
+-- The partial search indexes are scoped to exactly the rows returned by
+-- public directory search. Keep this predicate identical to the RPC visibility
+-- gate so the planner can use the indexes without scanning hidden/expired rows.
+-- pg_trgm is already enabled in production; skip only in minimal PGlite tests
+-- where the extension is intentionally unavailable.
+DO $indexes$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'pg_trgm') THEN
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_title_trgm
+      ON public.opportunities USING gin (title gin_trgm_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_company_trgm
+      ON public.opportunities USING gin (company gin_trgm_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_description_trgm
+      ON public.opportunities USING gin (description gin_trgm_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_remote_type_trgm
+      ON public.opportunities USING gin (remote_type gin_trgm_ops)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+    EXECUTE $sql$CREATE INDEX IF NOT EXISTS idx_opportunities_public_search_required_skills_gin
+      ON public.opportunities USING gin (required_skills)
+      WHERE status = 'active'
+        AND superseded_by_opportunity_id IS NULL
+        AND (source_language IS NULL OR source_language = 'en' OR translation_status = 'ok')
+        AND (translation_status IS NULL OR translation_status <> 'error')$sql$;
+  END IF;
+END;
+$indexes$;
+
+ANALYZE public.opportunities;
 
 CREATE OR REPLACE FUNCTION public.get_remote_job_search_page(
   p_terms text[] DEFAULT ARRAY[]::text[],
