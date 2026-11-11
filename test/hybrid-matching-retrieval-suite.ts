@@ -40,7 +40,11 @@ const jobs = [
 const results = retrieveHybridCandidates(profile, jobs);
 assert(results.length === jobs.length, "default shadow retrieval preserves every candidate");
 assert(results[0].opportunity.id === "a", "exact skills and target role rank the strongest match first");
-assert(results.some((item) => item.opportunity.id === "d" && item.evidence.some((e) => e.channel === "skill_exact")), "canonical aliases create skill evidence");
+assert(results.some((item) => item.opportunity.id === "d" && item.evidence.some((e) => e.channel === "skill_exact")), "canonical skill matches create exact evidence");
+const aliasProfile = { skills: [{ skillName: "Node.js" }], intent: { targetRoles: ["Backend Engineer"] } } as unknown as Pick<PersonProfile, "skills" | "intent">;
+const aliasJob = opportunity("alias", "Backend Engineer", ["nodejs"]);
+const aliasResult = retrieveHybridCandidates(aliasProfile, [aliasJob])[0];
+assert(aliasResult.evidence.some((e) => e.channel === "skill_alias"), "different spellings of the same canonical skill create alias evidence");
 assert(retrieveHybridCandidates(profile, jobs, { limit: 2 }).length === 2, "optional top-K is bounded");
 assert(retrieveHybridCandidates(profile, jobs, { minScore: 999 }).length === 0, "explicit threshold can filter candidates");
 assert(results.every((item, index) => item.originalIndex === jobs.indexOf(item.opportunity)), "original input position is retained for parity analysis");
