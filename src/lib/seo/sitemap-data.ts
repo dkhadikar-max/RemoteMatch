@@ -55,7 +55,7 @@ let built: { jobs: SitemapJobEntry[]; entries: MetadataRoute.Sitemap } | null = 
  * will build the initial complete snapshot rather than creating unused egress.
  */
 export function refreshSitemapEntriesInBackground(): void {
-  if (!built) return;
+  if (!jobEntries.hasValue()) return;
   jobEntries.invalidate();
   void jobEntries.get().catch((err) => {
     console.warn('[sitemap] background refresh could not start:', err instanceof Error ? err.message : err);
