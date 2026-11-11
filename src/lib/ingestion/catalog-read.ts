@@ -587,33 +587,27 @@ export async function searchActiveOpportunitiesPage(
   terms: string[],
   range: { from: number; to: number }
 ): Promise<{ rows: CanonicalOpportunity[]; total: number }> {
-  let query = supabase
-    .from('opportunities')
-    .select(OPPORTUNITY_COLUMNS, { count: 'exact' })
-    .or(TRANSLATION_SAFE_OR)
-    .or(TRANSLATION_NOT_ERROR_OR);
-  for (const t of terms) {
-    const cap = t.charAt(0).toUpperCase() + t.slice(1);
-    const skillVariants = Array.from(new Set([t, cap, t.toUpperCase()]));
-    const clauses = [
-      `title.ilike.*${t}*`,
-      `company.ilike.*${t}*`,
-      `description.ilike.*${t}*`,
-      `remote_type.ilike.*${t}*`,
-      ...skillVariants.map((v) => `required_skills.cs.{${v}}`),
-    ];
-    // Several .or() calls are ANDed by PostgREST: every term must match somewhere.
-    query = query.or(clauses.join(','));
-  }
-  const { data, count, error } = await query
-    .order('posted_at', { ascending: false, nullsFirst: false })
-    .order('source_id', { ascending: true })
-    .range(range.from, range.to);
+  // Run the exact public search inside a narrowly-scoped SECURITY DEFINER RPC.
+  // PostgREST evaluates ILIKE filters above the opportunities RLS security
+  // barrier, which prevents the planner from using the table's pg_trgm indexes.
+  // The RPC explicitly reapplies active + translation-safe visibility and
+  // returns only the requested page, so this does not widen public access.
+  const pageSize = Math.min(Math.max(range.to - range.from + 1, 1), 24);
+  const { data, error } = await supabase.rpc('get_remote_job_search_page', {
+    p_terms: terms,
+    p_offset: Math.max(range.from, 0),
+    p_page_size: pageSize,
+  });
   if (error) {
     if (isStatementTimeout(error)) throw new SearchTimeoutError();
     throw new Error(`Could not search opportunities: ${error.message}`);
   }
-  return { rows: ((data ?? []) as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity), total: count ?? 0 };
+  const payload = data as { total?: number; jobs?: OpportunityRow[] } | null;
+  const rows = Array.isArray(payload?.jobs) ? payload.jobs : [];
+  return {
+    rows: rows.map(rowToCanonicalOpportunity),
+    total: Number.isFinite(Number(payload?.total)) ? Number(payload?.total) : 0,
+  };
 }
 
 /** Looks up a single opportunity by its `opp-${source}-${sourceId}` id
