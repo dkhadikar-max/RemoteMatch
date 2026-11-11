@@ -10,10 +10,11 @@
  *     than one route bundle; each bundle would then hold its own copy of the
  *     cache and re-read the catalog independently. Caches are therefore created
  *     through getOrCreateCatalogCache(), which keeps them on `globalThis`.
- *  2. FRESHNESS AFTER INGESTION. A TTL alone makes new listings invisible for up
- *     to the TTL. The sync route calls invalidateCatalogCaches() once a sync has
- *     written rows, so the next request re-reads — the TTL then only has to cover
- *     the gap between syncs (and stays long, which is what saves egress).
+ *  2. FRESHNESS AFTER INGESTION. Product-facing caches are invalidated after
+ *     writes so feeds and hubs see new rows immediately. The sitemap is the
+ *     deliberate exception: its 80+ page cold read stays cached for the 6-hour
+ *     TTL and uses stale-while-revalidate, so ingestion never makes crawlers pay
+ *     the full rebuild cost.
  *
  * Scope: this is per-process state. It is correct for the single Railway service
  * this app runs as; with N replicas each keeps its own copy and an invalidation
