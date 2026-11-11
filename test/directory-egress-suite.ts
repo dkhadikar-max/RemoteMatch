@@ -63,13 +63,9 @@ const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\
  *  resolves to { data, count, error }. If that function ever adds a method this stub lacks, the
  *  call throws "query.X is not a function" — the test fails loudly on the mock, not silently. */
 function fakeSearchClient(error: { code: string | null; message: string }): any {
-  const builder: any = {
-    select: () => builder,
-    or: () => builder,
-    order: () => builder,
-    range: async () => ({ data: null, count: null, error }),
+  return {
+    rpc: async () => ({ data: null, error }),
   };
-  return { from: () => builder };
 }
 
 // ---- the OLD category rules, copied verbatim from the pre-change getJobsForCategory ----
