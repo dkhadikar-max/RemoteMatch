@@ -173,6 +173,8 @@ async function main() {
     assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
     await db.exec(read('supabase/migrations/20261109120000_sitemap_batched_read.sql'));
     assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
+    await db.exec(read('supabase/migrations/20261111110000_split_category_count_and_page.sql'));
+    assert(true, 'category hub RPC separates exact totals from bounded page retrieval');
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
@@ -448,7 +450,7 @@ async function main() {
         'Scale role ' || g::text,
         timestamptz '2026-11-02 00:00:00+00' + g * interval '1 second',
         ARRAY[]::text[],
-        'APAC',
+        'US',
         ARRAY[]::text[],
         NULL,
         'active',
@@ -476,6 +478,14 @@ async function main() {
       largePage2.jobs.length === 24 &&
       largePage2.jobs.every((j) => !largeIds1.has(j.source_id)),
       'large-catalog page 2 is bounded and does not repeat page 1 listings'
+    );
+
+    const largeUsPage = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+      p_category_slug: 'united-states', p_page: 1, p_page_size: 24,
+    });
+    assert(
+      largeUsPage.total === 92358 && largeUsPage.jobs.length === 24,
+      'broad US category returns an exact 92k+ total and only one bounded 24-row page'
     );
 
     const largeSitemapBatch1 = await sitemapJsonRpc(db, {
