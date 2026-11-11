@@ -589,9 +589,9 @@ export async function searchActiveOpportunitiesPage(
 ): Promise<{ rows: CanonicalOpportunity[]; total: number }> {
   // Run the exact public search inside a narrowly-scoped SECURITY DEFINER RPC.
   // PostgREST evaluates ILIKE filters above the opportunities RLS security
-  // barrier, which prevents the planner from using the table's pg_trgm indexes.
-  // The RPC explicitly reapplies active + translation-safe visibility and
-  // returns only the requested page, so this does not widen public access.
+  // barrier, which prevents the planner from using the table's search indexes.
+  // The RPC explicitly reapplies active + non-superseded + translation-safe
+  // visibility and uses trigram or short-token prefix indexes as appropriate.
   const pageSize = Math.min(Math.max(range.to - range.from + 1, 1), 24);
   const { data, error } = await supabase.rpc('get_remote_job_search_page', {
     p_terms: terms,
