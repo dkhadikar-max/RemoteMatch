@@ -113,6 +113,7 @@ interface Fixture {
   translation_status: string | null;
   company?: string;
   description?: string;
+  superseded_by_opportunity_id?: string | null;
 }
 
 function finish() {
@@ -220,6 +221,7 @@ async function main() {
       status: 'active',
       source_language: 'en',
       translation_status: null,
+      superseded_by_opportunity_id: null,
       ...overrides,
     });
 
@@ -249,6 +251,7 @@ async function main() {
       base('search-multiterm', 35, { title: 'Senior Specialist', company: 'Engineer Labs' }),
       base('search-hidden-expired', 36, { title: 'searchtoken hidden', status: 'expired' }),
       base('search-hidden-translation-error', 37, { title: 'searchtoken hidden foreign', source_language: 'de', translation_status: 'error' }),
+      base('search-hidden-superseded', 38, { title: 'searchtoken superseded', superseded_by_opportunity_id: '00000000-0000-4000-8000-000000000001' }),
     );
 
     await setRole(db, 'service_role');
@@ -258,11 +261,11 @@ async function main() {
         `INSERT INTO public.opportunities (
           id, source, source_id, title, company, description, posted_at, required_skills,
           remote_type, eligible_countries, experience_requirement,
-          status, source_language, translation_status,
+          status, source_language, translation_status, superseded_by_opportunity_id,
           canonical_url_hash, content_hash
         ) VALUES (
           $1::uuid, $2, $3, $4, $5, $6, $7::timestamptz, $8::text[],
-          $9, $10::text[], $11, $12, $13, $14, $15, $16
+          $9, $10::text[], $11, $12, $13, $14, $15::uuid, $16, $17
         );`,
         [
           `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
@@ -279,6 +282,7 @@ async function main() {
           f.status,
           f.source_language,
           f.translation_status,
+          f.superseded_by_opportunity_id ?? null,
           `hash-${f.source_id}-${f.source ?? 'fixture'}`,
           `content-${f.source_id}-${f.source ?? 'fixture'}`,
         ]
@@ -298,7 +302,8 @@ async function main() {
     );
     assert(
       !indexedSearchIds.has('search-hidden-expired') &&
-      !indexedSearchIds.has('search-hidden-translation-error'),
+      !indexedSearchIds.has('search-hidden-translation-error') &&
+      !indexedSearchIds.has('search-hidden-superseded'),
       'public search RPC never exposes expired or translation-error rows'
     );
     const multiTermSearch = await searchRpc(db, {
@@ -329,6 +334,7 @@ async function main() {
 
     const visible = fixtures.filter((f) =>
       f.status === 'active' &&
+      f.superseded_by_opportunity_id == null &&
       (f.source_language === null || f.source_language === 'en' || f.translation_status === 'ok') &&
       (f.translation_status === null || f.translation_status !== 'error')
     );
