@@ -8,6 +8,7 @@ import {
 import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
 import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
 import { logCatalogSyncResult } from '@/lib/ingestion/lifecycle-log';
+import { refreshSitemapEntriesInBackground } from '@/lib/seo/sitemap-data';
 
 
 /**
@@ -41,7 +42,10 @@ export async function POST(req: NextRequest) {
       // Link checks can expire listings: refresh product caches, but let the sitemap's
       // 6-hour TTL expire naturally. Its stale-while-revalidate path avoids a 40s
       // cold rebuild blocking a crawler after a revalidation pass.
-      try { invalidateCatalogCaches(['sitemap-entries']); } catch { /* a cache must never fail a sync */ }
+      try {
+        invalidateCatalogCaches(['sitemap-entries']);
+        if (result.expiredByLinkFailure > 0) refreshSitemapEntriesInBackground();
+      } catch { /* a cache must never fail a sync */ }
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
