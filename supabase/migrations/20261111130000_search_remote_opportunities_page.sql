@@ -70,6 +70,7 @@ BEGIN
     'SELECT COUNT(*)::bigint
        FROM public.opportunities AS o
       WHERE o.status = ''active''
+        AND o.superseded_by_opportunity_id IS NULL
         AND (o.source_language IS NULL OR o.source_language = ''en'' OR o.translation_status = ''ok'')
         AND (o.translation_status IS NULL OR o.translation_status <> ''error'')
         AND %s',
@@ -103,6 +104,7 @@ BEGIN
            o.superseded_by_opportunity_id
          FROM public.opportunities AS o
          WHERE o.status = ''active''
+           AND o.superseded_by_opportunity_id IS NULL
            AND (o.source_language IS NULL OR o.source_language = ''en'' OR o.translation_status = ''ok'')
            AND (o.translation_status IS NULL OR o.translation_status <> ''error'')
            AND %s
