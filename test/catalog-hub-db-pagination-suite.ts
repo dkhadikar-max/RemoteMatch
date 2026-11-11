@@ -304,7 +304,7 @@ async function main() {
       !indexedSearchIds.has('search-hidden-expired') &&
       !indexedSearchIds.has('search-hidden-translation-error') &&
       !indexedSearchIds.has('search-hidden-superseded'),
-      'public search RPC never exposes expired or translation-error rows'
+      'public search RPC never exposes expired, translation-error or superseded rows'
     );
     const multiTermSearch = await searchRpc(db, {
       p_terms: ['senior', 'engineer'], p_offset: 0, p_page_size: 24,
