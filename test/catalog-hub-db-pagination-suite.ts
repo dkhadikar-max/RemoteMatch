@@ -304,7 +304,7 @@ async function main() {
       indexedSearch.jobs.length === 5 &&
       ['search-title', 'search-company', 'search-description', 'search-remote', 'search-skill'].every((id) => indexedSearchIds.has(id)),
       'public search matches title, company, description, remote type and whole skill tags',
-      { total: indexedSearch.total, returned: indexedSearch.jobs.length, ids: [...indexedSearchIds] }
+      { total: indexedSearch.total, returned: indexedSearch.jobs.length, ids: Array.from(indexedSearchIds) }
     );
     assert(
       !indexedSearchIds.has('search-hidden-expired') &&
