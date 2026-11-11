@@ -505,10 +505,18 @@ async function main() {
         .some((field) => field.toLowerCase().includes(term)) ||
         (job.requiredSkills ?? []).some((skill) => skill === term || skill === cap || skill === upper);
     }));
-    assert(
-      multi.total === expectedMulti.length && multi.total > 0 && oldMulti.length >= multi.total,
-      `multi-term database search matches its documented whole-skill-tag semantics (${multi.total} DB, ${expectedMulti.length} expected, ${oldMulti.length} legacy substring matches)`
-    );
+    // The legacy full-row read above is intentionally scoped to this suite's
+    // fixtures, while the public RPC counts the entire shared catalog. Comparing
+    // their absolute totals would conflate two different populations.
+    const multiFixtureIds = new Set(expectedMulti.map((job) => job.sourceId));
+    const multiPageValid = multi.jobs.every((job) => multiTerms.every((term) => {
+      const cap = term.charAt(0).toUpperCase() + term.slice(1);
+      return [job.title, job.company, job.description, job.remoteType]
+        .some((field) => field.toLowerCase().includes(term)) ||
+        (job.requiredSkills ?? []).some((skill) => skill === term || skill === cap || skill === term.toUpperCase());
+    }));
+    assert(multi.total >= multiFixtureIds.size && multi.total > 0 && multiPageValid && oldMulti.length >= multi.total,
+      `multi-term search applies whole-skill-tag semantics to returned rows and includes fixture matches (${multi.total} DB, ${multiFixtureIds.size} fixture matches)`);
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
     const s2 = (await loadSearchPage('engineer', '2'))!;
@@ -530,7 +538,12 @@ async function main() {
     const sm1 = await measure(() => sitemap());
     const sm2 = await measure(() => sitemap());
     assert(sm1.calls >= 1 && sm2.calls === 0, `sitemap: first call ${sm1.calls} REST calls (${kb(sm1.bytes)} for ${idxAll.length} rows), repeat call ${sm2.calls}`);
-    assert(sm1.bytes < fullRun.bytes * 0.2, `the sitemap read is under 20% of the old full read (${kb(sm1.bytes)} vs ${kb(fullRun.bytes)})`);
+    // Compare bytes per visible listing: the legacy baseline is fixture-only
+    // whereas sitemap necessarily includes every listing in the shared catalog.
+    const sitemapBytesPerRow = sm1.bytes / idxAll.length;
+    const legacyBytesPerRow = fullRun.bytes / fullRun.r.length;
+    assert(sitemapBytesPerRow < legacyBytesPerRow * 0.2,
+      `sitemap bytes per row are under 20% of legacy full-row bytes (${sitemapBytesPerRow.toFixed(0)} vs ${legacyBytesPerRow.toFixed(0)} B/row)`);
 
     // --- 4. the running local server renders the pages from bounded reads ---
     console.log('\n4. HTTP — the local dev server');
