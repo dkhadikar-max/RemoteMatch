@@ -249,6 +249,8 @@ async function main() {
       base('search-remote', 33, { remote_type: 'searchtoken' }),
       base('search-skill', 34, { required_skills: ['searchtoken'] }),
       base('search-multiterm', 35, { title: 'Senior Specialist', company: 'Engineer Labs' }),
+      base('search-short-go', 39, { title: 'Senior Go Developer', required_skills: ['Go'] }),
+      base('search-short-csharp', 40, { title: 'C# Developer', required_skills: ['C#'] }),
       base('search-hidden-expired', 36, { title: 'searchtoken hidden', status: 'expired' }),
       base('search-hidden-translation-error', 37, { title: 'searchtoken hidden foreign', source_language: 'de', translation_status: 'error' }),
       base('search-hidden-superseded', 38, { title: 'searchtoken superseded', superseded_by_opportunity_id: '00000000-0000-4000-8000-000000000001' }),
@@ -320,6 +322,20 @@ async function main() {
     assert(
       secondSearchPage.total === 5 && secondSearchPage.jobs.length === 0,
       'search pagination preserves the exact total when the requested page is empty'
+    );
+    const shortGoSearch = await searchRpc(db, {
+      p_terms: ['go'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortGoSearch.jobs.some((job) => job.source_id === 'search-short-go'),
+      'one/two-character alphanumeric terms use token-prefix matching and exact skill tags'
+    );
+    const shortCSharpSearch = await searchRpc(db, {
+      p_terms: ['c#'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortCSharpSearch.jobs.some((job) => job.source_id === 'search-short-csharp'),
+      'short punctuation-bearing skill terms use indexed prefixes and exact skill tags'
     );
     const emptyTermSearch = await searchRpc(db, {
       p_terms: [], p_offset: 0, p_page_size: 24,
