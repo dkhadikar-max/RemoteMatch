@@ -159,6 +159,12 @@ export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, r
 /** One page of search results, answered by the database (never the catalog). */
 export async function getSearchPage(supabase: SupabaseClient, q: string, requestedPage: number): Promise<DirectoryPage> {
   const terms = buildSearchTerms(q);
+  if (terms.length === 0) {
+    return {
+      jobs: [], total: 0, page: 1, totalPages: 1,
+      pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false,
+    };
+  }
   const from = (Math.max(requestedPage, 1) - 1) * DIRECTORY_PAGE_SIZE;
   try {
     const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });
