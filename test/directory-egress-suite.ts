@@ -56,20 +56,20 @@ const skip = (m: string) => { skipped++; console.log(`  – SKIP: ${m}`); };
 const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8').replace(/\r\n/g, '\n');
 const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-/** Stub of the chainable Supabase query builder surface. Covers exactly the five methods
- *  searchActiveOpportunitiesPage calls, verified against its current source (src/lib/ingestion/
- *  catalog-read.ts): .from() once, then .select()/.or()/.order() each called multiple times
- *  (always the same method, chainable), terminating in the one awaited call, .range(), which
- *  resolves to { data, count, error }. If that function ever adds a method this stub lacks, the
- *  call throws "query.X is not a function" — the test fails loudly on the mock, not silently. */
-function fakeSearchClient(error: { code: string | null; message: string }): any {
-  const builder: any = {
-    select: () => builder,
-    or: () => builder,
-    order: () => builder,
-    range: async () => ({ data: null, count: null, error }),
+/** Stub of the indexed search RPC surface. The production implementation must call
+ *  get_remote_job_search_page with bounded pagination; a direct .from('opportunities')
+ *  scan is intentionally not represented by this mock. */
+function fakeSearchClient(
+  error: { code: string | null; message: string } | null,
+  data: unknown = null,
+  onRpc?: (name: string, args: Record<string, unknown>) => void
+): any {
+  return {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      onRpc?.(name, args);
+      return { data, error };
+    },
   };
-  return { from: () => builder };
 }
 
 // ---- the OLD category rules, copied verbatim from the pre-change getJobsForCategory ----
@@ -218,6 +218,35 @@ async function main() {
   // This proves shape fidelity against established precedent, not a live-reproduced timeout —
   // actually triggering one would require an expensive production query, out of scope.
   {
+    let capturedSearchCall: { name: string; args: Record<string, unknown> } | null = null;
+    const searchFixture = {
+      type: 'job', title: 'Senior Engineer', company: 'Example Co', description: 'Build systems',
+      source: 'remotive', source_id: 'search-fixture-1', official_url: 'https://example.com/apply',
+      canonical_url_hash: 'search-fixture-hash', content_hash: 'search-fixture-content',
+      employment_type: 'Full-time', remote_type: 'Worldwide', eligible_countries: [],
+      excluded_countries: [], timezone_requirements: [], salary_min: null, salary_max: null,
+      salary_currency: 'USD', salary_period: null, required_skills: ['TypeScript'],
+      preferred_skills: [], experience_requirement: '4-6', quality_score: 85,
+      source_quality: null, description_completeness: null, salary_quality: null,
+      remote_policy_confidence: null, explicit_remote_scope: 'explicit_worldwide',
+      status: 'active', posted_at: '2026-11-11T00:00:00.000Z',
+      is_permanently_removed: false, link_checked_at: null, superseded_by_opportunity_id: null,
+    };
+    const indexedClient = fakeSearchClient(null, { jobs: [searchFixture], total: 31 }, (name, args) => {
+      capturedSearchCall = { name, args };
+    });
+    const indexedPage = await searchActiveOpportunitiesPage(indexedClient, ['engineer', 'typescript'], { from: 24, to: 47 });
+    assert(
+      capturedSearchCall?.name === 'get_remote_job_search_page' &&
+      JSON.stringify(capturedSearchCall.args) === JSON.stringify({ p_terms: ['engineer', 'typescript'], p_offset: 24, p_page_size: 24 }),
+      'directory search uses the indexed RPC with sanitized terms and bounded page arguments'
+    );
+    assert(
+      indexedPage.total === 31 && indexedPage.rows.length === 1 &&
+      indexedPage.rows[0].title === 'Senior Engineer' && indexedPage.rows[0].sourceId === 'search-fixture-1',
+      'indexed search RPC rows map back to CanonicalOpportunity without losing the exact total'
+    );
+
     const lowLevelClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
     let lowLevelThrew: unknown = null;
     try { await searchActiveOpportunitiesPage(lowLevelClient, ['engineer'], { from: 0, to: 23 }); } catch (e) { lowLevelThrew = e; }
