@@ -97,8 +97,7 @@ async function main() {
   assert(await swr.get() === 'sitemap-v1', 'expired sitemap returns last-good XML immediately without waiting for refresh');
   assert(swrCalls === 2, 'only one background refresh starts for concurrent/stale callers');
   releaseRefresh('sitemap-v2');
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert(await swr.get() === 'sitemap-v2', 'subsequent request receives the newly refreshed sitemap');
 
   // Sync invalidation excludes only the expensive sitemap snapshot.
