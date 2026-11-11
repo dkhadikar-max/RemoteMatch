@@ -175,6 +175,14 @@ async function main() {
     assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
     await db.exec(read('supabase/migrations/20261111110000_split_category_count_and_page.sql'));
     assert(true, 'category hub RPC separates exact totals from bounded page retrieval');
+    const usCountIndex = await db.query(`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND indexname = 'opportunity_catalog_index_united_states_count';
+    `);
+    assert(
+      String((usCountIndex.rows[0] as any)?.indexdef ?? '').includes('opportunity_catalog_index_united_states_count'),
+      'broad US category has a dedicated partial count index'
+    );
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
