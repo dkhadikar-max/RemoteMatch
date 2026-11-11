@@ -321,6 +321,13 @@ async function main() {
       secondSearchPage.total === 5 && secondSearchPage.jobs.length === 0,
       'search pagination preserves the exact total when the requested page is empty'
     );
+    const emptyTermSearch = await searchRpc(db, {
+      p_terms: [], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      emptyTermSearch.total === 0 && emptyTermSearch.jobs.length === 0,
+      'an empty/sanitized-away search query returns zero results without a full-catalog count'
+    );
     const searchSecurity = await db.query(`
       SELECT p.prosecdef AS security_definer, p.proconfig
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
