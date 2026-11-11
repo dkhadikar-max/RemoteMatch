@@ -178,7 +178,8 @@ BEGIN
         '%' || v_terms[v_i] || '%',
         v_terms[v_i],
         INITCAP(v_terms[v_i]),
-        UPPER(v_terms[v_i])
+        UPPER(v_terms[v_i]),
+        v_terms[v_i]
       );
     END IF;
   END LOOP;
