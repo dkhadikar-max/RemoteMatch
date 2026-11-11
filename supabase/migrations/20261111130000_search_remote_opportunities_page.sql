@@ -115,6 +115,12 @@ BEGIN
     );
   END LOOP;
 
+  -- A query containing only stripped punctuation has no searchable terms.
+  -- Return an empty result instead of turning it into an expensive full-catalog scan.
+  IF COALESCE(CARDINALITY(v_terms), 0) = 0 THEN
+    RETURN JSONB_BUILD_OBJECT('total', 0, 'jobs', '[]'::jsonb);
+  END IF;
+
   EXECUTE FORMAT(
     'SELECT COUNT(*)::bigint
        FROM public.opportunities AS o
