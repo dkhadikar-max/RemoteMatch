@@ -72,6 +72,8 @@ export function createLruTtlMap<V>(options: { max: number; ttlMs: number; now?: 
 
 export interface TtlCache<T> {
   get(): Promise<T>;
+  /** Whether this process has a complete last-successful value available. */
+  hasValue(): boolean;
   /** Force a refresh while retaining the last successful value as stale fallback. */
   invalidate(): void;
 }
@@ -132,6 +134,9 @@ export function createAsyncTtlCache<T>(
         return value.v;
       }
       return startRefresh();
+    },
+    hasValue() {
+      return value !== null;
     },
     invalidate() {
       // Do not discard the last-known-good value. Mark it stale so the next
