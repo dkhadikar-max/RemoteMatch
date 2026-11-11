@@ -251,6 +251,7 @@ async function main() {
       base('search-multiterm', 35, { title: 'Senior Specialist', company: 'Engineer Labs' }),
       base('search-short-go', 39, { title: 'Senior Go Developer', required_skills: ['Go'] }),
       base('search-short-csharp', 40, { title: 'C# Developer', required_skills: ['C#'] }),
+      base('search-short-cpp', 41, { title: 'C++ Developer', required_skills: ['C++'] }),
       base('search-hidden-expired', 36, { title: 'searchtoken hidden', status: 'expired' }),
       base('search-hidden-translation-error', 37, { title: 'searchtoken hidden foreign', source_language: 'de', translation_status: 'error' }),
       base('search-hidden-superseded', 38, { title: 'searchtoken superseded', superseded_by_opportunity_id: '00000000-0000-4000-8000-000000000001' }),
@@ -336,6 +337,13 @@ async function main() {
     assert(
       shortCSharpSearch.jobs.some((job) => job.source_id === 'search-short-csharp'),
       'short punctuation-bearing skill terms use indexed prefixes and exact skill tags'
+    );
+    const shortCppSearch = await searchRpc(db, {
+      p_terms: ['c++'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortCppSearch.jobs.some((job) => job.source_id === 'search-short-cpp'),
+      'punctuation-heavy short terms avoid trigram scans while retaining C++ skill/title matching'
     );
     const emptyTermSearch = await searchRpc(db, {
       p_terms: [], p_offset: 0, p_page_size: 24,
