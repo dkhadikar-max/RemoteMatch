@@ -65,7 +65,6 @@ LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public'
-SET work_mem TO '16MB'
 SET row_security TO 'off'
 AS $function$
 DECLARE
