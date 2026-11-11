@@ -199,6 +199,8 @@ async function main() {
     assert(true, 'public search RPC applies the visibility gate and returns a bounded exact-count page');
     await db.exec(read('supabase/migrations/20261111150000_exclude_superseded_catalog_rows.sql'));
     assert(true, 'catalog projection trigger excludes superseded rows on insert and update');
+    await db.exec(read('supabase/migrations/20261111170000_align_public_catalog_supersession_and_search.sql'));
+    assert(true, 'all public catalogue, sitemap, and normalized-skill search readers apply the final visibility rules');
     const usCountIndex = await db.query(`
       SELECT indexdef FROM pg_indexes
       WHERE schemaname = 'public' AND indexname = 'opportunity_catalog_index_united_states_count';
