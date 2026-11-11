@@ -12,6 +12,17 @@
 -- de-duplication, SECURITY INVOKER, RLS, grants, search_path and PR #64's
 -- function-local 16MB work_mem setting.
 
+-- The broad US predicate matched 45,089 of 81,865 projection rows. A plain
+-- count chose a sequential scan and took 2.38s under anon; the remote_type-only
+-- index count took 261ms. This partial covering key lets the exact OR predicate
+-- count only its matching entries without scanning the full projection.
+CREATE INDEX IF NOT EXISTS opportunity_catalog_index_united_states_count
+  ON public.opportunity_catalog_index (opportunity_id)
+  WHERE remote_type = 'US'
+     OR eligible_countries && ARRAY['US', 'USA']::text[];
+
+ANALYZE public.opportunity_catalog_index;
+
 CREATE OR REPLACE FUNCTION public.get_remote_job_hub_page(
   p_category_slug text DEFAULT NULL,
   p_page integer DEFAULT 1,
