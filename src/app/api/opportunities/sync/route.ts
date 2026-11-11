@@ -38,8 +38,10 @@ export async function POST(req: NextRequest) {
 
     if (action === 'revalidate') {
       const result = await revalidateStaleLinks();
-      // Link checks can expire listings: drop the in-memory read caches (best effort, never fails the sync).
-      try { invalidateCatalogCaches(); } catch { /* a cache must never fail a sync */ }
+      // Link checks can expire listings: refresh product caches, but let the sitemap's
+      // 6-hour TTL expire naturally. Its stale-while-revalidate path avoids a 40s
+      // cold rebuild blocking a crawler after a revalidation pass.
+      try { invalidateCatalogCaches(['sitemap-entries']); } catch { /* a cache must never fail a sync */ }
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
@@ -72,10 +74,12 @@ export async function POST(req: NextRequest) {
     const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
     const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
 
-    // The sync wrote to the catalog: drop the in-memory read caches (feed, hubs, sitemap, resume) so
-    // the next request sees the new rows instead of waiting out a TTL. Best effort — a cache must
-    // never fail a sync that has already written.
-    try { invalidateCatalogCaches(); } catch { /* ignore */ }
+    // The sync wrote to the catalog: refresh product-facing caches immediately. The sitemap
+    // deliberately keeps its last complete snapshot until its 6-hour TTL, then refreshes in
+    // the background while crawlers continue receiving valid XML. This prevents every 3-hour
+    // ingestion run from forcing the next crawler through 80+ sequential database RPCs.
+    // Best effort — a cache must never fail a sync that has already written.
+    try { invalidateCatalogCaches(['sitemap-entries']); } catch { /* ignore */ }
 
     return NextResponse.json({ success: true, action: 'sync', ...result, translation, reconciliation });
 
