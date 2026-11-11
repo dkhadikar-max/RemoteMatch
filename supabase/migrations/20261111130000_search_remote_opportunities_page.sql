@@ -133,6 +133,7 @@ BEGIN
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
             OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
+            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
           )',
           v_terms[v_i] || ':*',
           v_terms[v_i] || '%',
@@ -140,7 +141,8 @@ BEGIN
           v_terms[v_i] || '%',
           v_terms[v_i],
           INITCAP(v_terms[v_i]),
-          UPPER(v_terms[v_i])
+          UPPER(v_terms[v_i]),
+          v_terms[v_i]
         );
       ELSE
         v_predicate := v_predicate || FORMAT(
@@ -149,13 +151,15 @@ BEGIN
             OR lower(o.company) LIKE %L
             OR lower(o.remote_type) LIKE %L
             OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
+            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
           )',
           v_terms[v_i] || '%',
           v_terms[v_i] || '%',
           v_terms[v_i] || '%',
           v_terms[v_i],
           INITCAP(v_terms[v_i]),
-          UPPER(v_terms[v_i])
+          UPPER(v_terms[v_i]),
+          v_terms[v_i]
         );
       END IF;
     ELSE
@@ -166,6 +170,7 @@ BEGIN
           OR o.description ILIKE %L
           OR o.remote_type ILIKE %L
           OR (o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[] OR o.required_skills @> ARRAY[%L]::text[])
+            OR EXISTS (SELECT 1 FROM unnest(COALESCE(o.required_skills, ARRAY[]::text[])) AS skill(tag) WHERE lower(btrim(skill.tag)) = %L)
         )',
         '%' || v_terms[v_i] || '%',
         '%' || v_terms[v_i] || '%',
