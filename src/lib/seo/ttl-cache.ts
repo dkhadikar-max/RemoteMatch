@@ -13,6 +13,7 @@
  * Semantics:
  *  - value younger than ttlMs and not invalidated -> returned with no load
  *  - older, invalidated, or absent -> ONE load runs; concurrent callers await it
+ *  - optional staleWhileRevalidate -> a retained value is returned immediately while ONE background refresh runs
  *  - load throws, retained value younger than maxStaleMs -> serve stale value
  *    and keep retrying on the next call
  *  - load throws, no/too-old value -> error propagates (never cache a partial read)
