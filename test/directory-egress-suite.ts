@@ -209,6 +209,14 @@ async function main() {
   // This proves shape fidelity against established precedent, not a live-reproduced timeout —
   // actually triggering one would require an expensive production query, out of scope.
   {
+    let emptySearchCalls = 0;
+    const emptySearchClient = { rpc: async () => { emptySearchCalls++; return { data: null, error: null }; } } as any;
+    const emptySearch = await getSearchPage(emptySearchClient, '!!!', 1);
+    assert(
+      emptySearch.total === 0 && emptySearch.jobs.length === 0 && emptySearchCalls === 0,
+      'a query that sanitizes to no terms returns an empty page without scanning the catalog'
+    );
+
     const lowLevelClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
     let lowLevelThrew: unknown = null;
     try { await searchActiveOpportunitiesPage(lowLevelClient, ['engineer'], { from: 0, to: 23 }); } catch (e) { lowLevelThrew = e; }
