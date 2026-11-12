@@ -184,7 +184,15 @@ async function main() {
   {
     const db = fakeAdmin([makeRow("a", now), makeRow("b", now - 1), makeRow("c", now - 2)]);
     const summary = await translatePendingOpportunities({ admin: db.admin, maxRows: 2, clock: () => now, translate: goodTranslator });
-    check(summary.examined === 2 && summary.notAttempted === 0 && summary.stoppedReason === "row_budget", "lookahead detects row_budget but is not counted");
+    check(summary.examined === 2 && summary.notAttempted === 0 && summary.stoppedReason === "row_budget", "pending lookahead detects row_budget but is not counted");
+
+    const fullDb = fakeAdmin([
+      makeRow("pending-a", now),
+      makeRow("pending-b", now - 1),
+      makeRow("stale-after-budget", now - 3600_000, "ok", "new", "old"),
+    ]);
+    const full = await translatePendingOpportunities({ admin: fullDb.admin, maxRows: 2, clock: () => now, translate: goodTranslator });
+    check(full.examined === 3 && full.notAttempted === 1 && full.stoppedReason === "row_budget", "when pending exactly fills budget, stale scan still identifies further stale rows without fetching their descriptions");
   }
 
   // 5. A 300-row attempted budget does not count the 700-row backlog as notAttempted.

@@ -517,7 +517,7 @@ export async function translatePendingOpportunities(
     let staleCandidates: Array<{ id: string }> = [];
     let staleIdentifiedCount = 0;
     const remainingBudget = maxRows - pendingIds.length;
-    if (remainingBudget > 0) {
+    if (!pendingLookahead) {
       try {
         const staleScan = await fetchAllRows<{
           id: string;
