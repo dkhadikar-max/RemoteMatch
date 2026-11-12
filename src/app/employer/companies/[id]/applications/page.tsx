@@ -89,7 +89,6 @@ export default function EmployerApplicationsPage() {
     {loading ? <p className="text-sm text-[var(--muted)]">Loading applications…</p> :
       rows.length === 0 ? <div className="soft-card border border-[var(--line)] p-6 text-sm text-[var(--muted)]">No applications received yet.</div> :
       <div className="space-y-3">{rows.map(row => {
-        const needsReason = row.status === 'rejected' || row.status === 'interviewing';
         return <article key={row.id} className="soft-card border border-[var(--line)] p-5 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><h2 className="font-semibold text-[var(--ink)]">{row.profiles?.full_name || 'Candidate'}</h2>
