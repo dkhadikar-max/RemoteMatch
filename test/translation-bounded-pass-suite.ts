@@ -344,7 +344,7 @@ async function main() {
       admin: failDb.admin, maxRows: 20, maxMs: 3, clock: () => failClock, retryDelayMs: 0,
       translate: async () => { calls++; failClock += 1; throw Object.assign(new Error("HTTP 503"), { status: 503 }); },
     });
-    check(quota.stoppedReason === "provider_limit" && failures.stoppedReason === "provider_failures", "provider stop reasons outrank elapsed time and row-budget lookahead");
+    check(calls === 4 && quota.stoppedReason === "provider_limit" && failures.stoppedReason === "provider_failures", "provider stop reasons outrank elapsed time and row-budget lookahead");
   }
 
   console.log("\n" + passed + " passed, " + failed + " failed.");

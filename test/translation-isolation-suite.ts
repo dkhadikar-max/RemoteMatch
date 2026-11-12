@@ -214,7 +214,7 @@ async function main() {
       const t = viaGenerator(['{"id": "r1", "detectedLa', 'still not json']);
       quiet(); const res = await processGeminiBatch(admin, rows(3), t.translate); loud();
       assert(t.calls() === 1, '4d: an unusable response is a batch failure and is not retried');
-      assert(res.join() === 'deferred,deferred,deferred' && updates.length === 0, '4d: after the retries the rows are DEFERRED — nothing is written, nothing throws, they stay pending for the next pass');
+      assert(res.join() === 'deferred,deferred,deferred' && updates.length === 0, '4d: the unusable response defers every row — nothing is written, nothing throws, they stay pending for the next pass');
     }
     // 4d2. the generator keeps failing (quota / network) -> deferred, never error
     {

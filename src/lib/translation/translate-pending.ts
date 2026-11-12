@@ -555,7 +555,7 @@ export async function translatePendingOpportunities(
     // This is the only description read. It cannot include the lookahead row
     // or any backlog beyond the per-run candidate budget.
     let typedRows: PendingRow[] = [];
-    if (candidateIds.length > 0) {
+    if (candidateIds.length > 0 && clock() < deadline) {
       const details = await admin
         .from("opportunities")
         .select("id, title, description, content_hash, translation_status, translated_content_hash")
