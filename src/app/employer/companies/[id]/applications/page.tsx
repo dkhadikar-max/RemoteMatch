@@ -104,12 +104,12 @@ export default function EmployerApplicationsPage() {
                 <option value={row.status}>{row.status.replace('_',' ')}</option>
                 {STATUSES.filter(status => status !== row.status).map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
               </select>
-              {needsReason && <select aria-label="Decision reason" className="soft-input px-3 py-2 text-xs"
+              <select aria-label="Decision reason" className="soft-input px-3 py-2 text-xs"
                 value={reasonByApplication[row.id] || ''}
                 onChange={e => setReasonByApplication(current => ({ ...current, [row.id]: e.target.value }))}>
-                <option value="">Select decision reason</option>
+                <option value="">Decision reason (when required)</option>
                 {REASONS.map(([code,label]) => <option key={code} value={code}>{label}</option>)}
-              </select>}
+              </select>
             </div>
           </div>
           {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
