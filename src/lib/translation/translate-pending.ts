@@ -82,7 +82,7 @@ export interface TranslationPassSummary {
   /** Identified candidates not sent to a provider. Does not include backlog or the lookahead row. */
   notAttempted: number;
   /** Why this pass stopped. Higher-priority provider stops override time and row budgets. */
-  stoppedReason: 'complete' | 'row_budget' | 'time_budget' | 'provider_limit' | 'provider_failures';
+  stoppedReason: 'complete' | 'row_budget' | 'time_budget' | 'provider_limit' | 'provider_failures' | 'selection_failed';
   /** Rows successfully translated to English. */
   translated: number;
   /** English rows detected (no translation performed). */
@@ -502,8 +502,8 @@ export async function translatePendingOpportunities(
       .limit(maxRows + 1);
 
     if (pendingResult.error) {
-      console.error("[translation] Failed to query pending candidates:", pendingResult.error.message);
-      return summary;
+      selectionFailed = true;
+      throw new Error("Failed to query pending candidates: " + pendingResult.error.message);
     }
 
     const pendingFound = (pendingResult.data ?? []) as Array<{ id: string }>;
@@ -638,9 +638,11 @@ export async function translatePendingOpportunities(
   // Stop-reason precedence is intentional and must not be reordered.
   summary.stoppedReason = providerLimitReached
     ? "provider_limit"
-    : providerFailuresReached || selectionFailed
+    : providerFailuresReached
       ? "provider_failures"
-      : timeBudgetReached
+      : selectionFailed
+        ? "selection_failed"
+        : timeBudgetReached
         ? "time_budget"
         : hasMoreEligibleRows
           ? "row_budget"
