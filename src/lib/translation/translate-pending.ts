@@ -210,10 +210,16 @@ async function processGeminiRow(
  * `translate` is injectable so tests can drive the whole pass with canned model
  * responses — no live Gemini call, no free-tier quota spent.
  */
+function isProviderQuotaOrRateLimitError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /\\b429\\b|quota|rate.?limit|resource_exhausted/i.test(message);
+}
+
 export async function processGeminiBatch(
   admin: AdminClient,
   batch: PendingRow[],
-  translate: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]> = (jobs) => translateJobBatchWithGemini(jobs)
+  translate: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]> = (jobs) => translateJobBatchWithGemini(jobs),
+  options: { onProviderLimit?: () => void } = {}
 ): Promise<RowOutcome[]> {
   const inputs = batch.map((r) => ({
     id: r.uuid,
@@ -231,6 +237,12 @@ export async function processGeminiBatch(
       break;
     } catch (err) {
       console.warn(`[translation] Gemini batch attempt ${attempt} failed:`, (err as Error).message);
+      if (isProviderQuotaOrRateLimitError(err)) {
+        // A hard provider quota/rate limit will reject every remaining batch in this pass.
+        // Defer the current and remaining rows without spending more requests or time.
+        options.onProviderLimit?.();
+        break;
+      }
       if (attempt < MAX_ATTEMPTS) {
         await sleep(RETRY_DELAY_MS * attempt);
       }
@@ -431,12 +443,22 @@ export async function translatePendingOpportunities(
     console.log(`[translation] Processing ${typedRows.length} pending rows using provider=${summary.provider}.`);
 
     if (summary.provider === 'gemini') {
-      // Process in batches of 10. A batch that fails as a whole costs only its own rows.
+      // Process in batches of 10. A hard quota/rate limit opens a pass-wide circuit breaker:
+      // remaining rows stay pending and are retried on the next scheduled pass.
+      let providerLimitReached = false;
       for (let i = 0; i < typedRows.length; i += GEMINI_BATCH_SIZE) {
+        if (providerLimitReached) {
+          const remaining = typedRows.length - i;
+          tally(summary, Array.from({ length: remaining }, () => 'deferred' as const));
+          console.warn(`[translation] Provider quota/rate limit reached; deferred the remaining ${remaining} rows until the next pass.`);
+          break;
+        }
         const batch = typedRows.slice(i, i + GEMINI_BATCH_SIZE);
         let results: RowOutcome[];
         try {
-          results = await processGeminiBatch(admin, batch, options.translate);
+          results = await processGeminiBatch(admin, batch, options.translate, {
+            onProviderLimit: () => { providerLimitReached = true; },
+          });
         } catch (err) {
           console.warn(`[translation] Batch starting at row ${i} failed unexpectedly (${(err as Error)?.message ?? String(err)}) — its rows are left pending; later batches continue.`);
           results = batch.map(() => 'deferred' as const);
