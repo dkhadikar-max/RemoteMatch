@@ -39,7 +39,7 @@ function makeRow(id: string, postedAt: number, status: string | null = null, con
   };
 }
 
-function fakeAdmin(seed: FakeRow[]) {
+function fakeAdmin(seed: FakeRow[], options: { pendingQueryError?: { message: string; code?: string } } = {}) {
   const rows = seed.map((row) => ({ ...row }));
   const logs: QueryLog[] = [];
   const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -97,6 +97,9 @@ function fakeAdmin(seed: FakeRow[]) {
       }
 
       logs.push({ columns: this.columns, limit: this.max, ids: this.ids, gt: this.gtFilters.slice(), orders: this.orders.slice() });
+      if (options.pendingQueryError && this.columns.includes("posted_at")) {
+        return { data: null, error: options.pendingQueryError };
+      }
       let found = rows.filter((row) => this.filters.every((filter) => filter(row)));
       for (const order of this.orders.slice().reverse()) {
         found = found.slice().sort((a, b) => {
@@ -178,6 +181,22 @@ async function main() {
     const pending = db.logs.find((log) => log.columns.includes("posted_at") && !log.columns.includes("description"));
     const detail = db.logs.find((log) => log.columns.includes("description"));
     check(pending?.limit === 3 && detail?.ids?.length === 2 && summary.examined === 2, "pending read uses budget+1 and details exclude lookahead");
+  }
+
+  // 3b. A failed pending-candidate query must never report a completed pass.
+  {
+    const db = fakeAdmin([makeRow("query-failure", now)], { pendingQueryError: { message: "database unavailable", code: "XX000" } });
+    let providerCalls = 0;
+    const summary = await translatePendingOpportunities({
+      admin: db.admin,
+      maxRows: 1,
+      clock: () => now,
+      translate: async (jobs) => { providerCalls++; return goodTranslator(jobs); },
+    });
+    check(
+      summary.stoppedReason === "selection_failed" && summary.examined === 0 && providerCalls === 0 && db.logs.length === 1,
+      "pending-candidate query errors report selection_failed and never invoke the provider"
+    );
   }
 
   // 4. Lookahead is excluded from examined and notAttempted.
