@@ -286,9 +286,13 @@ async function main() {
     let calls = 0;
     const summary = await translatePendingOpportunities({
       admin: db.admin, maxRows: 30, clock: () => now, retryDelayMs: 0,
-      translate: async () => { calls++; throw Object.assign(new Error("HTTP 503 overloaded"), { status: 503 }); },
+      translate: async () => {
+        calls++;
+        if (calls <= 2) throw Object.assign(new Error("HTTP 503 overloaded"), { status: 503 });
+        throw Object.assign(new Error("ECONNRESET socket hang up"), { code: "ECONNRESET" });
+      },
     });
-    check(calls === 4 && summary.deferred === 20 && summary.notAttempted === 10 && summary.stoppedReason === "provider_failures" && summary.errors === 0, "two consecutive failed batches stop before batch three and preserve pending rows");
+    check(calls === 3 && summary.deferred === 20 && summary.notAttempted === 10 && summary.stoppedReason === "provider_failures" && summary.errors === 0, "two consecutive failed batches stop before batch three and preserve pending rows");
   }
 
   // 15. A 429 opens provider_limit immediately without retry.
