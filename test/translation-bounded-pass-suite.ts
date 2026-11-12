@@ -232,7 +232,7 @@ async function main() {
     const db = fakeAdmin(seed);
     const summary = await translatePendingOpportunities({ admin: db.admin, maxRows: 300, clock: () => now, translate: goodTranslator });
     const detail = db.logs.find((log) => log.columns.includes("description"));
-    check(summary.examined === 300 && summary.stoppedReason === "row_budget" && detail?.ids?.length === 300, "stale scan examines 450 lightweight candidates but fetches descriptions only for 300");
+    check(summary.examined === 450 && summary.notAttempted === 150 && summary.stoppedReason === "row_budget" && detail?.ids?.length === 300, "stale scan examines 450 lightweight candidates, counts 150 identified unsent rows, and fetches descriptions only for 300");
   }
 
   // 10. A time budget stops new batches but lets the in-flight batch finish.

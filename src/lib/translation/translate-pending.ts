@@ -515,6 +515,7 @@ export async function translatePendingOpportunities(
     // all lightweight ids/hashes in the 48h window, even when that exceeds the
     // attempted-row budget, then takes only the remaining budget plus lookahead.
     let staleCandidates: Array<{ id: string }> = [];
+    let staleIdentifiedCount = 0;
     const remainingBudget = maxRows - pendingIds.length;
     if (remainingBudget > 0) {
       try {
@@ -541,6 +542,9 @@ export async function translatePendingOpportunities(
         const changed = staleScan.filter(
           (row) => row.translated_content_hash != null && row.content_hash !== row.translated_content_hash
         );
+        // All hash-mismatched stale rows are identified by the lightweight scan.
+        // Only the first remaining-budget rows receive descriptions and can be attempted.
+        staleIdentifiedCount = changed.length;
         staleLookahead = changed.length > remainingBudget;
         staleCandidates = changed.slice(0, remainingBudget);
       } catch (err) {
@@ -550,7 +554,7 @@ export async function translatePendingOpportunities(
     }
 
     const candidateIds = [...pendingIds, ...staleCandidates.map((row) => row.id)];
-    summary.examined = candidateIds.length;
+    summary.examined = pendingIds.length + staleIdentifiedCount;
 
     // This is the only description read. It cannot include the lookahead row
     // or any backlog beyond the per-run candidate budget.
@@ -628,8 +632,8 @@ export async function translatePendingOpportunities(
   }
 
   summary.notAttempted = Math.max(0, summary.examined - attemptedRows);
-  const hasLookahead = pendingLookahead || staleLookahead;
-  const timeBudgetReached = clock() >= deadline && (summary.notAttempted > 0 || hasLookahead);
+  const hasMoreEligibleRows = pendingLookahead || staleLookahead;
+  const timeBudgetReached = clock() >= deadline && (summary.notAttempted > 0 || hasMoreEligibleRows);
 
   // Stop-reason precedence is intentional and must not be reordered.
   summary.stoppedReason = providerLimitReached
@@ -638,7 +642,7 @@ export async function translatePendingOpportunities(
       ? "provider_failures"
       : timeBudgetReached
         ? "time_budget"
-        : hasLookahead
+        : hasMoreEligibleRows
           ? "row_budget"
           : "complete";
 
