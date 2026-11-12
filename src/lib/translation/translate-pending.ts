@@ -212,7 +212,7 @@ async function processGeminiRow(
  */
 function isProviderQuotaOrRateLimitError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /\\b429\\b|quota|rate.?limit|resource_exhausted/i.test(message);
+  return /\b429\b|quota|rate.?limit|resource_exhausted/i.test(message);
 }
 
 export async function processGeminiBatch(
