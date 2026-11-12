@@ -316,7 +316,7 @@ async function main() {
       source: 'remotive', source_id: id, type: 'job', title: `Entwickler ${i}`, company: 'Iso Test Co', company_logo: null, description: ORIGINAL_DESCRIPTION + ` #${i}`,
       source_url: 'https://example.com', official_url: 'https://example.com/apply', canonical_url_hash: `h-${id}`, content_hash: `c-${id}`, employment_type: 'Full-time',
       remote_type: 'Worldwide', eligible_countries: [], excluded_countries: [], timezone_requirements: [], required_skills: [], explicit_remote_scope: 'explicit_worldwide',
-      status: 'active', posted_at: new Date().toISOString(), first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0,
+      status: 'active', posted_at: '2099-01-01T00:00:00.000Z', first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0,
     });
     try {
       for (let i = 0; i < N; i += 25) {
@@ -325,13 +325,13 @@ async function main() {
       }
       const { data: seeded } = await db.from('opportunities').select('id, source_id').like('source_id', `${PREFIX}%`).order('source_id');
       const uuidBySource = new Map((seeded ?? []).map((r: any) => [r.source_id, r.id as string]));
-      const { count: pendingBefore } = await db.from('opportunities').select('id', { count: 'exact', head: true }).eq('status', 'active').is('translation_status', null);
-      assert(uuidBySource.size === N && pendingBefore === N, `seeded ${N} pending rows and they are the ONLY pending rows in the database (${pendingBefore})`);
+      const { count: seededPending } = await db.from('opportunities').select('id', { count: 'exact', head: true }).eq('status', 'active').is('translation_status', null).like('source_id', `${PREFIX}%`);
+      assert(uuidBySource.size === N && seededPending === N, `seeded ${N} pending rows in the isolated test namespace (${seededPending})`);
       const sourceOf = new Map(Array.from(uuidBySource.entries()).map(([s, u]) => [u, s]));
 
       // Canned model: per batch call, behave differently.
       //   call 1 (rows 0-9):   mixed — good, missing title, null desc, wrong type, English, good…
-      //   calls 2 & 3 (rows 10-19, the batch + its retry): the model response is NOT JSON at all
+      //   call 2 (rows 10-19): the model response is NOT JSON; unusable responses are not retried
       //   call 4 (rows 20-24): fully valid
       let call = 0;
       const batchIds: string[][] = []; // the uuids the fake model received on each call (the DB's row order is not guaranteed)
@@ -405,7 +405,7 @@ async function main() {
       const quotaSummary = await translatePendingOpportunities({ translate: quotaTranslate, maxRows: 25 });
       loud();
       assert(quotaCalls.length === 2, `quota circuit breaker stopped after the first 429 (calls=${quotaCalls.length})`);
-      assert(quotaSummary.translated === 10 && quotaSummary.deferred === 15, `quota circuit breaker translated 10 and deferred 15 (translated=${quotaSummary.translated}, deferred=${quotaSummary.deferred})`);
+      assert(quotaSummary.translated === 10 && quotaSummary.deferred === 10 && quotaSummary.notAttempted === 5 && quotaSummary.stoppedReason === 'provider_limit', `quota breaker translated 10, deferred 10, notAttempted 5 (translated=${quotaSummary.translated}, deferred=${quotaSummary.deferred}, notAttempted=${quotaSummary.notAttempted})`);
       const { data: quotaAfter } = await db.from('opportunities').select('source_id, translation_status').like('source_id', `${quotaPrefix}%`).order('source_id');
       assert((quotaAfter ?? []).filter((r: any) => r.translation_status === 'ok').length === 10, 'quota circuit breaker keeps the successful first batch translated');
       assert((quotaAfter ?? []).filter((r: any) => r.translation_status == null).length === 15, 'quota-failed and not-attempted rows remain pending and visible');
