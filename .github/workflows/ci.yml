@@ -65,6 +65,7 @@ jobs:
             test/job-filter-data-quality-suite.ts
             test/ttl-cache-stale-invalidation-suite.ts
             test/sitemap-read-retry-suite.ts
+            test/translation-bounded-pass-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
@@ -172,6 +173,9 @@ jobs:
           }
           console.log(`Verified isolated test project: ${actual}`);
           NODE
+
+      - name: Translation isolation suite (explicit isolated project; no .env.local)
+        run: npx tsx test/translation-isolation-suite.ts
 
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts

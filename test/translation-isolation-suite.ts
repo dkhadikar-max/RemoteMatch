@@ -17,7 +17,8 @@
  *  §4 processGeminiBatch         mixed valid/invalid batches, retries, write failures
  *  §5 real database              the whole pass against live rows (isolated, cleaned up)
  *
- * Run: npx tsx --env-file=.env.migration.local test/translation-isolation-suite.ts
+ * Run with explicit isolated CI environment variables: npx tsx test/translation-isolation-suite.ts.
+ * Never load .env.local or any production environment file.
  */
 import ws from 'ws';
 (globalThis as any).WebSocket = ws;
@@ -212,14 +213,16 @@ async function main() {
       const { admin, updates } = mkAdmin();
       const t = viaGenerator(['{"id": "r1", "detectedLa', 'still not json']);
       quiet(); const res = await processGeminiBatch(admin, rows(3), t.translate); loud();
-      assert(t.calls() === 2, '4d: malformed JSON is attempted twice (one retry), as before');
-      assert(res.join() === 'deferred,deferred,deferred' && updates.length === 0, '4d: after the retries the rows are DEFERRED — nothing is written, nothing throws, they stay pending for the next pass');
+      assert(t.calls() === 1, '4d: an unusable response is a batch failure and is not retried');
+      assert(res.join() === 'deferred,deferred,deferred' && updates.length === 0, '4d: the unusable response defers every row — nothing is written, nothing throws, they stay pending for the next pass');
     }
     // 4d2. the generator keeps failing (quota / network) -> deferred, never error
     {
       const { admin, updates } = mkAdmin();
-      const t = viaGenerator([new Error('429 quota exceeded'), new Error('429 quota exceeded')]);
-      quiet(); const res = await processGeminiBatch(admin, rows(4), t.translate); loud();
+      const t = viaGenerator([new Error('429 quota exceeded')]);
+      let providerLimitSignaled = false;
+      quiet(); const res = await processGeminiBatch(admin, rows(4), t.translate, { onProviderLimit: () => { providerLimitSignaled = true; } }); loud();
+      assert(t.calls() === 1 && providerLimitSignaled, '4d2: a hard quota failure is not retried and opens the provider-limit circuit breaker');
       assert(res.join() === 'deferred,deferred,deferred,deferred' && updates.length === 0, '4d2: a quota / network failure defers the batch — rows are NOT marked error (which would hide them)');
     }
     // 4d3. a valid response in which EVERY element is malformed carries nothing usable -> deferred
@@ -300,6 +303,11 @@ async function main() {
   if (!url || !serviceKey || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     skip('Supabase env incomplete');
   } else {
+    const projectRef = new URL(url).hostname.split('.')[0];
+    if (projectRef !== 'xyahktsgdigutxartafb') {
+      assert(false, 'refusing translation live suite outside the approved isolated Supabase project', projectRef);
+      return finish();
+    }
     const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const PREFIX = `transl-iso-${Date.now().toString(36)}-`;
     const N = 25; // 3 batches of 10 / 10 / 5
@@ -308,7 +316,7 @@ async function main() {
       source: 'remotive', source_id: id, type: 'job', title: `Entwickler ${i}`, company: 'Iso Test Co', company_logo: null, description: ORIGINAL_DESCRIPTION + ` #${i}`,
       source_url: 'https://example.com', official_url: 'https://example.com/apply', canonical_url_hash: `h-${id}`, content_hash: `c-${id}`, employment_type: 'Full-time',
       remote_type: 'Worldwide', eligible_countries: [], excluded_countries: [], timezone_requirements: [], required_skills: [], explicit_remote_scope: 'explicit_worldwide',
-      status: 'active', posted_at: new Date().toISOString(), first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0,
+      status: 'active', posted_at: '2099-01-01T00:00:00.000Z', first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0,
     });
     try {
       for (let i = 0; i < N; i += 25) {
@@ -317,13 +325,13 @@ async function main() {
       }
       const { data: seeded } = await db.from('opportunities').select('id, source_id').like('source_id', `${PREFIX}%`).order('source_id');
       const uuidBySource = new Map((seeded ?? []).map((r: any) => [r.source_id, r.id as string]));
-      const { count: pendingBefore } = await db.from('opportunities').select('id', { count: 'exact', head: true }).eq('status', 'active').is('translation_status', null);
-      assert(uuidBySource.size === N && pendingBefore === N, `seeded ${N} pending rows and they are the ONLY pending rows in the database (${pendingBefore})`);
+      const { count: seededPending } = await db.from('opportunities').select('id', { count: 'exact', head: true }).eq('status', 'active').is('translation_status', null).like('source_id', `${PREFIX}%`);
+      assert(uuidBySource.size === N && seededPending === N, `seeded ${N} pending rows in the isolated test namespace (${seededPending})`);
       const sourceOf = new Map(Array.from(uuidBySource.entries()).map(([s, u]) => [u, s]));
 
       // Canned model: per batch call, behave differently.
       //   call 1 (rows 0-9):   mixed — good, missing title, null desc, wrong type, English, good…
-      //   calls 2 & 3 (rows 10-19, the batch + its retry): the model response is NOT JSON at all
+      //   call 2 (rows 10-19): the model response is NOT JSON; unusable responses are not retried
       //   call 4 (rows 20-24): fully valid
       let call = 0;
       const batchIds: string[][] = []; // the uuids the fake model received on each call (the DB's row order is not guaranteed)
@@ -340,7 +348,7 @@ async function main() {
               return GOOD(j.id);
             }));
           }
-          if (call === 2 || call === 3) return 'Sorry — I am unable to return JSON for this request.';
+          if (call === 2) return 'Sorry — I am unable to return JSON for this request.';
           return JSON.stringify(jobs.map((j) => GOOD(j.id)));
         })();
         return translateJobBatchWithGemini(jobs, async () => text);
@@ -348,16 +356,16 @@ async function main() {
 
       quiet();
       let summary: any, threw: string | null = null;
-      try { summary = await translatePendingOpportunities({ translate }); } catch (e) { threw = (e as Error).message; }
+      try { summary = await translatePendingOpportunities({ translate, maxRows: N }); } catch (e) { threw = (e as Error).message; }
       loud();
       assert(threw === null && !!summary, `the pass returned normally instead of throwing (${threw ?? 'no throw'})`);
       assert(summary?.provider === 'gemini' && summary?.examined === N, `it examined all ${N} rows through the Gemini path (provider=${summary?.provider}, examined=${summary?.examined})`);
-      assert(call === 4, `the model was asked 4 times: batch 1, batch 2 + its retry, batch 3 (${call}) — a failing batch does NOT stop later batches`);
+      assert(call === 3, `the model was asked 3 times: batch 1, one failed batch, then batch 3 (${call}) — a failed batch does NOT stop later batches until the breaker opens`);
 
       const { data: after } = await db.from('opportunities').select('id, source_id, title, description, translation_status, source_language, original_title').like('source_id', `${PREFIX}%`).order('source_id');
       const row = (uuid: string) => (after ?? []).find((r: any) => r.id === uuid) as any;
-      const [b1, b2, b3] = [batchIds[0], batchIds[1], batchIds[3]];
-      assert(b1?.length === 10 && b2?.length === 10 && JSON.stringify(batchIds[1]) === JSON.stringify(batchIds[2]) && b3?.length === 5, 'the pass sent batches of 10 / 10 (twice: the retry) / 5');
+      const [b1, b2, b3] = [batchIds[0], batchIds[1], batchIds[2]];
+      assert(b1?.length === 10 && b2?.length === 10 && b3?.length === 5, 'the pass sent batches of 10 / 10 / 5; the unusable middle batch was not retried');
       const st = (u: string) => row(u)?.translation_status;
       assert([0, 2, 4, 6, 8, 9].every((k) => st(b1[k]) === 'ok') && st(b1[7]) === 'n/a', 'batch 1: the valid rows are ok, the English row is n/a');
       assert([1, 3, 5].every((k) => st(b1[k]) === 'error'), 'batch 1: the three malformed rows (missing / null / wrong type) are recorded as error');
@@ -373,13 +381,34 @@ async function main() {
       // the 3 definitively-errored rows are not re-sent (error is terminal for that content).
       const secondCalls: string[][] = [];
       quiet();
-      const summary2 = await translatePendingOpportunities({ translate: async (jobs) => { secondCalls.push(jobs.map((j) => j.id)); return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id)))); } });
+      const summary2 = await translatePendingOpportunities({ maxRows: 10, translate: async (jobs) => { secondCalls.push(jobs.map((j) => j.id)); return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id)))); } });
       loud();
       const resent = new Set(secondCalls.flat());
       assert(summary2.examined === 10 && b2.every((u) => resent.has(u)) && !b1.some((u) => resent.has(u)) && !b3.some((u) => resent.has(u)), `second pass re-sends exactly the 10 deferred rows (examined=${summary2.examined}) and nothing else`);
       const { data: after2 } = await db.from('opportunities').select('id, translation_status').like('source_id', `${PREFIX}%`);
       assert(b2.every((u) => (after2 ?? []).find((r: any) => r.id === u)?.translation_status === 'ok'), 'the previously-deferred rows are now translated (ok): a transient failure costs nothing permanent');
       assert([1, 3, 5].every((k) => (after2 ?? []).find((r: any) => r.id === b1[k])?.translation_status === 'error'), 'the 3 definitively-errored rows remain error (terminal, hidden)');
+
+      // A hard provider quota response stops the whole Gemini pass. Only the first
+      // batch succeeds; the failing batch and every later row remain pending.
+      const quotaPrefix = `${PREFIX}quota-`;
+      const quotaIds = Array.from({ length: 25 }, (_, i) => `${quotaPrefix}${String(i).padStart(2, '0')}`);
+      const { error: quotaSeedError } = await db.from('opportunities').insert(quotaIds.map((id, i) => mk(id, i + 100)));
+      assert(!quotaSeedError, 'quota circuit-breaker seed succeeds', quotaSeedError?.message);
+      const quotaCalls: string[][] = [];
+      const quotaTranslate = async (jobs: Array<{ id: string; title: string; description: string }>): Promise<BatchTranslationOutput[]> => {
+        quotaCalls.push(jobs.map((j) => j.id));
+        if (quotaCalls.length === 2) throw new Error('429 Too Many Requests: quota exceeded');
+        return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id))));
+      };
+      quiet();
+      const quotaSummary = await translatePendingOpportunities({ translate: quotaTranslate, maxRows: 25 });
+      loud();
+      assert(quotaCalls.length === 2, `quota circuit breaker stopped after the first 429 (calls=${quotaCalls.length})`);
+      assert(quotaSummary.translated === 10 && quotaSummary.deferred === 10 && quotaSummary.notAttempted === 5 && quotaSummary.stoppedReason === 'provider_limit', `quota breaker translated 10, deferred 10, notAttempted 5 (translated=${quotaSummary.translated}, deferred=${quotaSummary.deferred}, notAttempted=${quotaSummary.notAttempted})`);
+      const { data: quotaAfter } = await db.from('opportunities').select('source_id, translation_status').like('source_id', `${quotaPrefix}%`).order('source_id');
+      assert((quotaAfter ?? []).filter((r: any) => r.translation_status === 'ok').length === 10, 'quota circuit breaker keeps the successful first batch translated');
+      assert((quotaAfter ?? []).filter((r: any) => r.translation_status == null).length === 15, 'quota-failed and not-attempted rows remain pending and visible');
     } finally {
       const { error } = await db.from('opportunities').delete().like('source_id', `${PREFIX}%`);
       const { count } = await db.from('opportunities').select('id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);

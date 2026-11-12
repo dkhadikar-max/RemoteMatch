@@ -62,6 +62,7 @@ import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabas
 import { isDeepLConfigured, deeplTranslate } from './deepl-client';
 import { translateJobBatchWithGemini, type BatchJobInput, type BatchTranslationOutput } from './gemini-translator';
 import { validateTranslationPair } from './validation';
+import { fetchAllRows } from '@/lib/supabase/query-helpers';
 
 /** Parallel requests at once when using DeepL. */
 const DEEPL_CONCURRENCY_LIMIT = 3;
@@ -76,8 +77,12 @@ const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 4_000;
 
 export interface TranslationPassSummary {
-  /** Total rows examined (active, in freshness window, not yet lang-detected or stale hash). */
+  /** Eligible candidates identified within this run's bounded selection; excludes the lookahead row and unscanned backlog. */
   examined: number;
+  /** Identified candidates not sent to a provider. Does not include backlog or the lookahead row. */
+  notAttempted: number;
+  /** Why this pass stopped. Higher-priority provider stops override time and row budgets. */
+  stoppedReason: 'complete' | 'row_budget' | 'time_budget' | 'provider_limit' | 'provider_failures' | 'selection_failed';
   /** Rows successfully translated to English. */
   translated: number;
   /** English rows detected (no translation performed). */
@@ -210,48 +215,102 @@ async function processGeminiRow(
  * `translate` is injectable so tests can drive the whole pass with canned model
  * responses — no live Gemini call, no free-tier quota spent.
  */
+class TranslationRequestTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super("Gemini request exceeded " + timeoutMs + "ms.");
+    this.name = "TranslationRequestTimeoutError";
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TranslationRequestTimeoutError(timeoutMs)), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
+
+function errorStatus(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+  const rec = err as Record<string, unknown>;
+  const value = rec.status ?? rec.statusCode ?? rec.code;
+  const status = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(status) ? status : null;
+}
+
+function isProviderQuotaOrRateLimitError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const status = errorStatus(err);
+  return status === 429 || status === 456 || /\b429\b|\b456\b|quota|rate.?limit|resource_exhausted/i.test(message);
+}
+
+function isProviderServerError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  const status = errorStatus(err);
+  return (status !== null && status >= 500 && status <= 599) || /\b5\d\d\b|HTTP\s+5\d\d/i.test(message);
+}
+
+export interface GeminiBatchOptions {
+  onProviderLimit?: () => void;
+  onBatchFailure?: () => void;
+  onBatchSuccess?: () => void;
+  timeoutMs?: number;
+  retryDelayMs?: number;
+}
+
 export async function processGeminiBatch(
   admin: AdminClient,
   batch: PendingRow[],
-  translate: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]> = (jobs) => translateJobBatchWithGemini(jobs)
+  translate: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]> = (jobs) => translateJobBatchWithGemini(jobs),
+  options: GeminiBatchOptions = {}
 ): Promise<RowOutcome[]> {
-  const inputs = batch.map((r) => ({
-    id: r.uuid,
-    title: r.title,
-    description: r.description,
-  }));
-
-  let outputs: BatchTranslationOutput[] = [];
-  let answered = false;
+  const inputs = batch.map((r) => ({ id: r.uuid, title: r.title, description: r.description }));
+  const timeoutMs = options.timeoutMs ?? 20_000;
+  const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
+  let outputs: BatchTranslationOutput[] | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      outputs = await translate(inputs);
-      answered = true;
+      outputs = await withTimeout(Promise.resolve().then(() => translate(inputs)), timeoutMs);
       break;
     } catch (err) {
-      console.warn(`[translation] Gemini batch attempt ${attempt} failed:`, (err as Error).message);
-      if (attempt < MAX_ATTEMPTS) {
-        await sleep(RETRY_DELAY_MS * attempt);
+      console.warn("[translation] Gemini batch attempt " + attempt + " failed:", (err as Error)?.message ?? String(err));
+      if (isProviderQuotaOrRateLimitError(err)) {
+        // Quota is a pass-wide stop. Never spend a retry or start another batch.
+        options.onProviderLimit?.();
+        return batch.map(() => "deferred" as const);
       }
+      // A request timeout is not retried. Only an HTTP 5xx receives the one retry.
+      if (err instanceof TranslationRequestTimeoutError || !isProviderServerError(err) || attempt === MAX_ATTEMPTS) {
+        options.onBatchFailure?.();
+        return batch.map(() => "deferred" as const);
+      }
+      if (retryDelayMs > 0) await sleep(retryDelayMs);
     }
   }
 
-  // BATCH-LEVEL FAILURE — the generator never answered (quota / network / unusable JSON) or
-  // answered with nothing usable. That says nothing about the rows themselves, so they are NOT
-  // marked 'error': 'error' rows are hidden from every read path, and on the free tier's tight
-  // request cap this happens routinely — marking would hide most of a fresh sync. They stay
-  // pending (status NULL, visible as "not yet processed") and the next pass retries them.
-  if (!answered || !Array.isArray(outputs) || outputs.length === 0) {
-    console.warn(`[translation] Batch of ${batch.length} produced no usable results — rows left pending for the next pass (not marked as errors).`);
-    return batch.map(() => 'deferred' as const);
+  if (!Array.isArray(outputs) || outputs.length === 0) {
+    console.warn("[translation] Gemini batch returned no usable elements; rows remain pending.");
+    options.onBatchFailure?.();
+    return batch.map(() => "deferred" as const);
   }
 
   const outputMap = new Map<string, BatchTranslationOutput>();
-  for (const o of Array.isArray(outputs) ? outputs : []) {
-    if (o && typeof o.id === 'string' && !outputMap.has(o.id)) outputMap.set(o.id, o);
+  for (const output of outputs) {
+    if (output && typeof output.id === "string" && !outputMap.has(output.id)) outputMap.set(output.id, output);
+  }
+  const matchedCount = batch.reduce((count, row) => count + (outputMap.has(row.uuid) ? 1 : 0), 0);
+  if (matchedCount === 0) {
+    console.warn("[translation] Gemini response contained no matching row IDs; batch remains pending.");
+    options.onBatchFailure?.();
+    return batch.map(() => "deferred" as const);
   }
 
+  // A partially usable response is a successful batch: each rejected/missing row
+  // is isolated and handled by processGeminiRow, while valid neighbours survive.
+  options.onBatchSuccess?.();
   const results: RowOutcome[] = [];
   for (const row of batch) {
     results.push(await processGeminiRow(admin, row, outputMap.get(row.uuid)));
@@ -262,7 +321,7 @@ export async function processGeminiBatch(
 /**
  * DeepL fallback row processor. Never throws: any failure is this row's error.
  */
-async function processDeepLRow(admin: AdminClient, row: PendingRow): Promise<RowOutcome> {
+async function processDeepLRow(admin: AdminClient, row: PendingRow, onProviderLimit?: () => void): Promise<RowOutcome> {
   try {
     const isRetranslation =
       row.translation_status === 'ok' &&
@@ -275,6 +334,10 @@ async function processDeepLRow(admin: AdminClient, row: PendingRow): Promise<Row
         result = await deeplTranslate([row.title, row.description]);
         break;
       } catch (err) {
+        if (isProviderQuotaOrRateLimitError(err)) {
+          onProviderLimit?.();
+          break;
+        }
         if (attempt < MAX_ATTEMPTS) await sleep(RETRY_DELAY_MS);
       }
     }
@@ -349,117 +412,248 @@ function tally(summary: TranslationPassSummary, results: RowOutcome[]): void {
  * `summary.errors`; the caller (POST /api/opportunities/sync) can therefore rely
  * on reaching its cross-provider reconciliation step.
  */
+export interface TranslationPassOptions {
+  /** TEST SEAM ONLY — replaces the Gemini call; never supplied by production callers. */
+  translate?: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]>;
+  /** Test-only dependency injection. */
+  admin?: NonNullable<AdminClient>;
+  /** Injected monotonic clock for deterministic deadline tests. */
+  clock?: () => number;
+  /** Test overrides; production reads the two documented environment variables. */
+  maxRows?: number;
+  maxMs?: number;
+  requestTimeoutMs?: number;
+  retryDelayMs?: number;
+}
+
+function positiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = value ? Number(value) : NaN;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Post-sync translation pass. Pending rows are selected newest-first in one
+ * bounded query; only stale-content detection uses id-keyset pagination.
+ * The row cap counts attempted rows, not rows scanned during stale detection.
+ */
 export async function translatePendingOpportunities(
-  options: {
-    /** TEST SEAM ONLY — replaces the Gemini call so the whole pass can be exercised
-     *  with canned model responses (no live call, no free-tier quota). Production
-     *  callers pass nothing. Supplying it selects the Gemini code path. */
-    translate?: (jobs: BatchJobInput[]) => Promise<BatchTranslationOutput[]>;
-  } = {}
+  options: TranslationPassOptions = {}
 ): Promise<TranslationPassSummary> {
   const summary: TranslationPassSummary = {
     examined: 0,
+    notAttempted: 0,
+    stoppedReason: "complete",
     translated: 0,
     englishDetected: 0,
     errors: 0,
     deferred: 0,
     retranslated: 0,
-    provider: 'none',
+    provider: "none",
   };
 
   const hasGemini = Boolean(options.translate) || Boolean(process.env.GEMINI_API_KEY);
   const hasDeepL = isDeepLConfigured();
-
-  if (hasGemini) {
-    summary.provider = 'gemini';
-  } else if (hasDeepL) {
-    summary.provider = 'deepl';
-  } else {
-    console.warn('[translation] Neither GEMINI_API_KEY nor DEEPL_API_KEY is configured — translation pass is a no-op.');
+  if (hasGemini) summary.provider = "gemini";
+  else if (hasDeepL) summary.provider = "deepl";
+  else {
+    console.warn("[translation] Neither GEMINI_API_KEY nor DEEPL_API_KEY is configured — translation pass is a no-op.");
     return summary;
   }
 
-  if (!isSupabaseAdminConfigured) {
-    console.warn('[translation] Supabase admin not configured — translation pass is a no-op.');
+  if (!options.admin && !isSupabaseAdminConfigured) {
+    console.warn("[translation] Supabase admin not configured — translation pass is a no-op.");
     return summary;
   }
-
-  const admin = getSupabaseAdminClient();
+  const admin = options.admin ?? getSupabaseAdminClient();
   if (!admin) {
-    console.warn('[translation] Could not get Supabase admin client.');
+    console.warn("[translation] Could not get Supabase admin client.");
     return summary;
   }
+
+  const clock = options.clock ?? (() => performance.now());
+  const startedAt = clock();
+  const maxRows = Math.max(1, options.maxRows ?? positiveInteger(process.env.TRANSLATION_MAX_ROWS_PER_RUN, 300));
+  const maxMs = Math.max(1, options.maxMs ?? positiveInteger(process.env.TRANSLATION_MAX_MS, 120_000));
+  const deadline = startedAt + maxMs;
+  const requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
+  const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
+  const cutoffNow = options.clock ? clock() : Date.now();
+  const cutoff = new Date(cutoffNow - 48 * 60 * 60 * 1_000).toISOString();
+
+  let pendingLookahead = false;
+  let staleLookahead = false;
+  let selectionFailed = false;
+  let providerLimitReached = false;
+  let providerFailuresReached = false;
+  let consecutiveBatchFailures = 0;
+  let attemptedRows = 0;
 
   try {
-    // Freshness window: same 48h boundary the feed uses.
-    const cutoff = new Date(Date.now() - 48 * 3600 * 1_000).toISOString();
+    // Pending selection is deliberately NOT freshness-windowed. Read only
+    // candidate identity/hash fields plus one lookahead row. Full descriptions
+    // are fetched later, and only for rows within the remaining attempt budget.
+    const pendingResult = await admin
+      .from("opportunities")
+      .select("id, posted_at, content_hash, translation_status, translated_content_hash")
+      .eq("status", "active")
+      .is("translation_status", null)
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("id", { ascending: true })
+      .limit(maxRows + 1);
 
-    const { data, error } = await admin
-      .from('opportunities')
-      .select('id, title, description, content_hash, translation_status, translated_content_hash')
-      .eq('status', 'active')
-      .gte('posted_at', cutoff)
-      // PostgREST cannot compare two COLUMNS: `translated_content_hash.neq.content_hash` compares the
-      // column to the literal text "content_hash", which is true for every translated row — so every
-      // already-translated row used to be re-sent to the model on every sync, burning the free-tier
-      // request cap. Fetch the candidates and compare the two hashes below instead.
-      .or('translation_status.is.null,translation_status.eq.ok');
-
-    if (error) {
-      console.error('[translation] Failed to query pending rows:', error.message);
-      return summary;
+    if (pendingResult.error) {
+      selectionFailed = true;
+      throw new Error("Failed to query pending candidates: " + pendingResult.error.message);
     }
 
-    const rawRows = ((data ?? []) as unknown as Record<string, unknown>[]).filter(
-      (r) =>
-        r.translation_status == null ||
-        // translated, but the provider has since returned different content (hash changed)
-        (r.translation_status === 'ok' && r.translated_content_hash != null && r.translated_content_hash !== r.content_hash)
-    );
-    const typedRows: PendingRow[] = rawRows.map((r) => ({
-      uuid: r.id as string,
-      title: r.title as string,
-      description: r.description as string,
-      content_hash: r.content_hash as string,
-      translation_status: (r.translation_status as string | null) ?? null,
-      translated_content_hash: (r.translated_content_hash as string | null) ?? null,
-    }));
+    const pendingFound = (pendingResult.data ?? []) as Array<{ id: string }>;
+    pendingLookahead = pendingFound.length > maxRows;
+    const pendingCandidates = pendingFound.slice(0, maxRows);
+    const pendingIds = pendingCandidates.map((row) => row.id);
 
-    summary.examined = typedRows.length;
-    if (typedRows.length === 0) return summary;
+    // Stale scan is the ONLY id-keyset-paged selection. It intentionally scans
+    // all lightweight ids/hashes in the 48h window, even when that exceeds the
+    // attempted-row budget, then takes only the remaining budget plus lookahead.
+    let staleCandidates: Array<{ id: string }> = [];
+    let staleIdentifiedCount = 0;
+    const remainingBudget = maxRows - pendingIds.length;
+    if (!pendingLookahead) {
+      try {
+        const staleScan = await fetchAllRows<{
+          id: string;
+          content_hash: string | null;
+          translated_content_hash: string | null;
+        }>(
+          (afterId, pageSize) => {
+            let query = admin
+              .from("opportunities")
+              .select("id, content_hash, translated_content_hash")
+              .eq("status", "active")
+              .eq("translation_status", "ok")
+              .gte("posted_at", cutoff)
+              .order("id", { ascending: true })
+              .limit(pageSize);
+            if (afterId !== null) query = query.gt("id", afterId);
+            return query;
+          },
+          { label: "translation stale-content scan", pageSize: 1_000, maxRows: 500_000 }
+        );
 
-    console.log(`[translation] Processing ${typedRows.length} pending rows using provider=${summary.provider}.`);
+        const changed = staleScan.filter(
+          (row) => row.translated_content_hash != null && row.content_hash !== row.translated_content_hash
+        );
+        // All hash-mismatched stale rows are identified by the lightweight scan.
+        // Only the first remaining-budget rows receive descriptions and can be attempted.
+        staleIdentifiedCount = changed.length;
+        staleLookahead = changed.length > remainingBudget;
+        staleCandidates = changed.slice(0, remainingBudget);
+      } catch (err) {
+        selectionFailed = true;
+        console.error("[translation] Stale-content scan failed:", (err as Error)?.message ?? String(err));
+      }
+    }
 
-    if (summary.provider === 'gemini') {
-      // Process in batches of 10. A batch that fails as a whole costs only its own rows.
-      for (let i = 0; i < typedRows.length; i += GEMINI_BATCH_SIZE) {
-        const batch = typedRows.slice(i, i + GEMINI_BATCH_SIZE);
-        let results: RowOutcome[];
-        try {
-          results = await processGeminiBatch(admin, batch, options.translate);
-        } catch (err) {
-          console.warn(`[translation] Batch starting at row ${i} failed unexpectedly (${(err as Error)?.message ?? String(err)}) — its rows are left pending; later batches continue.`);
-          results = batch.map(() => 'deferred' as const);
+    const candidateIds = [...pendingIds, ...staleCandidates.map((row) => row.id)];
+    summary.examined = pendingIds.length + staleIdentifiedCount;
+
+    // This is the only description read. It cannot include the lookahead row
+    // or any backlog beyond the per-run candidate budget.
+    let typedRows: PendingRow[] = [];
+    if (candidateIds.length > 0 && clock() < deadline) {
+      const details = await admin
+        .from("opportunities")
+        .select("id, title, description, content_hash, translation_status, translated_content_hash")
+        .in("id", candidateIds);
+      if (details.error) {
+        selectionFailed = true;
+        console.error("[translation] Failed to fetch in-budget translation content:", details.error.message);
+      } else {
+        const byId = new Map<string, PendingRow>();
+        for (const row of (details.data ?? []) as Array<Record<string, unknown>>) {
+          byId.set(row.id as string, {
+            uuid: row.id as string,
+            title: row.title as string,
+            description: row.description as string,
+            content_hash: row.content_hash as string,
+            translation_status: (row.translation_status as string | null) ?? null,
+            translated_content_hash: (row.translated_content_hash as string | null) ?? null,
+          });
         }
+        typedRows = candidateIds.map((id) => byId.get(id)).filter((row): row is PendingRow => Boolean(row));
+      }
+    }
+
+    console.log("[translation] Identified " + summary.examined + " in-budget candidates; provider=" + summary.provider + ".");
+
+    if (summary.provider === "gemini") {
+      for (let i = 0; i < typedRows.length; i += GEMINI_BATCH_SIZE) {
+        // The 120s budget prevents starting another batch. A batch already in
+        // flight is allowed to finish, including its single 5xx retry.
+        if (clock() >= deadline) break;
+        const batch = typedRows.slice(i, i + GEMINI_BATCH_SIZE);
+        attemptedRows += batch.length;
+        const results = await processGeminiBatch(admin, batch, options.translate, {
+          timeoutMs: requestTimeoutMs,
+          retryDelayMs,
+          onProviderLimit: () => { providerLimitReached = true; },
+          onBatchFailure: () => {
+            consecutiveBatchFailures += 1;
+            if (consecutiveBatchFailures >= 2) providerFailuresReached = true;
+          },
+          onBatchSuccess: () => { consecutiveBatchFailures = 0; },
+        });
         tally(summary, results);
+        if (providerLimitReached || providerFailuresReached) break;
       }
     } else {
-      // DeepL concurrency
       for (let i = 0; i < typedRows.length; i += DEEPL_CONCURRENCY_LIMIT) {
+        if (clock() >= deadline) break;
         const batch = typedRows.slice(i, i + DEEPL_CONCURRENCY_LIMIT);
-        const results = await Promise.all(batch.map((row) => processDeepLRow(admin, row)));
+        attemptedRows += batch.length;
+        const results = await Promise.all(batch.map((row) =>
+          processDeepLRow(admin, row, () => { providerLimitReached = true; })
+        ));
         tally(summary, results);
+        if (providerLimitReached) break;
+        if (results.every((result) => result === "deferred")) {
+          consecutiveBatchFailures += 1;
+          if (consecutiveBatchFailures >= 2) providerFailuresReached = true;
+        } else {
+          consecutiveBatchFailures = 0;
+        }
+        if (providerFailuresReached) break;
       }
     }
   } catch (err) {
-    // Last line of defense; everything above is already isolated per row/batch.
-    console.error(`[translation] Pass aborted unexpectedly (${(err as Error)?.message ?? String(err)}); returning what was completed.`);
+    // Preserve the pass's non-throwing contract. If candidates were already
+    // identified, report them as not attempted and never claim full completion.
+    selectionFailed = true;
+    console.error("[translation] Pass aborted unexpectedly:", (err as Error)?.message ?? String(err));
   }
 
-  console.log(
-    `[translation] Done. translated=${summary.translated} (retranslated=${summary.retranslated}) ` +
-    `english=${summary.englishDetected} errors=${summary.errors} deferred=${summary.deferred}`
-  );
+  summary.notAttempted = Math.max(0, summary.examined - attemptedRows);
+  const hasMoreEligibleRows = pendingLookahead || staleLookahead;
+  const timeBudgetReached = clock() >= deadline && (summary.notAttempted > 0 || hasMoreEligibleRows);
 
+  // Stop-reason precedence is intentional and must not be reordered.
+  summary.stoppedReason = providerLimitReached
+    ? "provider_limit"
+    : providerFailuresReached
+      ? "provider_failures"
+      : selectionFailed
+        ? "selection_failed"
+        : timeBudgetReached
+        ? "time_budget"
+        : hasMoreEligibleRows
+          ? "row_budget"
+          : "complete";
+
+  console.log(
+    "[translation] Done. translated=" + summary.translated +
+    " (retranslated=" + summary.retranslated + ") english=" + summary.englishDetected +
+    " errors=" + summary.errors + " deferred=" + summary.deferred +
+    " examined=" + summary.examined + " notAttempted=" + summary.notAttempted +
+    " stoppedReason=" + summary.stoppedReason
+  );
   return summary;
 }
