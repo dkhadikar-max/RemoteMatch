@@ -17,7 +17,8 @@
  *  §4 processGeminiBatch         mixed valid/invalid batches, retries, write failures
  *  §5 real database              the whole pass against live rows (isolated, cleaned up)
  *
- * Run: npx tsx --env-file=.env.migration.local test/translation-isolation-suite.ts
+ * Run with explicit isolated CI environment variables: npx tsx test/translation-isolation-suite.ts.
+ * Never load .env.local or any production environment file.
  */
 import ws from 'ws';
 (globalThis as any).WebSocket = ws;
@@ -212,7 +213,7 @@ async function main() {
       const { admin, updates } = mkAdmin();
       const t = viaGenerator(['{"id": "r1", "detectedLa', 'still not json']);
       quiet(); const res = await processGeminiBatch(admin, rows(3), t.translate); loud();
-      assert(t.calls() === 2, '4d: malformed JSON is attempted twice (one retry), as before');
+      assert(t.calls() === 1, '4d: an unusable response is a batch failure and is not retried');
       assert(res.join() === 'deferred,deferred,deferred' && updates.length === 0, '4d: after the retries the rows are DEFERRED — nothing is written, nothing throws, they stay pending for the next pass');
     }
     // 4d2. the generator keeps failing (quota / network) -> deferred, never error
@@ -302,6 +303,11 @@ async function main() {
   if (!url || !serviceKey || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     skip('Supabase env incomplete');
   } else {
+    const projectRef = new URL(url).hostname.split('.')[0];
+    if (projectRef !== 'xyahktsgdigutxartafb') {
+      assert(false, 'refusing translation live suite outside the approved isolated Supabase project', projectRef);
+      return finish();
+    }
     const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const PREFIX = `transl-iso-${Date.now().toString(36)}-`;
     const N = 25; // 3 batches of 10 / 10 / 5
@@ -342,7 +348,7 @@ async function main() {
               return GOOD(j.id);
             }));
           }
-          if (call === 2 || call === 3) return 'Sorry — I am unable to return JSON for this request.';
+          if (call === 2) return 'Sorry — I am unable to return JSON for this request.';
           return JSON.stringify(jobs.map((j) => GOOD(j.id)));
         })();
         return translateJobBatchWithGemini(jobs, async () => text);
@@ -350,16 +356,16 @@ async function main() {
 
       quiet();
       let summary: any, threw: string | null = null;
-      try { summary = await translatePendingOpportunities({ translate }); } catch (e) { threw = (e as Error).message; }
+      try { summary = await translatePendingOpportunities({ translate, maxRows: N }); } catch (e) { threw = (e as Error).message; }
       loud();
       assert(threw === null && !!summary, `the pass returned normally instead of throwing (${threw ?? 'no throw'})`);
       assert(summary?.provider === 'gemini' && summary?.examined === N, `it examined all ${N} rows through the Gemini path (provider=${summary?.provider}, examined=${summary?.examined})`);
-      assert(call === 4, `the model was asked 4 times: batch 1, batch 2 + its retry, batch 3 (${call}) — a failing batch does NOT stop later batches`);
+      assert(call === 3, `the model was asked 3 times: batch 1, one failed batch, then batch 3 (${call}) — a failed batch does NOT stop later batches until the breaker opens`);
 
       const { data: after } = await db.from('opportunities').select('id, source_id, title, description, translation_status, source_language, original_title').like('source_id', `${PREFIX}%`).order('source_id');
       const row = (uuid: string) => (after ?? []).find((r: any) => r.id === uuid) as any;
-      const [b1, b2, b3] = [batchIds[0], batchIds[1], batchIds[3]];
-      assert(b1?.length === 10 && b2?.length === 10 && JSON.stringify(batchIds[1]) === JSON.stringify(batchIds[2]) && b3?.length === 5, 'the pass sent batches of 10 / 10 (twice: the retry) / 5');
+      const [b1, b2, b3] = [batchIds[0], batchIds[1], batchIds[2]];
+      assert(b1?.length === 10 && b2?.length === 10 && b3?.length === 5, 'the pass sent batches of 10 / 10 / 5; the unusable middle batch was not retried');
       const st = (u: string) => row(u)?.translation_status;
       assert([0, 2, 4, 6, 8, 9].every((k) => st(b1[k]) === 'ok') && st(b1[7]) === 'n/a', 'batch 1: the valid rows are ok, the English row is n/a');
       assert([1, 3, 5].every((k) => st(b1[k]) === 'error'), 'batch 1: the three malformed rows (missing / null / wrong type) are recorded as error');
@@ -375,7 +381,7 @@ async function main() {
       // the 3 definitively-errored rows are not re-sent (error is terminal for that content).
       const secondCalls: string[][] = [];
       quiet();
-      const summary2 = await translatePendingOpportunities({ translate: async (jobs) => { secondCalls.push(jobs.map((j) => j.id)); return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id)))); } });
+      const summary2 = await translatePendingOpportunities({ maxRows: 10, translate: async (jobs) => { secondCalls.push(jobs.map((j) => j.id)); return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id)))); } });
       loud();
       const resent = new Set(secondCalls.flat());
       assert(summary2.examined === 10 && b2.every((u) => resent.has(u)) && !b1.some((u) => resent.has(u)) && !b3.some((u) => resent.has(u)), `second pass re-sends exactly the 10 deferred rows (examined=${summary2.examined}) and nothing else`);
@@ -396,7 +402,7 @@ async function main() {
         return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id))));
       };
       quiet();
-      const quotaSummary = await translatePendingOpportunities({ translate: quotaTranslate });
+      const quotaSummary = await translatePendingOpportunities({ translate: quotaTranslate, maxRows: 25 });
       loud();
       assert(quotaCalls.length === 2, `quota circuit breaker stopped after the first 429 (calls=${quotaCalls.length})`);
       assert(quotaSummary.translated === 10 && quotaSummary.deferred === 15, `quota circuit breaker translated 10 and deferred 15 (translated=${quotaSummary.translated}, deferred=${quotaSummary.deferred})`);
