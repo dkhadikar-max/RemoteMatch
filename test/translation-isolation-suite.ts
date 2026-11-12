@@ -218,8 +218,10 @@ async function main() {
     // 4d2. the generator keeps failing (quota / network) -> deferred, never error
     {
       const { admin, updates } = mkAdmin();
-      const t = viaGenerator([new Error('429 quota exceeded'), new Error('429 quota exceeded')]);
-      quiet(); const res = await processGeminiBatch(admin, rows(4), t.translate); loud();
+      const t = viaGenerator([new Error('429 quota exceeded')]);
+      let providerLimitSignaled = false;
+      quiet(); const res = await processGeminiBatch(admin, rows(4), t.translate, { onProviderLimit: () => { providerLimitSignaled = true; } }); loud();
+      assert(t.calls() === 1 && providerLimitSignaled, '4d2: a hard quota failure is not retried and opens the provider-limit circuit breaker');
       assert(res.join() === 'deferred,deferred,deferred,deferred' && updates.length === 0, '4d2: a quota / network failure defers the batch — rows are NOT marked error (which would hide them)');
     }
     // 4d3. a valid response in which EVERY element is malformed carries nothing usable -> deferred
@@ -380,6 +382,27 @@ async function main() {
       const { data: after2 } = await db.from('opportunities').select('id, translation_status').like('source_id', `${PREFIX}%`);
       assert(b2.every((u) => (after2 ?? []).find((r: any) => r.id === u)?.translation_status === 'ok'), 'the previously-deferred rows are now translated (ok): a transient failure costs nothing permanent');
       assert([1, 3, 5].every((k) => (after2 ?? []).find((r: any) => r.id === b1[k])?.translation_status === 'error'), 'the 3 definitively-errored rows remain error (terminal, hidden)');
+
+      // A hard provider quota response stops the whole Gemini pass. Only the first
+      // batch succeeds; the failing batch and every later row remain pending.
+      const quotaPrefix = `${PREFIX}quota-`;
+      const quotaIds = Array.from({ length: 25 }, (_, i) => `${quotaPrefix}${String(i).padStart(2, '0')}`);
+      const { error: quotaSeedError } = await db.from('opportunities').insert(quotaIds.map((id, i) => mk(id, i + 100)));
+      assert(!quotaSeedError, 'quota circuit-breaker seed succeeds', quotaSeedError?.message);
+      const quotaCalls: string[][] = [];
+      const quotaTranslate = async (jobs: Array<{ id: string; title: string; description: string }>): Promise<BatchTranslationOutput[]> => {
+        quotaCalls.push(jobs.map((j) => j.id));
+        if (quotaCalls.length === 2) throw new Error('429 Too Many Requests: quota exceeded');
+        return translateJobBatchWithGemini(jobs, async () => JSON.stringify(jobs.map((j) => GOOD(j.id))));
+      };
+      quiet();
+      const quotaSummary = await translatePendingOpportunities({ translate: quotaTranslate });
+      loud();
+      assert(quotaCalls.length === 2, `quota circuit breaker stopped after the first 429 (calls=${quotaCalls.length})`);
+      assert(quotaSummary.translated === 10 && quotaSummary.deferred === 15, `quota circuit breaker translated 10 and deferred 15 (translated=${quotaSummary.translated}, deferred=${quotaSummary.deferred})`);
+      const { data: quotaAfter } = await db.from('opportunities').select('source_id, translation_status').like('source_id', `${quotaPrefix}%`).order('source_id');
+      assert((quotaAfter ?? []).filter((r: any) => r.translation_status === 'ok').length === 10, 'quota circuit breaker keeps the successful first batch translated');
+      assert((quotaAfter ?? []).filter((r: any) => r.translation_status == null).length === 15, 'quota-failed and not-attempted rows remain pending and visible');
     } finally {
       const { error } = await db.from('opportunities').delete().like('source_id', `${PREFIX}%`);
       const { count } = await db.from('opportunities').select('id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);
