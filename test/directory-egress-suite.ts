@@ -329,7 +329,7 @@ async function main() {
     description: desc(i), source_url: 'https://example.com', official_url: 'https://example.com/apply', canonical_url_hash: `h-${id}`, content_hash: `c-${id}`,
     employment_type: 'Full-time', remote_type: rp(REMOTE), eligible_countries: rp(COUNTRIES), excluded_countries: [], timezone_requirements: [],
     required_skills: Array.from({ length: Math.floor(rr() * 4) }, () => rp(allTags)), experience_requirement: rp(EXPERIENCE) ?? null,
-    explicit_remote_scope: 'explicit_worldwide', status: 'active', posted_at: new Date(Date.UTC(2026, 10, 10) + i * 60_000).toISOString(),
+    explicit_remote_scope: 'explicit_worldwide', status: 'active', posted_at: new Date(Date.UTC(2099, 0, 1) + i * 60_000).toISOString(),
     first_seen_at: new Date().toISOString(), last_seen_in_feed_at: new Date().toISOString(), consecutive_absences: 0, ...over,
   });
   const rows = [
