@@ -13,11 +13,26 @@ type Applicant = {
   profiles: { id: string; email: string | null; full_name: string | null; headline: string | null; avatar_url: string | null; resume_file_url: string | null; linkedin_url: string | null } | null;
 };
 
-const STATUSES = ['submitted','reviewing','shortlisted','rejected','hired'];
+const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'];
+const REASONS = [
+  ['strong_experience', 'Strong relevant experience'],
+  ['relevant_achievements', 'Relevant achievements'],
+  ['strong_technical_skills', 'Strong technical skills'],
+  ['transferable_capabilities', 'Transferable capabilities'],
+  ['insufficient_experience', 'Insufficient experience'],
+  ['missing_mandatory_qualification', 'Missing mandatory qualification'],
+  ['location_ineligible', 'Location ineligible'],
+  ['poor_role_fit', 'Poor role fit'],
+  ['insufficient_evidence', 'Insufficient evidence'],
+  ['position_filled', 'Position filled'],
+  ['candidate_withdrew', 'Candidate withdrew'],
+  ['other', 'Other recorded reason'],
+] as const;
 
 export default function EmployerApplicationsPage() {
   const { id } = useParams<{ id: string }>();
   const [rows, setRows] = useState<Applicant[]>([]);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -35,16 +50,23 @@ export default function EmployerApplicationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const updateStatus = async (applicationId: string, status: string) => {
-    setBusy(applicationId); setError('');
+  const updateStatus = async (row: Applicant, status: string) => {
+    const reasonCode = reasons[row.id] || 'insufficient_evidence';
+    setBusy(row.id); setError('');
     try {
       const response = await fetch('/api/employer/companies/' + id + '/applications', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applicationId, status }),
+        body: JSON.stringify({
+          applicationId: row.id,
+          expectedStatus: row.status,
+          status,
+          reasonCode,
+          idempotencyKey: crypto.randomUUID(),
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not update status.');
-      setRows(current => current.map(row => row.id === applicationId ? { ...row, status } : row));
+      if (!response.ok) throw new Error(data.message || data.error || 'Could not update status.');
+      setRows(current => current.map(item => item.id === row.id ? { ...item, status: data.status || status } : item));
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(''); }
   };
@@ -65,10 +87,18 @@ export default function EmployerApplicationsPage() {
             <p className="text-xs text-[var(--muted)]">Applied {new Date(row.submitted_at).toLocaleString()}</p>
           </div>
           <select aria-label="Application status" className="soft-input px-3 py-2 text-sm" value={row.status}
-            disabled={busy === row.id} onChange={e => updateStatus(row.id, e.target.value)}>
-            {STATUSES.map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
+            disabled={busy === row.id} onChange={e => updateStatus(row, e.target.value)}>
+            {[row.status, ...STATUSES.filter(status => status !== row.status)].map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
           </select>
         </div>
+        <label className="block text-xs text-[var(--muted)]">Decision reason
+          <select aria-label="Decision reason" className="soft-input mt-1 block w-full px-3 py-2 text-sm"
+            value={reasons[row.id] || 'insufficient_evidence'}
+            disabled={busy === row.id}
+            onChange={e => setReasons(current => ({ ...current, [row.id]: e.target.value }))}>
+            {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
         {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
         <div className="flex flex-wrap gap-4 text-sm">
           {row.profiles?.resume_file_url && <a className="text-[var(--red)] underline" href={row.profiles.resume_file_url} target="_blank" rel="noreferrer">View resume</a>}
