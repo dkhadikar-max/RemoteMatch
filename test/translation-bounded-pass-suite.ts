@@ -4,7 +4,7 @@
  * All database behavior is injected and in-memory. No credentials, .env files,
  * production project, or live Gemini calls are used.
  */
-import { translatePendingOpportunities, type PendingRow } from "../src/lib/translation/translate-pending";
+import { translatePendingOpportunities } from "../src/lib/translation/translate-pending";
 import type { BatchJobInput, BatchTranslationOutput } from "../src/lib/translation/gemini-translator";
 
 type FakeRow = {
@@ -341,8 +341,8 @@ async function main() {
     let failClock = now;
     let calls = 0;
     const failures = await translatePendingOpportunities({
-      admin: failDb.admin, maxRows: 20, maxMs: 10, clock: () => failClock, retryDelayMs: 0,
-      translate: async () => { calls++; failClock += 11; throw Object.assign(new Error("HTTP 503"), { status: 503 }); },
+      admin: failDb.admin, maxRows: 20, maxMs: 3, clock: () => failClock, retryDelayMs: 0,
+      translate: async () => { calls++; failClock += 1; throw Object.assign(new Error("HTTP 503"), { status: 503 }); },
     });
     check(quota.stoppedReason === "provider_limit" && failures.stoppedReason === "provider_failures", "provider stop reasons outrank elapsed time and row-budget lookahead");
   }

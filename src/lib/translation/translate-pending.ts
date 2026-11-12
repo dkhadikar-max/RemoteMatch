@@ -215,11 +215,6 @@ async function processGeminiRow(
  * `translate` is injectable so tests can drive the whole pass with canned model
  * responses — no live Gemini call, no free-tier quota spent.
  */
-function isProviderQuotaOrRateLimitError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return /\b429\b|quota|rate.?limit|resource_exhausted/i.test(message);
-}
-
 class TranslationRequestTimeoutError extends Error {
   constructor(timeoutMs: number) {
     super("Gemini request exceeded " + timeoutMs + "ms.");
@@ -302,14 +297,20 @@ export async function processGeminiBatch(
     return batch.map(() => "deferred" as const);
   }
 
-  // A partially usable response is a successful batch: each rejected/missing row
-  // is isolated and handled by processGeminiRow, while valid neighbours survive.
-  options.onBatchSuccess?.();
   const outputMap = new Map<string, BatchTranslationOutput>();
   for (const output of outputs) {
     if (output && typeof output.id === "string" && !outputMap.has(output.id)) outputMap.set(output.id, output);
   }
+  const matchedCount = batch.reduce((count, row) => count + (outputMap.has(row.uuid) ? 1 : 0), 0);
+  if (matchedCount === 0) {
+    console.warn("[translation] Gemini response contained no matching row IDs; batch remains pending.");
+    options.onBatchFailure?.();
+    return batch.map(() => "deferred" as const);
+  }
 
+  // A partially usable response is a successful batch: each rejected/missing row
+  // is isolated and handled by processGeminiRow, while valid neighbours survive.
+  options.onBatchSuccess?.();
   const results: RowOutcome[] = [];
   for (const row of batch) {
     results.push(await processGeminiRow(admin, row, outputMap.get(row.uuid)));
@@ -469,14 +470,15 @@ export async function translatePendingOpportunities(
     return summary;
   }
 
-  const clock = options.clock ?? Date.now;
+  const clock = options.clock ?? (() => performance.now());
   const startedAt = clock();
   const maxRows = Math.max(1, options.maxRows ?? positiveInteger(process.env.TRANSLATION_MAX_ROWS_PER_RUN, 300));
   const maxMs = Math.max(1, options.maxMs ?? positiveInteger(process.env.TRANSLATION_MAX_MS, 120_000));
   const deadline = startedAt + maxMs;
   const requestTimeoutMs = options.requestTimeoutMs ?? 20_000;
   const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
-  const cutoff = new Date(clock() - 48 * 60 * 60 * 1_000).toISOString();
+  const cutoffNow = options.clock ? clock() : Date.now();
+  const cutoff = new Date(cutoffNow - 48 * 60 * 60 * 1_000).toISOString();
 
   let pendingLookahead = false;
   let staleLookahead = false;
