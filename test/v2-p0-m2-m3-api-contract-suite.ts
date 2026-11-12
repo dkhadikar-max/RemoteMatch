@@ -47,4 +47,4 @@ assert.match(employerPage, /expectedStatus: row\.status/);
 assert.match(employerPage, /idempotencyKey: crypto\.randomUUID\(\)/);
 assert.match(employerPage, /Decision reason/);
 
-console.log('V2 P0 M2/M3 API contract suite: 7 migration files + 8 route/UI contract groups passed.');
+console.log('V2 P0 M2/M3 API contract suite: 7 migrations and 6 API/UI contract groups passed.');
