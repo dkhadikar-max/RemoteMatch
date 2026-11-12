@@ -4,6 +4,7 @@
 DO $$
 DECLARE
   v_count integer;
+  v_security_definer boolean;
   v_def text;
 BEGIN
   -- Schema/link contract.
@@ -65,10 +66,10 @@ BEGIN
      has_function_privilege('authenticated','public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)','EXECUTE') THEN
     RAISE EXCEPTION 'employer transition RPC grants are incorrect';
   END IF;
-  SELECT prosecdef INTO v_count FROM pg_proc WHERE oid='public.apply_to_employer_job(uuid,text)'::regprocedure;
-  IF v_count <> 1 THEN RAISE EXCEPTION 'direct apply RPC must be SECURITY DEFINER'; END IF;
-  SELECT prosecdef INTO v_count FROM pg_proc WHERE oid='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure;
-  IF v_count <> 0 THEN RAISE EXCEPTION 'employer transition RPC must be SECURITY INVOKER'; END IF;
+  SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.apply_to_employer_job(uuid,text)'::regprocedure;
+  IF v_security_definer IS DISTINCT FROM true THEN RAISE EXCEPTION 'direct apply RPC must be SECURITY DEFINER'; END IF;
+  SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure;
+  IF v_security_definer IS DISTINCT FROM false THEN RAISE EXCEPTION 'employer transition RPC must be SECURITY INVOKER'; END IF;
 
   -- State-machine characterization.
   IF NOT public.is_valid_linked_application_transition('applied','interview','employer_sync') OR
