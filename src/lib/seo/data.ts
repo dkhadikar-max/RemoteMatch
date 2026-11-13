@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordRouteMetric } from '@/lib/observability/route-metrics';
 import { CanonicalOpportunity } from '@/types/byn';
 import { getActiveOpportunities, getOpportunityBySourceIdAnyStatus, getRelatedActiveOpportunities } from '../ingestion/catalog-read';
 import { jobUrl } from '@/lib/seo/job-href';
@@ -564,8 +565,25 @@ export function isJobPermanentlyRemoved(job: CanonicalOpportunity): boolean {
  * deliberately bypasses RLS via the admin client.
  */
 export async function getJobById(id: string): Promise<CanonicalOpportunity | undefined> {
-  const job = await getOpportunityBySourceIdAnyStatus(id);
-  return job ?? undefined;
+  const startedAt = performance.now();
+  try {
+    const job = await getOpportunityBySourceIdAnyStatus(id);
+    recordRouteMetric({
+      route: 'public_job_detail',
+      stage: 'job_lookup',
+      durationMs: performance.now() - startedAt,
+      outcome: job ? 'found' : 'not_found',
+    });
+    return job ?? undefined;
+  } catch (error) {
+    recordRouteMetric({
+      route: 'public_job_detail',
+      stage: 'job_lookup',
+      durationMs: performance.now() - startedAt,
+      outcome: 'error',
+    });
+    throw error;
+  }
 }
 
 /**
