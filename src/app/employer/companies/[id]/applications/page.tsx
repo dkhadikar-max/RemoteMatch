@@ -13,7 +13,21 @@ type Applicant = {
   profiles: { id: string; email: string | null; full_name: string | null; headline: string | null; avatar_url: string | null; resume_file_url: string | null; linkedin_url: string | null } | null;
 };
 
-const STATUSES = ['submitted','reviewing','shortlisted','rejected','hired'];
+const STATUSES = ['submitted','reviewing','shortlisted','interviewing','offered','rejected','hired'];
+const REASONS = [
+  ['strong_experience','Strong relevant experience'],
+  ['relevant_achievements','Relevant achievements'],
+  ['strong_technical_skills','Strong technical skills'],
+  ['transferable_capabilities','Transferable capabilities'],
+  ['insufficient_experience','Insufficient experience'],
+  ['missing_mandatory_qualification','Missing mandatory qualification'],
+  ['location_ineligible','Location ineligible'],
+  ['poor_role_fit','Poor role fit'],
+  ['insufficient_evidence','Insufficient evidence'],
+  ['position_filled','Position filled'],
+  ['candidate_withdrew','Candidate withdrew'],
+  ['other','Other recorded reason'],
+] as const;
 
 export default function EmployerApplicationsPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +35,7 @@ export default function EmployerApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [reasonByApplication, setReasonByApplication] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -35,16 +50,32 @@ export default function EmployerApplicationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const updateStatus = async (applicationId: string, status: string) => {
-    setBusy(applicationId); setError('');
+  const updateStatus = async (row: Applicant, status: string) => {
+    const requiresReason = status === 'rejected' ||
+      (row.status === 'interviewing' && status === 'shortlisted') ||
+      (row.status === 'rejected' && status === 'reviewing');
+    const reasonCode = reasonByApplication[row.id] || '';
+    if (requiresReason && !reasonCode) {
+      setError('Select a reason before recording this decision.');
+      return;
+    }
+
+    setBusy(row.id); setError('');
     try {
       const response = await fetch('/api/employer/companies/' + id + '/applications', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applicationId, status }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applicationId: row.id,
+          expectedStatus: row.status,
+          status,
+          reasonCode: reasonCode || null,
+          idempotencyKey: crypto.randomUUID(),
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not update status.');
-      setRows(current => current.map(row => row.id === applicationId ? { ...row, status } : row));
+      setRows(current => current.map(item => item.id === row.id ? { ...item, status: data.status || status } : item));
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(''); }
   };
@@ -57,24 +88,36 @@ export default function EmployerApplicationsPage() {
     {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
     {loading ? <p className="text-sm text-[var(--muted)]">Loading applications…</p> :
       rows.length === 0 ? <div className="soft-card border border-[var(--line)] p-6 text-sm text-[var(--muted)]">No applications received yet.</div> :
-      <div className="space-y-3">{rows.map(row => <article key={row.id} className="soft-card border border-[var(--line)] p-5 space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h2 className="font-semibold text-[var(--ink)]">{row.profiles?.full_name || 'Candidate'}</h2>
-            <p className="text-xs text-[var(--muted)]">{row.profiles?.headline || 'No headline provided'}</p>
-            <p className="text-xs text-[var(--muted)]">{row.profiles?.email || 'Email unavailable'} · {row.employer_job_submissions?.title || 'Job'}</p>
-            <p className="text-xs text-[var(--muted)]">Applied {new Date(row.submitted_at).toLocaleString()}</p>
+      <div className="space-y-3">{rows.map(row => {
+        return <article key={row.id} className="soft-card border border-[var(--line)] p-5 space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="font-semibold text-[var(--ink)]">{row.profiles?.full_name || 'Candidate'}</h2>
+              <p className="text-xs text-[var(--muted)]">{row.profiles?.headline || 'No headline provided'}</p>
+              <p className="text-xs text-[var(--muted)]">{row.profiles?.email || 'Email unavailable'} · {row.employer_job_submissions?.title || 'Job'}</p>
+              <p className="text-xs text-[var(--muted)]">Applied {new Date(row.submitted_at).toLocaleString()}</p>
+            </div>
+            <div className="flex flex-col gap-2 min-w-44">
+              <select aria-label="Application status" className="soft-input px-3 py-2 text-sm" value={row.status}
+                disabled={busy === row.id || row.status === 'hired' || row.status === 'withdrawn' || row.status === 'offer_declined'}
+                onChange={e => updateStatus(row, e.target.value)}>
+                <option value={row.status}>{row.status.replace('_',' ')}</option>
+                {STATUSES.filter(status => status !== row.status).map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
+              </select>
+              <select aria-label="Decision reason" className="soft-input px-3 py-2 text-xs"
+                value={reasonByApplication[row.id] || ''}
+                onChange={e => setReasonByApplication(current => ({ ...current, [row.id]: e.target.value }))}>
+                <option value="">Decision reason (when required)</option>
+                {REASONS.map(([code,label]) => <option key={code} value={code}>{label}</option>)}
+              </select>
+            </div>
           </div>
-          <select aria-label="Application status" className="soft-input px-3 py-2 text-sm" value={row.status}
-            disabled={busy === row.id} onChange={e => updateStatus(row.id, e.target.value)}>
-            {STATUSES.map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
-          </select>
-        </div>
-        {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
-        <div className="flex flex-wrap gap-4 text-sm">
-          {row.profiles?.resume_file_url && <a className="text-[var(--red)] underline" href={row.profiles.resume_file_url} target="_blank" rel="noreferrer">View resume</a>}
-          {row.profiles?.linkedin_url && <a className="text-[var(--red)] underline" href={row.profiles.linkedin_url} target="_blank" rel="noreferrer">LinkedIn profile</a>}
-          {row.profiles?.email && <a className="text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
-        </div>
-      </article>)}</div>}
+          {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
+          <div className="flex flex-wrap gap-4 text-sm">
+            {row.profiles?.resume_file_url && <a className="text-[var(--red)] underline" href={row.profiles.resume_file_url} target="_blank" rel="noreferrer">View resume</a>}
+            {row.profiles?.linkedin_url && <a className="text-[var(--red)] underline" href={row.profiles.linkedin_url} target="_blank" rel="noreferrer">LinkedIn profile</a>}
+            {row.profiles?.email && <a className="text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
+          </div>
+        </article>;
+      })}</div>}
   </main>;
 }

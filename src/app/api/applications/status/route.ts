@@ -10,6 +10,7 @@ const VALID_STATUSES = [
   'rejected',
   'withdrawn',
   'archived',
+  'offer_declined',
 ] as const;
 
 function isValidBody(
@@ -29,21 +30,6 @@ function isValidBody(
   );
 }
 
-/**
- * The only client-reachable path that can change an application's lifecycle
- * state. Everything else — transition-rule enforcement, compare-and-swap
- * against the caller's observed status, the atomic status+event write,
- * ownership scoping — happens inside transition_application_status() (see
- * supabase/migrations/007_application_transition_cas.sql). This route's job
- * is only to authenticate the caller and shape the RPC's response/errors
- * into HTTP.
- *
- * `expectedStatus` is required, not optional: the caller must state which
- * status it observed before deciding to make this request, so the RPC can
- * detect "the application moved since I last looked" instead of silently
- * proceeding from whatever the row happens to be at now (see 007's header
- * for the concurrency defect this closes).
- */
 export async function PATCH(req: NextRequest) {
   let auth;
   try {
@@ -51,20 +37,16 @@ export async function PATCH(req: NextRequest) {
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const { supabase } = auth;
 
   let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  try { body = await req.json(); }
+  catch { return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 }); }
   if (!isValidBody(body)) {
     return NextResponse.json({ error: 'Invalid status transition request' }, { status: 400 });
   }
-  const { opportunityId, expectedStatus, status, notes } = body;
 
-  const { data, error } = await supabase.rpc('transition_application_status', {
+  const { opportunityId, expectedStatus, status, notes } = body;
+  const { data, error } = await auth.supabase.rpc('transition_application_status', {
     p_opportunity_id: opportunityId,
     p_expected_status: expectedStatus,
     p_new_status: status,
@@ -72,24 +54,22 @@ export async function PATCH(req: NextRequest) {
   });
 
   if (error) {
-    if (error.message.includes('application_not_found')) {
-      return NextResponse.json({ error: 'Application not found' }, { status: 404 });
+    const message = error.message || '';
+    if (message.includes('application_not_found')) return NextResponse.json({ error: 'Application not found' }, { status: 404 });
+    if (message.includes('status_conflict')) {
+      return NextResponse.json({ error: 'status_conflict', message: 'This application has changed since you last viewed it. Refresh and try again.' }, { status: 409 });
     }
-    if (error.message.includes('status_conflict')) {
-      return NextResponse.json(
-        { error: 'status_conflict', message: 'This application has changed since you last viewed it. Refresh and try again.' },
-        { status: 409 }
-      );
+    if (message.includes('managed_by_employer')) {
+      return NextResponse.json({ error: 'managed_by_employer', message: 'The employer controls this stage of the application.' }, { status: 409 });
     }
-    if (error.message.includes('invalid_transition')) {
-      return NextResponse.json(
-        { error: 'invalid_transition', message: `Cannot move to "${status}" from the application's current state.` },
-        { status: 409 }
-      );
+    if (message.includes('application_integrity_conflict')) {
+      return NextResponse.json({ error: 'application_integrity_conflict', message: 'This application needs support review.' }, { status: 409 });
     }
-    if (error.message.includes('invalid_status')) {
-      return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
+    if (message.includes('invalid_transition') || message.includes('managed_by_employer_or_invalid_transition')) {
+      return NextResponse.json({ error: 'invalid_transition', message: 'That application status change is not permitted.' }, { status: 409 });
     }
+    if (message.includes('invalid_status')) return NextResponse.json({ error: 'Invalid status value' }, { status: 400 });
+    console.error('[applications/status] transition RPC failed', { opportunityId, code: error.code, message });
     return NextResponse.json({ error: 'Could not update application status' }, { status: 500 });
   }
 

@@ -53,7 +53,8 @@ check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider d
 
 check(/CREATE TABLE IF NOT EXISTS public\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
 check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
-check(/employerdirect/.test(applyRoute) && /getAuthenticatedUser/.test(applyRoute), 'native apply endpoint authenticates candidates and accepts only active direct-employer jobs');
+const lifecycleMigration = read('supabase/migrations/20261112185212_v2_p0_m2_m3_application_lifecycle.sql');
+check(/apply_to_employer_job/.test(applyRoute) && /auth\.supabase\.rpc\('apply_to_employer_job'/.test(applyRoute) && /auth\.uid\(\)/.test(lifecycleMigration) && /o\.source='employerdirect'/.test(lifecycleMigration) && /s\.status='published'/.test(lifecycleMigration) && /o\.status='active'/.test(lifecycleMigration), 'native apply endpoint delegates candidate auth and active direct-employer eligibility to the atomic RPC');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
 check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employerApplicationsRoute), 'employers can update applicant status only within their own company');
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');

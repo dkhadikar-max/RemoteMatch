@@ -1,0 +1,15 @@
+
+-- Internal trigger and transition helpers are not PostgREST RPC endpoints.
+ALTER FUNCTION public.guard_employer_application_link() SECURITY INVOKER;
+REVOKE ALL ON FUNCTION public.guard_employer_application_link() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.guard_linked_candidate_identity() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.guard_hiring_decision_event_immutability() FROM PUBLIC,anon,authenticated,service_role;
+
+REVOKE ALL ON FUNCTION public.is_valid_linked_application_transition(text,text,text)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.is_valid_linked_application_transition(text,text,text)
+  TO service_role;
+REVOKE ALL ON FUNCTION public.is_valid_employer_application_transition(text,text,text)
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.is_valid_employer_application_transition(text,text,text)
+  TO service_role;
