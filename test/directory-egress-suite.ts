@@ -413,7 +413,8 @@ async function main() {
     const p1 = (await loadHubPage(null, '1'))!;
     assert(p1.total === idxAll.length && p1.totalPages === Math.ceil(idxAll.length / DIRECTORY_PAGE_SIZE), `directory total/pages match the index (${p1.total}/${p1.totalPages})`);
     assert(p1.jobs.map((j) => j.sourceId).join() === idxAll.slice(0, DIRECTORY_PAGE_SIZE).map((e) => e.sourceId).join(), 'page 1 rows are the newest listings, in index order, with full data (description present)');
-    assert(p1.jobs.every((j) => j.description.length > 500 && !!j.company && j.status === 'active'), 'page rows are full CanonicalOpportunity objects (cards + JSON-LD can render)');
+    assert(p1.jobs.every((j) => typeof j.description === 'string' && j.description.trim().length > 0 && !!j.company && j.status === 'active'), 'page rows are full CanonicalOpportunity objects (cards + JSON-LD can render)');
+    assert(full.every((j) => typeof j.description === 'string' && j.description.length > 500), 'suite-owned synthetic fixtures preserve their full descriptions');
     const blockedDeep = await measure(() => loadHubPage(null, '101'));
     assert(blockedDeep.calls === 0 && blockedDeep.r!.outOfRange, 'directory page 101 is rejected before a REST/RPC call');
     const blockedSearch = await measure(() => loadSearchPage('engineer', '101'));
