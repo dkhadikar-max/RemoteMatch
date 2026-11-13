@@ -65,6 +65,7 @@ jobs:
             test/job-filter-data-quality-suite.ts
             test/ttl-cache-stale-invalidation-suite.ts
             test/sitemap-read-retry-suite.ts
+            test/hybrid-matching-retrieval-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
