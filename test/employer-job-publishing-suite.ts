@@ -36,7 +36,7 @@ check(/ENABLE ROW LEVEL SECURITY/.test(migration) && /FORCE ROW LEVEL SECURITY/.
 check(/REVOKE ALL ON public\.employer_job_submissions FROM anon, authenticated/.test(migration), 'candidate and anonymous clients cannot read or write submissions');
 check(/CREATE OR REPLACE FUNCTION public\.review_employer_job_submission/.test(migration), 'review and publish is a database transaction');
 check(/v_company\.verification_status <> 'verified'/.test(migration), 'publication requires a verified company');
-check(/SELECT \* INTO v_company FROM public\\.companies WHERE id = v_job\\.company_id FOR UPDATE;/.test(publicationRaceFix), 'vacancy publication locks the company row before reading verification status, serializing it against suspension');
+check(/SELECT \* INTO v_company FROM public\.companies WHERE id = v_job\.company_id FOR UPDATE;/.test(publicationRaceFix), 'vacancy publication locks the company row before reading verification status, serializing it against suspension');
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');
