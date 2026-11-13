@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
   const { data: applications, error } = await supabase
     .from('applications')
-    .select('id, opportunity_id, status, applied_at, notes, created_at, updated_at')
+    .select('id, opportunity_id, status, applied_at, notes, created_at, updated_at, archived_at, application_channel')
     .eq('profile_id', user.id)
     .order('updated_at', { ascending: false });
 
@@ -47,6 +47,8 @@ export async function GET(req: NextRequest) {
       id: a.id,
       opportunityId: a.opportunity_id,
       status: a.status,
+      archivedAt: a.archived_at,
+      applicationChannel: a.application_channel,
       appliedAt: a.applied_at,
       notes: a.notes,
       createdAt: a.created_at,
