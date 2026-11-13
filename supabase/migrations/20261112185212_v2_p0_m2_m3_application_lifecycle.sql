@@ -415,13 +415,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'employer_forbidden' USING ERRCODE='42501'; END IF;
   v_actor_role := v_member_role;
 
-  SELECT e.* INTO v_eja
-  FROM public.employer_job_applications e
-  JOIN public.employer_job_submissions s ON s.id=e.submission_id
-  WHERE e.id=p_application_id AND s.company_id=p_company_id
-  FOR UPDATE OF e;
-  IF NOT FOUND THEN RAISE EXCEPTION 'application_not_found' USING ERRCODE='P0002'; END IF;
-
   SELECT * INTO v_event
   FROM public.hiring_decision_events
   WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;
@@ -435,6 +428,13 @@ BEGIN
     RETURN jsonb_build_object('success',true,'replayed',true,
       'status',v_event.new_state,'eventId',v_event.id);
   END IF;
+
+  SELECT e.* INTO v_eja
+  FROM public.employer_job_applications e
+  JOIN public.employer_job_submissions s ON s.id=e.submission_id
+  WHERE e.id=p_application_id AND s.company_id=p_company_id
+  FOR UPDATE OF e;
+  IF NOT FOUND THEN RAISE EXCEPTION 'application_not_found' USING ERRCODE='P0002'; END IF;
 
   IF v_eja.status <> p_expected_status THEN
     RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003';
@@ -458,9 +458,6 @@ BEGIN
   WHERE id=v_eja.submission_id AND company_id=p_company_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001'; END IF;
 
-  -- Legacy employer applications predate candidate_application_id. They
-  -- remain manageable and auditable, but candidate-side state synchronization
-  -- is applied only when a verified direct-application link exists.
   IF v_eja.candidate_application_id IS NOT NULL THEN
     SELECT * INTO v_app FROM public.applications
     WHERE id=v_eja.candidate_application_id
@@ -469,6 +466,8 @@ BEGIN
        OR v_app.application_channel <> 'remotematch_direct' THEN
       RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001';
     END IF;
+  ELSE
+    RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001';
   END IF;
 
   IF v_eja.status='rejected' AND p_new_status='reviewing' THEN
@@ -492,7 +491,7 @@ BEGIN
 
   IF v_candidate_status IS NULL THEN RAISE EXCEPTION 'invalid_transition' USING ERRCODE='22023'; END IF;
 
-  IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN
+  IF v_app.status <> v_candidate_status THEN
     IF v_eja.status='rejected' AND p_new_status='reviewing' THEN
       IF NOT public.is_valid_linked_application_transition(v_app.status,v_candidate_status,'system_correction') THEN
         RAISE EXCEPTION 'candidate_state_conflict' USING ERRCODE='P0001';
@@ -529,7 +528,7 @@ BEGIN
     p_reason_code,v_eja.status,p_new_status,v_corrects,p_idempotency_key
   ) RETURNING * INTO v_event;
 
-  IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN
+  IF v_app.status <> v_candidate_status THEN
     UPDATE public.applications
     SET status=v_candidate_status,updated_at=now()
     WHERE id=v_app.id;
@@ -545,7 +544,7 @@ BEGIN
   END IF;
 
   RETURN jsonb_build_object('success',true,'replayed',false,
-    'status',p_new_status,'candidateStatus',CASE WHEN v_eja.candidate_application_id IS NOT NULL THEN v_candidate_status ELSE NULL END,'eventId',v_event.id);
+    'status',p_new_status,'candidateStatus',v_candidate_status,'eventId',v_event.id);
 END;
 $$;
 
