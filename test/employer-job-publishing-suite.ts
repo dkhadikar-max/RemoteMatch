@@ -13,6 +13,7 @@ function check(condition: boolean, label: string) {
 
 const migration = read('supabase/migrations/049_employer_job_submissions_and_publish.sql');
 const applicationsMigration = read('supabase/migrations/050_employer_direct_applications.sql');
+const lifecycleMigration = read('supabase/migrations/20261112185212_v2_p0_m2_m3_application_lifecycle.sql');
 const applyRoute = read('src/app/api/employer-jobs/[opportunityId]/apply/route.ts');
 const employerApplicationsRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 const applyButton = read('src/components/employer/direct-employer-apply-button.tsx');
@@ -51,7 +52,7 @@ check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider d
 
 check(/CREATE TABLE IF NOT EXISTS public\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
 check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
-check(/employerdirect/.test(applyRoute) && /getAuthenticatedUser/.test(applyRoute), 'native apply endpoint authenticates candidates and accepts only active direct-employer jobs');
+check(/getAuthenticatedUser/.test(applyRoute) && /rpc\('apply_to_employer_job'/.test(applyRoute) && /FUNCTION public\.apply_to_employer_job/.test(lifecycleMigration) && /o\.source='employerdirect'/.test(lifecycleMigration) && /o\.status='active'/.test(lifecycleMigration) && /job_not_accepting_applications/.test(applyRoute), 'native apply endpoint authenticates candidates and delegates active direct-employer eligibility to the atomic lifecycle RPC');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
 check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employerApplicationsRoute), 'employers can update applicant status only within their own company');
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');
