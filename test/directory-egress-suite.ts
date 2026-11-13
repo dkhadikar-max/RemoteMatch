@@ -56,20 +56,11 @@ const skip = (m: string) => { skipped++; console.log(`  – SKIP: ${m}`); };
 const read = (p: string) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8').replace(/\r\n/g, '\n');
 const noComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-/** Stub of the chainable Supabase query builder surface. Covers exactly the five methods
- *  searchActiveOpportunitiesPage calls, verified against its current source (src/lib/ingestion/
- *  catalog-read.ts): .from() once, then .select()/.or()/.order() each called multiple times
- *  (always the same method, chainable), terminating in the one awaited call, .range(), which
- *  resolves to { data, count, error }. If that function ever adds a method this stub lacks, the
- *  call throws "query.X is not a function" — the test fails loudly on the mock, not silently. */
+/** Minimal Supabase RPC stub for search timeout/error handling. */
 function fakeSearchClient(error: { code: string | null; message: string }): any {
-  const builder: any = {
-    select: () => builder,
-    or: () => builder,
-    order: () => builder,
-    range: async () => ({ data: null, count: null, error }),
+  return {
+    rpc: async () => ({ data: null, error }),
   };
-  return { from: () => builder };
 }
 
 // ---- the OLD category rules, copied verbatim from the pre-change getJobsForCategory ----
@@ -218,6 +209,14 @@ async function main() {
   // This proves shape fidelity against established precedent, not a live-reproduced timeout —
   // actually triggering one would require an expensive production query, out of scope.
   {
+    let emptySearchCalls = 0;
+    const emptySearchClient = { rpc: async () => { emptySearchCalls++; return { data: null, error: null }; } } as any;
+    const emptySearch = await getSearchPage(emptySearchClient, '!!!', 1);
+    assert(
+      emptySearch.total === 0 && emptySearch.jobs.length === 0 && emptySearchCalls === 0,
+      'a query that sanitizes to no terms returns an empty page without scanning the catalog'
+    );
+
     const lowLevelClient = fakeSearchClient({ message: 'canceling statement due to statement timeout', code: '57014' });
     let lowLevelThrew: unknown = null;
     try { await searchActiveOpportunitiesPage(lowLevelClient, ['engineer'], { from: 0, to: 23 }); } catch (e) { lowLevelThrew = e; }
@@ -308,7 +307,7 @@ async function main() {
   globalThis.fetch = (async (input: any, init?: any) => {
     const u = typeof input === 'string' ? input : input?.url ?? String(input);
     const res = await realFetch(input, init);
-    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page') || u.includes('/rest/v1/rpc/get_remote_job_sitemap_page') || u.includes('/rest/v1/rpc/get_active_opportunities_keyset_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
+    if (u.includes('/rest/v1/opportunities') || u.includes('/rest/v1/rpc/get_remote_job_hub_page') || u.includes('/rest/v1/rpc/get_remote_job_search_page') || u.includes('/rest/v1/rpc/get_remote_job_sitemap_page') || u.includes('/rest/v1/rpc/get_active_opportunities_keyset_page')) { net.calls++; net.bytes += (await res.clone().arrayBuffer()).byteLength; }
     return res;
   }) as typeof fetch;
   const measure = async <T,>(fn: () => Promise<T>) => { net.calls = 0; net.bytes = 0; const r = await fn(); return { r, calls: net.calls, bytes: net.bytes }; };
@@ -343,8 +342,11 @@ async function main() {
     mk(`${PREFIX}s-desc`, 6, { title: 'Plain Role Two', company: 'Plain Co', description: `This role involves ${SEARCH_TOKEN} research. ` + desc(6), required_skills: [] }),
     mk(`${PREFIX}s-skill`, 7, { title: 'Plain Role Three', company: 'Plain Co', description: desc(7), required_skills: [SEARCH_TOKEN] }),
     mk(`${PREFIX}s-skill-lc`, 8, { title: 'Plain Role Four', company: 'Plain Co', description: desc(8), required_skills: [SEARCH_TOKEN.toLowerCase()] }),
+    mk(`${PREFIX}s-go`, 9, { title: 'Senior Go Developer', required_skills: ['Go'], posted_at: new Date('2026-11-20T00:00:00Z').toISOString() }),
+    mk(`${PREFIX}s-csharp`, 10, { title: 'C# Developer', required_skills: ['C#'], posted_at: new Date('2026-11-21T00:00:00Z').toISOString() }),
+    mk(`${PREFIX}s-cpp`, 11, { title: 'C++ Developer', required_skills: ['C++'], posted_at: new Date('2026-11-22T00:00:00Z').toISOString() }),
   ];
-  const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`]);
+  const visibleIds = new Set([...ids, `${PREFIX}t-de-ok`, `${PREFIX}s-title`, `${PREFIX}s-company`, `${PREFIX}s-desc`, `${PREFIX}s-skill`, `${PREFIX}s-skill-lc`, `${PREFIX}s-go`, `${PREFIX}s-csharp`, `${PREFIX}s-cpp`]);
   const mine = <T extends { sourceId: string }>(a: T[]) => a.filter((x) => x.sourceId.startsWith(PREFIX));
 
   try {
@@ -352,7 +354,7 @@ async function main() {
       const { error } = await admin.from('opportunities').insert(rows.slice(i, i + 200));
       if (error) { assert(false, `seed batch ${i / 200 + 1}`, error.message); return finish(); }
     }
-    assert(true, `seeded ${rows.length} isolated synthetic rows (${N} bulk + expired + untranslated-German + translated-German + 5 single-field search fixtures)`);
+    assert(true, `seeded ${rows.length} isolated synthetic rows (${N} bulk + expired + untranslated-German + translated-German + 5 single-field + 3 short-term search fixtures)`);
     resetDirectoryCachesForTests();
 
     // --- 3a. index ---
@@ -430,6 +432,12 @@ async function main() {
     assert(!found.has(`${PREFIX}x-expired`) && !found.has(`${PREFIX}x-de-error`), 'search never returns expired or untranslated-German listings');
     const z = (await loadSearchPage(GERMAN_TOKEN.toLowerCase(), '1'))!;
     assert(z.jobs.map((j) => j.sourceId).join() === `${PREFIX}t-de-ok`, 'only the TRANSLATED German listing matches its title word (the untranslated one stays hidden)');
+    const shortGo = (await loadSearchPage('go', '1'))!;
+    assert(shortGo.jobs.some((job) => job.sourceId === `${PREFIX}s-go`), 'short Go search uses indexed token-prefix/skill matching');
+    const shortCsharp = (await loadSearchPage('c#', '1'))!;
+    assert(shortCsharp.jobs.some((job) => job.sourceId === `${PREFIX}s-csharp`), 'short C# search uses indexed prefix/skill matching');
+    const shortCpp = (await loadSearchPage('c++', '1'))!;
+    assert(shortCpp.jobs.some((job) => job.sourceId === `${PREFIX}s-cpp`), 'short C++ search avoids a broad trigram scan');
     const eng = (await loadSearchPage('engineer', '1'))!;
     // Search is unchanged by this PR. Its pre-existing PostgREST path uses
     // exact skill-tag matching while the legacy in-memory path also matches
@@ -450,7 +458,7 @@ async function main() {
       const upper = term.toUpperCase();
       return [job.title, job.company, job.description, job.remoteType]
         .some((field) => field.toLowerCase().includes(term)) ||
-        (job.requiredSkills ?? []).some((skill) => skill === term || skill === cap || skill === upper);
+        (job.requiredSkills ?? []).some((skill) => skill.trim().toLowerCase() === term);
     }));
     assert(
       multi.total === expectedMulti.length && multi.total > 0 && oldMulti.length >= multi.total,
@@ -459,7 +467,7 @@ async function main() {
     const none = (await loadSearchPage('nonexistenttermxyz999', '1'))!;
     assert(none.total === 0 && none.jobs.length === 0 && !none.outOfRange, 'a no-match search is an empty, valid page');
     const s2 = (await loadSearchPage('engineer', '2'))!;
-    assert(s2.page === 2 && s2.jobs.length > 0 && s2.jobs[0].sourceId !== eng.jobs[0].sourceId, 'search page 2 is a different slice of the same result set');
+    assert(eng.jobs.length > 0 && s2.page === 2 && s2.jobs.length > 0 && s2.jobs[0].sourceId !== eng.jobs[0]?.sourceId, 'search page 2 is a different slice of the same result set');
     assert(eng.jobs.every((j, i, a) => i === 0 || a[i - 1].postedAt >= j.postedAt), 'search results are newest first');
     for (const hostile of ['a,b)(c', '%', '_', '*', 'x"y', "'; drop table opportunities; --", 'title.eq.1,or(id.eq.1', '\\', '😀', '()', ',,,']) {
       let ok = true; let r: any;
@@ -498,7 +506,13 @@ async function main() {
       assert((await get('/remote-jobs?q=engineer&page=101')).status === 404, 'a deep search page -> 404 before a DB query');
       assert((await get('/remote-jobs?page=abc')).status === 200, 'a garbage page param -> page 1 (200)');
       const dq = await get('/remote-jobs?q=' + encodeURIComponent(SEARCH_TOKEN.toLowerCase()));
-      assert(dq.status === 200 && /Showing 5 verified positions/.test(dq.text) && dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()), 'GET /remote-jobs with a unique search token -> the 5 fixtures');
+      assert(
+        dq.status === 200 &&
+          /Showing 5 verified positions/.test(dq.text) &&
+          dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase()),
+        'GET /remote-jobs with a unique search token -> the 5 fixtures',
+        `status=${dq.status}; expectedCountLabel=${/Showing 5 verified positions/.test(dq.text)}; tokenInHtml=${dq.text.toLowerCase().includes(SEARCH_TOKEN.toLowerCase())}; excerpt=${dq.text.match(/.{0,100}Showing.{0,120}/i)?.[0] ?? dq.text.slice(0, 300)}`
+      );
       assert((await get('/remote-jobs?q=%25%27%22%2C()')).status === 200, 'hostile ?q= renders (200), no 500');
       const c1 = await get('/remote-jobs/software-engineering');
       assert(c1.status === 200 && (c1.text.match(/<article/g) || []).length === 24 && /Showing 1–24 of \d+ verified active positions/.test(c1.text), 'GET /remote-jobs/software-engineering -> 200 with a 24-card first page');
@@ -509,9 +523,25 @@ async function main() {
       console.log(`  · HTML sizes: directory page 1 ${kb(d1.bytes)}, category page 1 ${kb(c1.bytes)}`);
     }
   } finally {
-    const { error } = await admin.from('opportunities').delete().like('source_id', `${PREFIX}%`);
-    const { count } = await admin.from('opportunities').select('source_id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);
-    assert(!error && (count ?? 0) === 0, `cleanup: all synthetic rows removed (${count ?? 0} remain)`, error?.message);
+    let cleanupError: string | undefined;
+    // Delete in bounded batches: the isolated project enforces a short statement
+    // timeout, and one broad DELETE can time out after a large synthetic run.
+    for (let batch = 0; batch < 30; batch++) {
+      const { data: doomed, error: selectError } = await admin
+        .from('opportunities')
+        .select('id')
+        .like('source_id', `${PREFIX}%`)
+        .limit(100);
+      if (selectError) { cleanupError = selectError.message; break; }
+      if (!doomed?.length) break;
+      const { error: deleteError } = await admin
+        .from('opportunities')
+        .delete()
+        .in('id', doomed.map((row) => row.id));
+      if (deleteError) { cleanupError = deleteError.message; break; }
+    }
+    const { count, error: countError } = await admin.from('opportunities').select('source_id', { count: 'exact', head: true }).like('source_id', `${PREFIX}%`);
+    assert(!cleanupError && !countError && (count ?? 0) === 0, `cleanup: all synthetic rows removed (${count ?? 0} remain)`, cleanupError ?? countError?.message);
     globalThis.fetch = realFetch;
   }
 
