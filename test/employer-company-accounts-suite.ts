@@ -527,6 +527,13 @@ async function main() {
       });
       assert(missingReasonRes.status === 400, `rejection without an explicitly selected reason is rejected (got ${missingReasonRes.status})`);
 
+      // Temporarily remove the optional candidate link to model a legacy
+      // employer inbox row created before M2. The employer-side decision
+      // remains auditable; candidate-side status is intentionally untouched.
+      const unlinkLegacy = await admin.from('employer_job_applications')
+        .update({ candidate_application_id: null }).eq('id', applyBody.application?.id);
+      assert(!unlinkLegacy.error, 'isolated fixture can model a legacy employer application without a candidate link');
+
       const sameKey = `ci-same-key:${applyBody.application?.id}:${Date.now()}`;
       const sameKeyPayload = {
         applicationId: applyBody.application?.id,
@@ -551,6 +558,12 @@ async function main() {
         sameKeyBodyA.status === 'shortlisted' && sameKeyBodyB.status === 'shortlisted' &&
         sameKeyBodyA.eventId === sameKeyBodyB.eventId,
         `concurrent retries with the same idempotency key replay one committed transition (got ${sameKeyA.status}/${sameKeyB.status})`);
+      assert(sameKeyBodyA.candidateStatus === null || sameKeyBodyB.candidateStatus === null,
+        'legacy employer transition records no fabricated candidate-side status');
+
+      const relinkLegacy = await admin.from('employer_job_applications')
+        .update({ candidate_application_id: applyBody.candidateApplication?.id }).eq('id', applyBody.application?.id);
+      assert(!relinkLegacy.error, 'isolated fixture restores the verified candidate link for subsequent linked-race tests');
 
       const [competingInterview, competingReview] = await Promise.all([
         fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
