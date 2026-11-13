@@ -572,13 +572,13 @@ async function main() {
         .select('status').eq('id', applyBody.application?.id).maybeSingle();
       const { data: candidateBeforeWithdrawal } = await admin.from('applications')
         .select('id,opportunity_id,status').eq('id', applyBody.candidateApplication?.id).maybeSingle();
-      const employerNextStatus = ejaBeforeWithdrawal?.status === 'interviewing' ? 'offered' : 'shortlisted';
+      const employerNextStatus = ejaBeforeWithdrawal?.status === 'interviewing' ? 'offered' : 'rejected';
       const candidateExpectedStatus = candidateBeforeWithdrawal?.status;
       const [employerRace, candidateRace] = await Promise.all([
         fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
-          body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: ejaBeforeWithdrawal?.status, status: employerNextStatus, idempotencyKey: `ci-withdraw-race-employer:${Date.now()}` }),
+          body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: ejaBeforeWithdrawal?.status, status: employerNextStatus, ...(employerNextStatus === 'rejected' ? { reasonCode: 'insufficient_evidence' } : {}), idempotencyKey: `ci-withdraw-race-employer:${Date.now()}` }),
         }),
         fetch(`${BASE_URL}/api/applications/status`, {
           method: 'PATCH',
