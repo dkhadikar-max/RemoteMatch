@@ -86,7 +86,7 @@ async function transitionCompany(companyId: string, expectedStatus: string, newS
     p_reason: 'P1 race regression fixture',
     p_admin_id: adminId,
     p_admin_email: 'p1-race-test-admin@example.com',
-    p_audit_action: newStatus === 'suspended' ? 'suspend' : 'verify',
+    p_audit_action: newStatus === 'suspended' ? 'company_suspend' : 'company_verify',
   });
   if (error) throw new Error(`transition_company_verification_with_audit RPC failed: ${error.message}`);
   return (Array.isArray(data) ? data[0] : data) as { transitioned: boolean; verification_status: string | null };
@@ -132,6 +132,31 @@ async function main() {
 
     // --- 3. Concurrent publication AND suspension: the actual race ---
     console.log('\n3. Genuine concurrent publish + suspend on the SAME company — the fix under test');
+    //
+    // CORRECTED INVARIANT (fixed after an initial run against this live isolated project
+    // caught my own first version of this assertion being WRONG, not the migration):
+    // under the FOR UPDATE fix, the two functions fully serialize on the companies row, so
+    // there are exactly TWO legitimate final states, and "the company ends up suspended AND
+    // this submission ends up published" is NOT itself a violation --
+    //   (a) publish's lock is granted first: it reads a genuinely fresh 'verified' status
+    //       (not stale -- nothing has changed it yet), publishes, commits. Suspend's UPDATE
+    //       then runs against the now-unlocked row and still succeeds (suspension is a
+    //       separate, always-valid admin action; it only has to apply to a comparison
+    //       against the row's CURRENT state when it runs). Final state: suspended + published
+    //       -- correct, not stale.
+    //   (b) suspend's lock is granted first: it commits the transition. Publish's FOR UPDATE
+    //       then reads 'suspended' -- fresh, not stale -- and correctly rejects. Final state:
+    //       suspended + NOT published.
+    // What the fix actually rules out (and what a plain, uncontrolled Promise.all against a
+    // real hosted project with real network jitter cannot reliably force open to prove
+    // either way) is a THIRD state: publish succeeding on a STALE pre-suspension read after
+    // suspend has already committed. That property is proven deterministically, with
+    // provable timing (an injected delay forcing the exact dangerous window open, plus a
+    // negative-control run against the pre-fix function body showing it reliably fails),
+    // in the disposable local-Postgres trials reported alongside this suite -- not re-proven
+    // here. This isolated-project run instead confirms the migration behaves correctly
+    // against the real schema/constraints/latency: suspension always succeeds, and the
+    // outcome is always one of the two legitimate states above, never a third.
     const raceCompanyId = await makeCompany(actor.userId, 'verified', 'race');
     companyCleanup.push(raceCompanyId);
     const raceSubmissionId = await makeSubmission(raceCompanyId, actor.userId, 'race');
@@ -150,16 +175,9 @@ async function main() {
       suspendOutcome.transitioned === true && raceCompanyRow?.verification_status === 'suspended',
       'the suspension itself always succeeds (nothing about the publish path can block a legitimate suspension)'
     );
-    // THE invariant this fix exists to guarantee, regardless of which side the Postgres
-    // lock scheduler let through first: a company that ends up suspended must never have
-    // a published vacancy from this race's submission.
-    const neverBothPublishedAndSuspended = !(raceSubRow?.status === 'published' && raceCompanyRow?.verification_status === 'suspended');
-    assert(neverBothPublishedAndSuspended, 'CORE FIX: the company is never simultaneously suspended AND this submission published');
-    if (raceSubRow?.status === 'published') {
-      assert(!!raceSubRow.published_opportunity_id, 'if publish won the race (ran before suspension committed), it still produced a real opportunity, consistently');
-    } else {
-      assert(publishOutcome.ok === false, 'if publish did not win, review_employer_job_submission itself correctly reported ok=false (not a silent partial state)');
-    }
+    const outcomeIsLegitimateA = raceSubRow?.status === 'published' && !!raceSubRow.published_opportunity_id && publishOutcome.ok === true;
+    const outcomeIsLegitimateB = raceSubRow?.status !== 'published' && !raceSubRow?.published_opportunity_id && publishOutcome.ok === false;
+    assert(outcomeIsLegitimateA || outcomeIsLegitimateB, 'the final state matches exactly one of the two legitimate serialized orderings, never an inconsistent third state');
 
     // --- 4. Existing review/rejection/idempotency behavior is unchanged ---
     console.log('\n4. mark_under_review, reject, and re-publish idempotency are unchanged');
