@@ -68,13 +68,20 @@ export default function EmployerApplicationsPage() {
           applicationId: row.id,
           expectedStatus: row.status,
           status,
-          ...(reasonCode ? { reasonCode } : {}),
+          ...(reasonRequired ? { reasonCode } : {}),
           idempotencyKey: crypto.randomUUID(),
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || data.error || 'Could not update status.');
       setRows(current => current.map(item => item.id === row.id ? { ...item, status: data.status || status } : item));
+      // A reason describes one decision only. Never carry it into a later
+      // transition, including a reconsideration or an unrelated status change.
+      setReasons(current => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(''); }
   };
