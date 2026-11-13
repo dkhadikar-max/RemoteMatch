@@ -41,6 +41,8 @@ for (const file of migrations) {
 const lifecycle = read('supabase/migrations/20261112185212_v2_p0_m2_m3_application_lifecycle.sql');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.apply_to_employer_job'), 'atomic direct-apply RPC is in the migration source');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.transition_employer_application'), 'employer transition RPC is in the migration source');
+check(lifecycle.indexOf('FOR UPDATE OF e;') < lifecycle.indexOf('WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;'), 'employer transition locks the application before checking idempotency for concurrent replay');
+check(lifecycle.includes('IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN'), 'legacy employer applications transition without requiring a candidate-side link');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.set_application_archived'), 'archive preference RPC is in the migration source');
 check(lifecycle.includes('CREATE TABLE public.hiring_decision_events'), 'append-only hiring decision audit table is created');
 check(lifecycle.includes('CREATE TABLE public.hiring_decision_reason_codes'), 'controlled decision reason vocabulary is created');
@@ -67,9 +69,14 @@ check(rewindRoute.includes("result.error === 'application_submitted'"), 'rewind 
 
 const archiveRoute = read('src/app/api/applications/archive/route.ts');
 check(archiveRoute.includes("rpc('set_application_archived'"), 'archive HTTP route calls the archive preference RPC');
+const applicationsRoute = read('src/app/api/applications/route.ts');
+check(applicationsRoute.includes('archived_at') && applicationsRoute.includes('application_channel'), 'candidate applications API returns archive preference and channel');
+const tracker = read('src/app/tracker/page.tsx');
+check(tracker.includes("fetch('/api/applications/archive'") && tracker.includes('archivedAt'), 'candidate tracker uses archive preference API for direct applications');
 
 const employerUi = read('src/app/employer/companies/[id]/applications/page.tsx');
 check(employerUi.includes('expectedStatus: row.status'), 'employer UI sends the status it actually observed');
+check(employerUi.includes('reasonRequired && !reasonCode') && !employerUi.includes("reasons[row.id] || 'insufficient_evidence'"), 'employer UI requires an explicit reason when required and never fabricates a default');
 check(employerUi.includes('idempotencyKey: crypto.randomUUID()'), 'employer UI generates a per-action idempotency key');
 check(employerUi.includes("'interviewing'") && employerUi.includes("'offered'"), 'employer UI exposes interview and offer lifecycle states');
 
