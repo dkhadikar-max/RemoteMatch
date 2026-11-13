@@ -485,7 +485,7 @@ async function main() {
       const statusRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
-        body: JSON.stringify({ applicationId: applyBody.application?.id, status: 'shortlisted' }),
+        body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: 'submitted', status: 'shortlisted', idempotencyKey: `ci-shortlist:${applyBody.application?.id}:${Date.now()}` }),
       });
       const statusBody = await statusRes.json();
       assert(statusRes.status === 200 && statusBody.status === 'shortlisted', `employer can shortlist an applicant (got ${statusRes.status})`);
