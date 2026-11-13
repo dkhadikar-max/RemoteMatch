@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getFeedCatalog } from '@/lib/feed/catalog-cache';
+import { getActiveOpportunityByCanonicalId } from '@/lib/ingestion/catalog-read';
+import { createSupabasePublicClient } from '@/lib/supabase/server';
 import { jobUrl } from '@/lib/seo/job-href';
 
 export const dynamic = 'force-dynamic';
@@ -23,12 +24,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   try {
-    const catalog = await getFeedCatalog();
-    if (!catalog) {
+    const supabase = createSupabasePublicClient();
+    if (!supabase) {
       return NextResponse.json({ success: false, error: 'Job catalogue temporarily unavailable.' }, { status: 503 });
     }
 
-    const job = catalog.find((item) => item.id === id && item.status === 'active' && !item.supersededByOpportunityId);
+    // canonical_id has a unique B-tree index. Resolve one row directly rather
+    // than warming the full feed catalogue (thousands of rows) for one detail.
+    const job = await getActiveOpportunityByCanonicalId(supabase, id);
     if (!job) {
       return NextResponse.json({ success: false, error: 'Active job not found.' }, { status: 404 });
     }

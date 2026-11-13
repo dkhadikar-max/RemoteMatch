@@ -631,7 +631,7 @@ export async function getActiveOpportunityByCanonicalId(
   supabase: SupabaseClient,
   canonicalId: string
 ): Promise<CanonicalOpportunity | null> {
-  if (typeof canonicalId !== 'string' || !canonicalId.startsWith('opp-') || canonicalId.length > 200) {
+  if (typeof canonicalId !== 'string' || !canonicalId.startsWith('opp-') || canonicalId.length > 512) {
     return null;
   }
 
@@ -639,8 +639,13 @@ export async function getActiveOpportunityByCanonicalId(
     .from('opportunities')
     .select(OPPORTUNITY_COLUMNS)
     .eq('canonical_id', canonicalId)
+    .eq('status', 'active')
+    .is('superseded_by_opportunity_id', null)
+    .or(TRANSLATION_SAFE_OR)
+    .or(TRANSLATION_NOT_ERROR_OR)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) throw new Error(`Could not read opportunity by canonical id: ${error.message}`);
+  if (!data) return null;
   return rowToCanonicalOpportunity(data as unknown as OpportunityRow);
 }
 
