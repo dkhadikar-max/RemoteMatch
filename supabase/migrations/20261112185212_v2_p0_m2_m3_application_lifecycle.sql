@@ -545,7 +545,7 @@ BEGIN
   END IF;
 
   RETURN jsonb_build_object('success',true,'replayed',false,
-    'status',p_new_status,'candidateStatus',v_candidate_status,'eventId',v_event.id);
+    'status',p_new_status,'candidateStatus',CASE WHEN v_eja.candidate_application_id IS NOT NULL THEN v_candidate_status ELSE NULL END,'eventId',v_event.id);
 END;
 $$;
 
