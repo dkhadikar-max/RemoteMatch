@@ -59,7 +59,7 @@ check(!directApply.includes(".from('employer_job_applications').insert"), 'direc
 
 const employerRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 check(employerRoute.includes("rpc('transition_employer_application'"), 'employer PATCH calls the controlled transition RPC');
-check(!employerRoute.includes(".from('employer_job_applications')\n    .update"), 'employer PATCH does not mutate lifecycle status directly');
+check(!employerRoute.includes(".from('employer_job_applications')\\n    .update"), 'employer PATCH does not mutate lifecycle status directly');
 check(employerRoute.includes('expectedStatus') && employerRoute.includes('idempotencyKey'), 'employer transition requires compare-and-swap and idempotency key');
 
 const candidateRoute = read('src/app/api/applications/status/route.ts');
@@ -79,6 +79,8 @@ check(tracker.includes("fetch('/api/applications/archive'") && tracker.includes(
 const employerUi = read('src/app/employer/companies/[id]/applications/page.tsx');
 check(employerUi.includes('expectedStatus: row.status'), 'employer UI sends the status it actually observed');
 check(employerUi.includes('reasonRequired && !reasonCode') && !employerUi.includes("reasons[row.id] || 'insufficient_evidence'"), 'employer UI requires an explicit reason when required and never fabricates a default');
+check(employerUi.includes('...(reasonRequired ? { reasonCode } : {})'), 'employer UI sends a reason only for transitions that require one');
+check(employerUi.includes('delete next[row.id]'), 'employer UI clears a decision reason after a successful transition so it cannot leak into a later audit event');
 check(employerUi.includes('idempotencyKey: crypto.randomUUID()'), 'employer UI generates a per-action idempotency key');
 check(employerUi.includes("'interviewing'") && employerUi.includes("'offered'"), 'employer UI exposes interview and offer lifecycle states');
 
