@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { syncCareerPageOpportunities, verifyCareerPageSyncSecret } from '@/lib/ingestion/career-page-sync';
 import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
+import { refreshSitemapEntriesInBackground } from '@/lib/seo/sitemap-data';
 
 /**
  * Supply Discovery gate C5 (docs/c5-implementation-plan.md §9) — independent
@@ -24,8 +25,15 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await syncCareerPageOpportunities();
-    // The sync wrote to the catalog: drop the in-memory read caches (best effort, never fails the sync).
-    try { invalidateCatalogCaches(); } catch { /* ignore */ }
+    // Refresh product-facing caches immediately. The sitemap is refreshed off
+    // the crawler path only when this process already has a complete snapshot
+    // and the sync actually changed catalog rows.
+    try {
+      invalidateCatalogCaches(['sitemap-entries']);
+      if (result.newJobsInserted + result.refreshedExisting + result.expiredByAbsence > 0) {
+        refreshSitemapEntriesInBackground();
+      }
+    } catch { /* ignore */ }
     return NextResponse.json({ success: true, ...result });
   } catch (err) {
     return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });

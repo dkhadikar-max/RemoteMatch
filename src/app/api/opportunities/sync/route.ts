@@ -8,6 +8,7 @@ import {
 import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
 import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
 import { logCatalogSyncResult } from '@/lib/ingestion/lifecycle-log';
+import { refreshSitemapEntriesInBackground } from '@/lib/seo/sitemap-data';
 
 
 /**
@@ -38,8 +39,12 @@ export async function POST(req: NextRequest) {
 
     if (action === 'revalidate') {
       const result = await revalidateStaleLinks();
-      // Link checks can expire listings: drop the in-memory read caches (best effort, never fails the sync).
-      try { invalidateCatalogCaches(); } catch { /* a cache must never fail a sync */ }
+      // Link checks can expire listings: refresh product caches immediately. If
+      // any listing expired, refresh an already-warm sitemap in the background.
+      try {
+        invalidateCatalogCaches(['sitemap-entries']);
+        if (result.expiredByLinkFailure > 0) refreshSitemapEntriesInBackground();
+      } catch { /* a cache must never fail a sync */ }
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
@@ -72,10 +77,15 @@ export async function POST(req: NextRequest) {
     const anyProviderSucceeded = result.providerOutcomes.some((o) => o.success);
     const reconciliation = anyProviderSucceeded ? await reconcileCrossProviderDuplicates() : null;
 
-    // The sync wrote to the catalog: drop the in-memory read caches (feed, hubs, sitemap, resume) so
-    // the next request sees the new rows instead of waiting out a TTL. Best effort — a cache must
-    // never fail a sync that has already written.
-    try { invalidateCatalogCaches(); } catch { /* ignore */ }
+    // The sync wrote to the catalog: refresh product-facing caches immediately.
+    // Refresh an already-warm sitemap off the crawler path; the stale-while-
+    // revalidate cache serves the previous complete XML while its 80+ batches run.
+    // If this process has never served the sitemap, do not create unused egress.
+    // Best effort — a cache must never fail a sync that has already written.
+    try {
+      invalidateCatalogCaches(['sitemap-entries']);
+      if (anyProviderSucceeded) refreshSitemapEntriesInBackground();
+    } catch { /* ignore */ }
 
     return NextResponse.json({ success: true, action: 'sync', ...result, translation, reconciliation });
 

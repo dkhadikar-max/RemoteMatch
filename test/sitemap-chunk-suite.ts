@@ -17,7 +17,7 @@
  *   6. the real route handlers, offline (no Supabase client => static + hub + guide URLs only): headers, status, body;
  *   7. STATIC GUARDS: no `sitemap.(ts|js|tsx)` metadata file may exist under src/app (Next builds it silently and it shadows the
  *      route handlers — verified on 14.2.35), both handlers are force-dynamic GET handlers, robots still points at /sitemap.xml,
- *      the data module keeps the slim read + TTL cache + the cache key the sync route invalidates.
+ *      the data module keeps the slim read + TTL / stale-while-revalidate cache, and sync schedules warm-snapshot refreshes off the crawler path.
  *
  * Run: npx tsx test/sitemap-chunk-suite.ts
  */
@@ -258,7 +258,11 @@ console.log('\n7. Static guards');
   const catalogRead = strip(read('src/lib/ingestion/catalog-read.ts'));
   assert(/const pageSize = 3000/.test(catalogRead), 'sitemap cold reads use measured 3,000-row keyset batches');
   const data = strip(read('src/lib/seo/sitemap-data.ts'));
-  assert(/getSitemapJobEntries/.test(data) && /createAsyncTtlCache/.test(data) && /getOrCreateCatalogCache\('sitemap-entries'/.test(data) && /SITEMAP_TTL_MS = 6 \* 60 \* 60 \* 1000/.test(data) && /SITEMAP_MAX_STALE_MS = 24 \* 60 \* 60 \* 1000/.test(data) && !/getActiveJobs|getActiveOpportunities/.test(data), 'the data module keeps the slim read, the 6 h TTL / 24 h stale cache and the "sitemap-entries" cache key the sync route invalidates');
+  const syncRoute = strip(read('src/app/api/opportunities/sync/route.ts'));
+  const careerSyncRoute = strip(read('src/app/api/opportunities/sync/career-pages/route.ts'));
+  const ttlCache = strip(read('src/lib/seo/ttl-cache.ts'));
+  const sitemapProjectionMigration = strip(read('supabase/migrations/20261111135657_optimize_sitemap_catalog_projection.sql'));
+  assert(/getSitemapJobEntries/.test(data) && /createAsyncTtlCache/.test(data) && /getOrCreateCatalogCache\('sitemap-entries'/.test(data) && /SITEMAP_TTL_MS = 6 \* 60 \* 60 \* 1000/.test(data) && /SITEMAP_MAX_STALE_MS = 24 \* 60 \* 60 \* 1000/.test(data) && /staleWhileRevalidate:\s*true/.test(data) && /refreshSitemapEntriesInBackground/.test(data) && /hasValue/.test(data) && /staleWhileRevalidate/.test(ttlCache) && /invalidateCatalogCaches\(\['sitemap-entries'\]\)/.test(syncRoute) && /refreshSitemapEntriesInBackground/.test(syncRoute) && /invalidateCatalogCaches\(\['sitemap-entries'\]\)/.test(careerSyncRoute) && /refreshSitemapEntriesInBackground/.test(careerSyncRoute) && /opportunity_catalog_index_sitemap_cursor_cover/.test(sitemapProjectionMigration) && /FROM public\.opportunity_catalog_index AS i/.test(sitemapProjectionMigration) && !/FROM public\.opportunities AS o/.test(sitemapProjectionMigration) && !/getActiveJobs|getActiveOpportunities/.test(data), 'all catalog sync routes preserve the sitemap cache; the sitemap RPC reads the indexed eligible catalog projection');
   assert(/dedupeByUrl\(buildSitemap\(SITE_URL, activeJobs\)\)/.test(data), 'the URL list is buildSitemap() (eligibility + order unchanged) passed through the duplicate filter only');
   const chunks = strip(read('src/lib/seo/sitemap-chunks.ts')), xml = strip(read('src/lib/seo/sitemap-xml.ts'));
   assert(!/process\.env|fetch\(|supabase/i.test(chunks + xml), 'the chunk and XML modules are pure (no env, no network, no database)');
