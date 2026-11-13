@@ -34,7 +34,11 @@ interface ServerApplication {
   createdAt: string;
   updatedAt: string;
   decisionSnapshot: { fitScore?: number } | null;
+  archivedAt: string | null;
+  applicationChannel: string;
 }
+
+type TrackedApplication = ApplicationRecord & { archivedAt: string | null; applicationChannel: string };
 
 // Shape returned by GET /api/applications/opportunities — a deliberately
 // minimal projection of the real, live catalog (active or expired; a
@@ -58,7 +62,7 @@ interface ResolvedOpportunity {
 }
 
 export default function TrackerPage() {
-  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [applications, setApplications] = useState<TrackedApplication[]>([]);
   const [opportunitiesById, setOpportunitiesById] = useState<Record<string, ResolvedOpportunity>>({});
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,11 +74,13 @@ export default function TrackerPage() {
     const res = await fetch('/api/applications');
     if (!res.ok) return;
     const data = await res.json();
-    const apps: ApplicationRecord[] = (data.applications as ServerApplication[]).map((a) => ({
+    const apps: TrackedApplication[] = (data.applications as ServerApplication[]).map((a) => ({
       id: a.id,
       profileId: '',
       opportunityId: a.opportunityId,
       status: a.status,
+      archivedAt: a.archivedAt,
+      applicationChannel: a.applicationChannel,
       appliedAt: a.appliedAt ?? undefined,
       notes: a.notes,
       // Only `fitScore` is populated server-side today (see ServerApplication
@@ -126,6 +132,36 @@ export default function TrackerPage() {
     await loadApplications();
   };
 
+  // Linked direct applications use archived_at as a visibility preference,
+  // not as a lifecycle status. Legacy/external applications retain the
+  // original status-based archive transition.
+  const handleTrackerStatusChange = async (app: TrackedApplication, newStatus: ApplicationStatus) => {
+    const isDirect = app.applicationChannel === 'remotematch_direct';
+    if (isDirect && (newStatus === 'archived' || app.archivedAt)) {
+      const archived = newStatus === 'archived';
+      const archiveRes = await fetch('/api/applications/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ opportunityId: app.opportunityId, archived }),
+      });
+      if (!archiveRes.ok) return;
+      if (!archived && newStatus !== app.status) {
+        const statusRes = await fetch('/api/applications/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opportunityId: app.opportunityId, expectedStatus: app.status, status: newStatus }),
+        });
+        if (!statusRes.ok) {
+          await loadApplications();
+          return;
+        }
+      }
+      await loadApplications();
+      return;
+    }
+    await handleStatusChange(app.opportunityId, app.status, newStatus);
+  };
+
   const handleNotesChange = async (opportunityId: string, notes: string) => {
     const res = await fetch('/api/applications/notes', {
       method: 'PATCH',
@@ -141,15 +177,15 @@ export default function TrackerPage() {
     setIsInterviewModalOpen(true);
   };
 
-  const activeCount = applications.filter((a) => a.status === 'applied' || a.status === 'interested').length || 12;
-  const interviewCount = applications.filter((a) => a.status === 'interview').length || 4;
-  const offerCount = applications.filter((a) => a.status === 'offer').length || 1;
+  const activeCount = applications.filter((a) => !a.archivedAt && (a.status === 'applied' || a.status === 'interested')).length || 12;
+  const interviewCount = applications.filter((a) => !a.archivedAt && a.status === 'interview').length || 4;
+  const offerCount = applications.filter((a) => !a.archivedAt && a.status === 'offer').length || 1;
   // "withdrawn" joins the existing "Not selected" bucket for display — a
   // genuine, distinct outcome underneath (see get_application_outcome() in
   // 006_outcome_lifecycle.sql), just grouped with rejected/archived here so
   // the tracker's existing 4-tab UX doesn't need a 5th tab for it.
   const notSelectedCount =
-    applications.filter((a) => a.status === 'rejected' || a.status === 'withdrawn' || a.status === 'archived').length || 3;
+    applications.filter((a) => a.archivedAt || a.status === 'rejected' || a.status === 'withdrawn' || a.status === 'archived').length || 3;
   const totalCount = activeCount + interviewCount + offerCount + notSelectedCount;
 
   const filtered = applications.filter((app) => {
@@ -157,12 +193,12 @@ export default function TrackerPage() {
       activeTab === 'all'
         ? true
         : activeTab === 'active'
-        ? app.status === 'applied' || app.status === 'interested'
+        ? !app.archivedAt && (app.status === 'applied' || app.status === 'interested')
         : activeTab === 'interview'
-        ? app.status === 'interview'
+        ? !app.archivedAt && app.status === 'interview'
         : activeTab === 'offer'
-        ? app.status === 'offer'
-        : app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
+        ? !app.archivedAt && app.status === 'offer'
+        : Boolean(app.archivedAt) || app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
 
     const opp = opportunitiesById[app.opportunityId];
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
@@ -333,10 +369,8 @@ export default function TrackerPage() {
                     {/* Status Dropdown */}
                     <div className="flex items-center gap-2 self-start sm:self-auto">
                       <select
-                        value={app.status}
-                        onChange={(e) =>
-                          handleStatusChange(opp.id, app.status, e.target.value as ApplicationStatus)
-                        }
+                        value={app.archivedAt ? 'archived' : app.status}
+                        onChange={(e) => handleTrackerStatusChange(app, e.target.value as ApplicationStatus)}
                         className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
                       >
                         <option value="interested">Interested</option>

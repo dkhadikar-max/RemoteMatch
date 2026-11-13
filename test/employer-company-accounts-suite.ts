@@ -467,14 +467,25 @@ async function main() {
       assert(!publishEventsError && (publishEvents ?? []).length === 1 && publishEvents?.[0]?.to_status === 'published', 'approval writes exactly one auditable publish event');
 
       // --- A separate candidate applies in-platform; the employer receives the application. ---
+      const applyPayload = { sourceId: jobDraftId, coverNote: 'I am interested in this role and have relevant experience.' };
       const applyRes = await fetch(`${BASE_URL}/api/employer-jobs/${publishBody.opportunityId}/apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
-        body: JSON.stringify({ sourceId: jobDraftId, coverNote: 'I am interested in this role and have relevant experience.' }),
+        body: JSON.stringify(applyPayload),
       });
       const applyBody = await applyRes.json();
       assert(applyRes.status === 201 && applyBody.application?.status === 'submitted', `candidate can apply directly on RemoteMatch (got ${applyRes.status})`);
       if (applyBody.application?.id) cleanupEmployerApplicationIds.push(applyBody.application.id);
+
+      const duplicateApplyRes = await fetch(`${BASE_URL}/api/employer-jobs/${publishBody.opportunityId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
+        body: JSON.stringify(applyPayload),
+      });
+      const duplicateApplyBody = await duplicateApplyRes.json();
+      assert(duplicateApplyRes.status === 200 && duplicateApplyBody.replayed === true &&
+        duplicateApplyBody.application?.id === applyBody.application?.id,
+        `duplicate direct apply replays the same application instead of creating a second row (got ${duplicateApplyRes.status})`);
 
       const inboxRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
         headers: { Authorization: `Bearer ${sessionA.token}` },
@@ -482,13 +493,126 @@ async function main() {
       const inboxBody = await inboxRes.json();
       assert(inboxRes.status === 200 && (inboxBody.applications ?? []).some((a: { id: string }) => a.id === applyBody.application?.id), 'employer inbox contains the candidate application');
 
-      const statusRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+      const candidateApplication = await admin.from('applications')
+        .select('id,opportunity_id,status,archived_at,application_channel')
+        .eq('id', applyBody.candidateApplication?.id).maybeSingle();
+      assert(!candidateApplication.error && candidateApplication.data?.application_channel === 'remotematch_direct',
+        'direct apply links a candidate-side lifecycle row');
+
+      const archiveRes = await fetch(`${BASE_URL}/api/applications/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
+        body: JSON.stringify({ opportunityId: candidateApplication.data?.opportunity_id, archived: true }),
+      });
+      const archivedListRes = await fetch(`${BASE_URL}/api/applications`, {
+        headers: { Authorization: `Bearer ${sessionB.token}` },
+      });
+      const archivedListBody = await archivedListRes.json();
+      assert(archiveRes.status === 200 &&
+        archivedListBody.applications?.some((a: { id: string; archivedAt: string | null }) =>
+          a.id === candidateApplication.data?.id && Boolean(a.archivedAt)),
+        `candidate can archive a direct application through the tracker API (got ${archiveRes.status})`);
+
+      const unarchiveRes = await fetch(`${BASE_URL}/api/applications/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
+        body: JSON.stringify({ opportunityId: candidateApplication.data?.opportunity_id, archived: false }),
+      });
+      assert(unarchiveRes.status === 200, `candidate can restore an archived direct application (got ${unarchiveRes.status})`);
+
+      const missingReasonRes = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
-        body: JSON.stringify({ applicationId: applyBody.application?.id, status: 'shortlisted' }),
+        body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: 'submitted', status: 'rejected', idempotencyKey: `ci-no-reason:${applyBody.application?.id}:${Date.now()}` }),
       });
-      const statusBody = await statusRes.json();
-      assert(statusRes.status === 200 && statusBody.status === 'shortlisted', `employer can shortlist an applicant (got ${statusRes.status})`);
+      assert(missingReasonRes.status === 400, `rejection without an explicitly selected reason is rejected (got ${missingReasonRes.status})`);
+
+      // Temporarily remove the optional candidate link to model a legacy
+      // employer inbox row created before M2. The employer-side decision
+      // remains auditable; candidate-side status is intentionally untouched.
+      const unlinkLegacy = await admin.from('employer_job_applications')
+        .update({ candidate_application_id: null }).eq('id', applyBody.application?.id);
+      assert(!unlinkLegacy.error, 'isolated fixture can model a legacy employer application without a candidate link');
+
+      const sameKey = `ci-same-key:${applyBody.application?.id}:${Date.now()}`;
+      const sameKeyPayload = {
+        applicationId: applyBody.application?.id,
+        expectedStatus: 'submitted',
+        status: 'shortlisted',
+        idempotencyKey: sameKey,
+      };
+      const [sameKeyA, sameKeyB] = await Promise.all([
+        fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+          body: JSON.stringify(sameKeyPayload),
+        }),
+        fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+          body: JSON.stringify(sameKeyPayload),
+        }),
+      ]);
+      const [sameKeyBodyA, sameKeyBodyB] = await Promise.all([sameKeyA.json(), sameKeyB.json()]);
+      assert(sameKeyA.status === 200 && sameKeyB.status === 200 &&
+        sameKeyBodyA.status === 'shortlisted' && sameKeyBodyB.status === 'shortlisted' &&
+        sameKeyBodyA.eventId === sameKeyBodyB.eventId,
+        `concurrent retries with the same idempotency key replay one committed transition (got ${sameKeyA.status}/${sameKeyB.status})`);
+      assert(sameKeyBodyA.candidateStatus === null || sameKeyBodyB.candidateStatus === null,
+        'legacy employer transition records no fabricated candidate-side status');
+
+      const relinkLegacy = await admin.from('employer_job_applications')
+        .update({ candidate_application_id: applyBody.candidateApplication?.id }).eq('id', applyBody.application?.id);
+      assert(!relinkLegacy.error, 'isolated fixture restores the verified candidate link for subsequent linked-race tests');
+
+      const [competingInterview, competingReview] = await Promise.all([
+        fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+          body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: 'shortlisted', status: 'interviewing', idempotencyKey: `ci-compete-interview:${Date.now()}` }),
+        }),
+        fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+          body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: 'shortlisted', status: 'reviewing', idempotencyKey: `ci-compete-review:${Date.now()}` }),
+        }),
+      ]);
+      const competingStatuses = [competingInterview.status, competingReview.status].sort();
+      assert(competingStatuses[0] === 200 && competingStatuses[1] === 409,
+        `competing employer transitions are serialized by compare-and-swap (got ${competingStatuses.join('/')})`);
+
+      const { data: ejaBeforeWithdrawal } = await admin.from('employer_job_applications')
+        .select('status').eq('id', applyBody.application?.id).maybeSingle();
+      const { data: candidateBeforeWithdrawal } = await admin.from('applications')
+        .select('id,opportunity_id,status').eq('id', applyBody.candidateApplication?.id).maybeSingle();
+      const employerNextStatus = ejaBeforeWithdrawal?.status === 'interviewing' ? 'offered' : 'rejected';
+      const candidateExpectedStatus = candidateBeforeWithdrawal?.status;
+      const [employerRace, candidateRace] = await Promise.all([
+        fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+          body: JSON.stringify({ applicationId: applyBody.application?.id, expectedStatus: ejaBeforeWithdrawal?.status, status: employerNextStatus, ...(employerNextStatus === 'rejected' ? { reasonCode: 'insufficient_evidence' } : {}), idempotencyKey: `ci-withdraw-race-employer:${Date.now()}` }),
+        }),
+        fetch(`${BASE_URL}/api/applications/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionB.token}` },
+          body: JSON.stringify({ opportunityId: candidateBeforeWithdrawal?.opportunity_id, expectedStatus: candidateExpectedStatus, status: 'withdrawn' }),
+        }),
+      ]);
+      const raceStatuses = [employerRace.status, candidateRace.status].sort();
+      assert(raceStatuses[0] === 200 && raceStatuses[1] === 409,
+        `candidate withdrawal racing an employer decision has exactly one winner (got ${raceStatuses.join('/')})`);
+      const { data: finalEja } = await admin.from('employer_job_applications')
+        .select('status').eq('id', applyBody.application?.id).maybeSingle();
+      const { data: finalCandidate } = await admin.from('applications')
+        .select('status').eq('id', applyBody.candidateApplication?.id).maybeSingle();
+      const lifecyclePairIsConsistent =
+        finalEja?.status === 'withdrawn' && finalCandidate?.status === 'withdrawn' ||
+        finalEja?.status === 'interviewing' && finalCandidate?.status === 'interview' ||
+        finalEja?.status === 'offered' && finalCandidate?.status === 'offer' ||
+        finalEja?.status === 'reviewing' && finalCandidate?.status === 'applied' ||
+        finalEja?.status === 'shortlisted' && finalCandidate?.status === 'applied';
+      assert(lifecyclePairIsConsistent, 'candidate and employer lifecycle states remain synchronized after the concurrent race');
 
 
     }
