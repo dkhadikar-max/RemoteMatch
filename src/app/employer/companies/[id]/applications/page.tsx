@@ -51,7 +51,15 @@ export default function EmployerApplicationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const updateStatus = async (row: Applicant, status: string) => {
-    const reasonCode = reasons[row.id] || 'insufficient_evidence';
+    const reasonCode = reasons[row.id];
+    const reasonRequired =
+      status === 'rejected' ||
+      (row.status === 'interviewing' && status === 'shortlisted') ||
+      (row.status === 'rejected' && status === 'reviewing');
+    if (reasonRequired && !reasonCode) {
+      setError('Select a decision reason before making this transition.');
+      return;
+    }
     setBusy(row.id); setError('');
     try {
       const response = await fetch('/api/employer/companies/' + id + '/applications', {
@@ -60,7 +68,7 @@ export default function EmployerApplicationsPage() {
           applicationId: row.id,
           expectedStatus: row.status,
           status,
-          reasonCode,
+          ...(reasonCode ? { reasonCode } : {}),
           idempotencyKey: crypto.randomUUID(),
         }),
       });
@@ -93,9 +101,10 @@ export default function EmployerApplicationsPage() {
         </div>
         <label className="block text-xs text-[var(--muted)]">Decision reason
           <select aria-label="Decision reason" className="soft-input mt-1 block w-full px-3 py-2 text-sm"
-            value={reasons[row.id] || 'insufficient_evidence'}
+            value={reasons[row.id] || ''}
             disabled={busy === row.id}
             onChange={e => setReasons(current => ({ ...current, [row.id]: e.target.value }))}>
+            <option value="">Choose only when applicable</option>
             {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label>
