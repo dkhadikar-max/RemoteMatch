@@ -82,6 +82,24 @@ async function sitemapJsonRpc(db: PGlite, args: {
   }>;
 }
 
+async function activeFeedRpc(db: PGlite, args: {
+  p_after_source: string | null;
+  p_after_source_id: string | null;
+  p_page_size: number;
+  p_fresh_from: string;
+  p_fresh_to: string;
+  p_translation_safe: boolean;
+}): Promise<Array<{ source: string; source_id: string; status: string; posted_at: string }>> {
+  const result = await db.query(
+    `SELECT source, source_id, status, posted_at
+     FROM public.get_active_opportunities_keyset_page(
+       $1, $2, $3, $4::timestamptz, $5::timestamptz, $6::boolean
+     );`,
+    [args.p_after_source, args.p_after_source_id, args.p_page_size, args.p_fresh_from, args.p_fresh_to, args.p_translation_safe]
+  );
+  return result.rows as Array<{ source: string; source_id: string; status: string; posted_at: string }>;
+}
+
 interface Fixture {
   source?: string;
   source_id: string;
@@ -173,6 +191,8 @@ async function main() {
     assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
     await db.exec(read('supabase/migrations/20261109120000_sitemap_batched_read.sql'));
     assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
+    await db.exec(read('supabase/migrations/20261109195500_fresh_feed_keyset_index_only_page.sql'));
+    assert(true, 'fresh-feed migration keeps the generic RPC signature and adds the narrow key-first plan');
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
@@ -275,6 +295,42 @@ async function main() {
     assert(Number((indexCount.rows[0] as any).n) === visible.length, 'trigger/backfill projection contains only active, translation-safe rows');
 
     await setRole(db, 'anon');
+
+    const freshFrom = new Date(now - 60_000).toISOString();
+    const freshTo = new Date(now + 60 * 60_000).toISOString();
+    const expectedFresh = [...visible].sort((a, b) =>
+      (a.source ?? 'fixture').localeCompare(b.source ?? 'fixture') ||
+      a.source_id.localeCompare(b.source_id)
+    );
+    const freshPage1 = await activeFeedRpc(db, {
+      p_after_source: null,
+      p_after_source_id: null,
+      p_page_size: 5,
+      p_fresh_from: freshFrom,
+      p_fresh_to: freshTo,
+      p_translation_safe: true,
+    });
+    const freshLast = freshPage1[freshPage1.length - 1];
+    const freshPage2 = await activeFeedRpc(db, {
+      p_after_source: freshLast.source,
+      p_after_source_id: freshLast.source_id,
+      p_page_size: 5,
+      p_fresh_from: freshFrom,
+      p_fresh_to: freshTo,
+      p_translation_safe: true,
+    });
+    assert(
+      freshPage1.map((row) => `${row.source}:${row.source_id}`).join('|') ===
+        expectedFresh.slice(0, 5).map((row) => `${row.source ?? 'fixture'}:${row.source_id}`).join('|') &&
+      freshPage2.map((row) => `${row.source}:${row.source_id}`).join('|') ===
+        expectedFresh.slice(5, 10).map((row) => `${row.source ?? 'fixture'}:${row.source_id}`).join('|'),
+      'fresh feed keyset pages preserve source/source_id order and continue without duplicates'
+    );
+    assert(
+      [...freshPage1, ...freshPage2].every((row) => row.status === 'active' && !['expired', 'translation-error'].includes(row.source_id)),
+      'fresh feed RPC applies active-row and translation-safe visibility gates under anon/RLS'
+    );
+
     const rootPage1 = await rpc<{ total: number; jobs: Array<{ source_id: string; source: string }> }>(db, {
       p_category_slug: null, p_page: 1, p_page_size: 24,
     });
@@ -402,8 +458,23 @@ async function main() {
       JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = 'public' AND p.proname = 'get_remote_job_hub_page';
     `);
+    const freshFeedFunctionSecurity = await db.query(`
+      SELECT p.prosecdef AS security_definer
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'get_active_opportunities_keyset_page';
+    `);
+    const freshFeedAnonExecute = await db.query(`
+      SELECT has_function_privilege(
+        'anon',
+        'public.get_active_opportunities_keyset_page(text,text,integer,timestamptz,timestamptz,boolean)',
+        'EXECUTE'
+      ) AS allowed;
+    `);
     assert((policy.rows[0] as any).enabled === true, 'projection table has RLS enabled');
     assert((functionSecurity.rows[0] as any).security_definer === false, 'page RPC is SECURITY INVOKER, not SECURITY DEFINER');
+    assert((freshFeedFunctionSecurity.rows[0] as any).security_definer === false, 'fresh feed RPC remains SECURITY INVOKER');
+    assert((freshFeedAnonExecute.rows[0] as any).allowed === true, 'anon retains execute permission on the existing fresh-feed RPC signature');
 
     // The trigger is transactional: lifecycle/translation changes remove and
     // restore a row in the projection without a separate refresh operation.
