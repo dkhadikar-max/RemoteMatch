@@ -39,7 +39,7 @@ check(/v_company\.verification_status <> 'verified'/.test(migration), 'publicati
 check(/SELECT \* INTO v_company FROM public\.companies WHERE id = v_job\.company_id FOR UPDATE;/.test(publicationRaceFix), 'vacancy publication locks the company row before reading verification status, serializing it against suspension');
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
-check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');
+check(/getAuthenticatedEmployer\(req, (?:params\.id|id)\)/.test(createRoute) && /const \{ id \} = await params/.test(createRoute), 'draft creation and listing require company membership');
 check(!/required\('applicationUrl'/.test(createRoute) && !/applicationUrl/.test(createRoute), 'external application URL is not part of the employer job form or API contract');
 check(/company\.verification_status !== 'verified'/.test(jobRoute), 'employers cannot submit drafts before company verification');
 check(/eq\('status', 'draft'\)/.test(jobRoute), 'only drafts can be edited or submitted');
@@ -54,7 +54,7 @@ check(/\.neq\('source', 'employerdirect'\)/.test(catalogSync), 'cross-provider d
 check(/CREATE TABLE IF NOT EXISTS public\.employer_job_applications/.test(applicationsMigration), 'native candidate applications have a dedicated table');
 check(/FORCE ROW LEVEL SECURITY/.test(applicationsMigration) && /REVOKE ALL ON public\.employer_job_applications FROM anon, authenticated/.test(applicationsMigration), 'candidate applications are service-role-only with forced RLS');
 check(/employerdirect/.test(applyRoute) && /getAuthenticatedUser/.test(applyRoute), 'native apply endpoint authenticates candidates and accepts only active direct-employer jobs');
-check(/getAuthenticatedEmployer\(req, params\.id\)/.test(employerApplicationsRoute), 'applicant inbox is scoped to authorized company members');
+check(/const \{ id \} = await params/.test(employerApplicationsRoute) && /getAuthenticatedEmployer\(req, id\)/.test(employerApplicationsRoute), 'applicant inbox awaits the company route param and scopes access to authorized company members');
 check(/shortlisted/.test(employerApplicationsRoute) && /company_id/.test(employerApplicationsRoute), 'employers can update applicant status only within their own company');
 check(/Apply on RemoteMatch/.test(applyButton), 'direct employer job pages provide an in-platform apply action');
 check(/EMPLOYER_INDUSTRIES/.test(taxonomy) && /EMPLOYER_COMPANY_SIZES/.test(taxonomy), 'industry and employee ranges use standardized filter values');

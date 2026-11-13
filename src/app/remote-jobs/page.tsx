@@ -24,7 +24,7 @@ import { SITE_URL } from '@/lib/site';
 import { jobHref } from '@/lib/seo/job-href';
 
 interface Props {
-  searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
+  searchParams?: Promise<{ q?: string; page?: string }>;
 }
 
 const baseMetadata: Metadata = {
@@ -50,7 +50,7 @@ const baseMetadata: Metadata = {
 // Deep pages and search results are not worth indexing as landing pages — every
 // job on them is already in the sitemap — but their links should still be followed.
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
-  const resolved = searchParams ? await Promise.resolve(searchParams) : {};
+  const resolved = searchParams ? await searchParams : {};
   const hasSearch = typeof resolved.q === 'string' && resolved.q.trim() !== '';
   if (parsePageParam(resolved.page) > 1 || hasSearch) {
     return { ...baseMetadata, robots: { index: false, follow: true } };

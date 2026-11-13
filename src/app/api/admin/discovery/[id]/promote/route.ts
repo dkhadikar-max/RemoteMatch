@@ -18,7 +18,7 @@ import type { DiscoveredCompany } from '@/types/discovery';
  * `reviewedBy` is always the real admin's email — never that function's
  * own hardcoded default.
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let admin;
   try {
     admin = await getAuthenticatedAdmin(req);
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let row;
   try {
     row = must(
-      await db.from('supply_discovered_companies').select('*').eq('id', params.id).maybeSingle(),
+      await db.from('supply_discovered_companies').select('*').eq('id', id).maybeSingle(),
       'supply_discovered_companies'
     ).data;
   } catch (err) {
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     adminEmail: admin.adminEmail,
     action: 'c6_promote',
     targetType: 'discovered_company',
-    targetId: params.id,
+    targetId: id,
     beforeState: { pipeline_stage: row.pipeline_stage },
     afterState: result.promoted
       ? { pipeline_stage: 'promoted_to_allowlist', employerId: result.employerId, sourceId: result.sourceId }

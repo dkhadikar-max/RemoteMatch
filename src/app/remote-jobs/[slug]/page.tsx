@@ -16,7 +16,7 @@ import { jobHref } from '@/lib/seo/job-href';
 
 interface Props {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ page?: string }> | { page?: string };
+  searchParams?: Promise<{ page?: string }>;
 }
 
 export async function generateStaticParams() {
@@ -29,7 +29,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const { slug } = await params;
   const category = SEO_CATEGORIES.find((c) => c.slug === slug);
   if (!category) return {};
-  const resolved = searchParams ? await Promise.resolve(searchParams) : {};
+  const resolved = searchParams ? await searchParams : {};
   // Deep pages repeat the hub's copy; every job on them is already in the sitemap.
   const deepPage = parsePageParam(resolved.page) > 1;
 

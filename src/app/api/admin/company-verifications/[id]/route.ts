@@ -9,7 +9,7 @@ import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** GET — the full company record + its company_members rows, so the admin
  *  sees the submitted representative fields alongside the registration. */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await getAuthenticatedAdmin(req);
   } catch (err) {
@@ -18,12 +18,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   const admin = getSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
   try {
     const companyRes = must(
-      await admin.from('companies').select('*').eq('id', params.id).maybeSingle(),
+      await admin.from('companies').select('*').eq('id', id).maybeSingle(),
       'companies'
     );
     if (!companyRes.data) return NextResponse.json({ error: 'Company not found.' }, { status: 404 });
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       await admin
         .from('company_members')
         .select('id, profile_id, role, representative_name, representative_designation, representative_relationship, status, created_at')
-        .eq('company_id', params.id)
+        .eq('company_id', id)
         .order('created_at', { ascending: true }),
       'company_members'
     );
@@ -58,7 +59,7 @@ const AUDIT_ACTION: Record<VerificationAction, AdminAuditAction> = {
  * `reason` and is audit-logged with before/after state, mirroring
  * `opportunity_force_expire`'s shape exactly.
  */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let adminAuth;
   try {
     adminAuth = await getAuthenticatedAdmin(req);
@@ -68,6 +69,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   let rawBody: unknown;
   try {
     rawBody = await req.json();
@@ -114,7 +116,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let before: { verification_status: string } | null;
   try {
     before = must(
-      await db.from('companies').select('verification_status').eq('id', params.id).maybeSingle(),
+      await db.from('companies').select('verification_status').eq('id', id).maybeSingle(),
       'companies'
     ).data;
   } catch (err) {
@@ -145,7 +147,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // zero-row case, just without a window where the status could change but
   // the audit row could independently fail.
   const { data: rpcRows, error: rpcError } = await db.rpc('transition_company_verification_with_audit', {
-    p_company_id: params.id,
+    p_company_id: id,
     p_expected_status: before.verification_status,
     p_new_status: transition.to,
     p_reviewed_by: adminAuth.adminEmail,
@@ -157,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   if (rpcError) {
     console.error('[admin/company-verifications] transition_company_verification_with_audit RPC failed', {
-      companyId: params.id, action, error: rpcError.message,
+      companyId: id, action, error: rpcError.message,
     });
     return NextResponse.json({ error: rpcError.message }, { status: 500 });
   }
