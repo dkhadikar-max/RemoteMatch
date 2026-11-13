@@ -95,6 +95,10 @@ jobs:
         if: hashFiles('test/employer-job-publishing-suite.ts') != ''
         run: npx tsx test/employer-job-publishing-suite.ts
 
+      - name: V2 P0 M2/M3 API contract regression suite
+        if: hashFiles('test/v2-m2-m3-api-contract-suite.ts') != ''
+        run: npm run test:v2:m2-m3:contracts
+
   # ----------------------------------------------------------------------------
   # Direct Employer Supply (migrations 044/045/047) -- LIVE integration tier.
   #
