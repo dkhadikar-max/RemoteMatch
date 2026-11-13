@@ -13,6 +13,7 @@ function check(condition: boolean, label: string) {
 
 const migration = read('supabase/migrations/049_employer_job_submissions_and_publish.sql');
 const applicationsMigration = read('supabase/migrations/050_employer_direct_applications.sql');
+const publicationRaceFix = read('supabase/migrations/20261113090201_lock_company_on_vacancy_publish.sql');
 const applyRoute = read('src/app/api/employer-jobs/[opportunityId]/apply/route.ts');
 const employerApplicationsRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 const applyButton = read('src/components/employer/direct-employer-apply-button.tsx');
@@ -35,6 +36,7 @@ check(/ENABLE ROW LEVEL SECURITY/.test(migration) && /FORCE ROW LEVEL SECURITY/.
 check(/REVOKE ALL ON public\.employer_job_submissions FROM anon, authenticated/.test(migration), 'candidate and anonymous clients cannot read or write submissions');
 check(/CREATE OR REPLACE FUNCTION public\.review_employer_job_submission/.test(migration), 'review and publish is a database transaction');
 check(/v_company\.verification_status <> 'verified'/.test(migration), 'publication requires a verified company');
+check(/SELECT \* INTO v_company FROM public\.companies WHERE id = v_job\.company_id FOR UPDATE;/.test(publicationRaceFix), 'vacancy publication locks the company row before reading verification status, serializing it against suspension');
 check(/INSERT INTO public\.opportunities/.test(migration) && /'employerdirect'/.test(migration), 'approved vacancies enter the existing opportunity catalogue');
 check(/INSERT INTO public\.employer_job_review_events/.test(migration), 'every review decision is audited');
 check(/getAuthenticatedEmployer\(req, params\.id\)/.test(createRoute), 'draft creation and listing require company membership');

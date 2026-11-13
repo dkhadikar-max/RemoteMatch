@@ -173,6 +173,11 @@ jobs:
           console.log(`Verified isolated test project: ${actual}`);
           NODE
 
+      # Employer P1 #1: run the publication/suspension regression before unrelated
+      # directory checks so employer coverage is reported even if that suite fails.
+      - name: Live integration -- employer publication/suspension race regression
+        run: npx tsx test/employer-publish-suspension-race-isolated-suite.ts
+
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts
 
@@ -180,15 +185,15 @@ jobs:
         if: failure()
         run: grep -E 'chatgpt-jobs|PostgrestError|database search failed' /tmp/ci-dev-server.log | tail -n 80 || true
 
-      - name: Live directory egress + HTTP integration
-        run: npx tsx test/directory-egress-suite.ts
-
       - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
         run: npx tsx test/employer-company-accounts-suite.ts
 
       - name: Live integration -- concurrency/atomicity suite
         if: hashFiles('test/employer-company-accounts-concurrency-isolated-suite.ts') != ''
         run: npx tsx test/employer-company-accounts-concurrency-isolated-suite.ts
+
+      - name: Live directory egress + HTTP integration
+        run: npx tsx test/directory-egress-suite.ts
 
       - name: Stop dev server
         if: always()
