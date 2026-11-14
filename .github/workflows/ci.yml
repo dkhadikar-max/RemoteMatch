@@ -139,6 +139,7 @@ jobs:
       ADMIN_HOST_OVERRIDE: admin.ci.local:3100
       TEST_BASE_URL: http://localhost:3100
       TEST_ADMIN_HOST: admin.ci.local:3100
+      CI_V2_M3_REPLAY_BINDING_ENABLED: ${{ vars.CI_V2_M3_REPLAY_BINDING_ENABLED || 'false' }}
     steps:
       - uses: actions/checkout@v4
 

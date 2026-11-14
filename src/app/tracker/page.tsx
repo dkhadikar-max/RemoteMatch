@@ -192,7 +192,7 @@ export default function TrackerPage() {
         ? !app.archivedAt && app.status === 'interview'
         : activeTab === 'offer'
         ? !app.archivedAt && app.status === 'offer'
-        : Boolean(app.archivedAt) || app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
+        : Boolean(app.archivedAt) || app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'offer_declined' || app.status === 'archived';
 
     const opp = opportunitiesById[app.opportunityId];
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
