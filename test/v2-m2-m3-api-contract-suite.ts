@@ -79,6 +79,10 @@ check(applicationsRoute.includes('archived_at') && applicationsRoute.includes('a
 const tracker = read('src/app/tracker/page.tsx');
 check(tracker.includes("fetch('/api/applications/archive'") && tracker.includes('archivedAt'), 'candidate tracker uses archive preference API for direct applications');
 
+const trackerUi = read('src/app/tracker/page.tsx');
+check(trackerUi.includes('handleArchivePreference') && !trackerUi.includes('if (isDirect && (newStatus === \'archived\' || app.archivedAt))'), 'direct-application archive preference is independent from lifecycle status writes');
+check(trackerUi.includes('const totalCount = applications.length;') && !trackerUi.includes('.length || 12') && !trackerUi.includes('.length || 4') && !trackerUi.includes('.length || 1') && !trackerUi.includes('.length || 3'), 'tracker counts reflect actual rows without placeholder fallbacks');
+check(trackerUi.includes("status === 'offer_declined'") && trackerUi.includes("status === 'hired'"), 'terminal candidate outcomes have explicit tracker labels');
 const employerUi = read('src/app/employer/companies/[id]/applications/page.tsx');
 const employerInboxRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 check(!employerInboxRoute.includes('resume_file_url') && !employerUi.includes('resume_file_url'), 'employer application response and UI do not expose raw resume URLs');
