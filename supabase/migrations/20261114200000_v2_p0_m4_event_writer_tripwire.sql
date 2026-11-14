@@ -9,12 +9,21 @@ DECLARE
   v_oid oid;
   v_definer boolean;
   v_owner_bypass boolean;
+  v_owner_can_insert boolean;
+  v_owner_schema_usage boolean;
   v_cfg text[];
 BEGIN
   v_post := true;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role' AND (rolbypassrls OR rolsuper)) THEN
     v_problems := v_problems || 'service_role is missing or does not bypass row-level security'::text;
+  ELSE
+    IF NOT has_table_privilege('service_role','public.application_events','INSERT') THEN
+      v_problems := v_problems || 'service_role lacks INSERT on application_events'::text;
+    END IF;
+    IF NOT has_schema_privilege('service_role','public','USAGE') THEN
+      v_problems := v_problems || 'service_role lacks USAGE on schema public'::text;
+    END IF;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid='public.application_events'::regclass AND relrowsecurity AND relforcerowsecurity) THEN
@@ -60,13 +69,21 @@ BEGIN
       IF v_post THEN v_problems := v_problems || format('writer %s does not exist',v_sig); END IF;
       CONTINUE;
     END IF;
-    SELECT p.prosecdef,p.proconfig,coalesce(r.rolbypassrls OR r.rolsuper,false)
-      INTO v_definer,v_cfg,v_owner_bypass
+    SELECT p.prosecdef,p.proconfig,coalesce(r.rolbypassrls OR r.rolsuper,false),
+           has_table_privilege(r.oid,'public.application_events','INSERT'),
+           has_schema_privilege(r.oid,'public','USAGE')
+      INTO v_definer,v_cfg,v_owner_bypass,v_owner_can_insert,v_owner_schema_usage
     FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.oid=v_oid;
 
     IF v_sig='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)' THEN
+      IF v_definer THEN
+        v_problems := v_problems || format('%s must remain SECURITY INVOKER',v_sig);
+      END IF;
       IF NOT has_function_privilege('service_role',v_oid,'EXECUTE') THEN
         v_problems := v_problems || format('%s is not executable by service_role',v_sig);
+      END IF;
+      IF NOT EXISTS(SELECT 1 FROM unnest(coalesce(v_cfg,ARRAY[]::text[])) c WHERE c ~ '^search_path=public(,|$)') THEN
+        v_problems := v_problems || format('%s does not pin search_path with public first',v_sig);
       END IF;
       IF (EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') AND has_function_privilege('authenticated',v_oid,'EXECUTE'))
          OR (EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') AND has_function_privilege('anon',v_oid,'EXECUTE')) THEN
@@ -78,8 +95,14 @@ BEGIN
       ELSIF NOT v_owner_bypass THEN
         v_problems := v_problems || format('%s is owned by a role that does not bypass row-level security',v_sig);
       END IF;
-      IF NOT EXISTS(SELECT 1 FROM unnest(coalesce(v_cfg,ARRAY[]::text[])) c WHERE c LIKE 'search_path=%') THEN
-        v_problems := v_problems || format('%s does not pin search_path',v_sig);
+      IF NOT v_owner_can_insert THEN
+        v_problems := v_problems || format('%s owner lacks INSERT on application_events',v_sig);
+      END IF;
+      IF NOT v_owner_schema_usage THEN
+        v_problems := v_problems || format('%s owner lacks USAGE on schema public',v_sig);
+      END IF;
+      IF NOT EXISTS(SELECT 1 FROM unnest(coalesce(v_cfg,ARRAY[]::text[])) c WHERE c ~ '^search_path=public(,|$)') THEN
+        v_problems := v_problems || format('%s does not pin search_path with public first',v_sig);
       END IF;
     END IF;
   END LOOP;
@@ -93,3 +116,4 @@ BEGIN
     CASE WHEN v_post THEN 'client INSERT policy already dropped' ELSE 'client INSERT policy not yet dropped' END;
 END
 $m4$;
+
