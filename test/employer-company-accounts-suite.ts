@@ -492,6 +492,9 @@ async function main() {
       });
       const inboxBody = await inboxRes.json();
       assert(inboxRes.status === 200 && (inboxBody.applications ?? []).some((a: { id: string }) => a.id === applyBody.application?.id), 'employer inbox contains the candidate application');
+      const inboxApplicant = (inboxBody.applications ?? []).find((a: { id: string }) => a.id === applyBody.application?.id);
+      assert(Boolean(inboxApplicant) && !Object.prototype.hasOwnProperty.call(inboxApplicant?.profiles ?? {}, 'resume_file_url'),
+        'employer inbox never returns the raw resume URL');
 
       const candidateApplication = await admin.from('applications')
         .select('id,opportunity_id,status,archived_at,application_channel')
@@ -560,6 +563,24 @@ async function main() {
         `concurrent retries with the same idempotency key replay one committed transition (got ${sameKeyA.status}/${sameKeyB.status})`);
       assert(sameKeyBodyA.candidateStatus === null || sameKeyBodyB.candidateStatus === null,
         'legacy employer transition records no fabricated candidate-side status');
+
+      const replayWrongExpected = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+        body: JSON.stringify({ ...sameKeyPayload, expectedStatus: 'reviewing' }),
+      });
+      const replayWrongExpectedBody = await replayWrongExpected.json();
+      assert(replayWrongExpected.status === 409 && replayWrongExpectedBody.error === 'idempotency_conflict',
+        `same key with a different expected state is rejected (got ${replayWrongExpected.status})`);
+
+      const replayWrongReason = await fetch(`${BASE_URL}/api/employer/companies/${companyId}/applications`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionA.token}` },
+        body: JSON.stringify({ ...sameKeyPayload, reasonCode: 'insufficient_experience' }),
+      });
+      const replayWrongReasonBody = await replayWrongReason.json();
+      assert(replayWrongReason.status === 409 && replayWrongReasonBody.error === 'idempotency_conflict',
+        `same key with a different reason is rejected (got ${replayWrongReason.status})`);
 
       const relinkLegacy = await admin.from('employer_job_applications')
         .update({ candidate_application_id: applyBody.candidateApplication?.id }).eq('id', applyBody.application?.id);

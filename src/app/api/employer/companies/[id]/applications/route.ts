@@ -12,7 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
   const { data, error } = await db.from('employer_job_applications')
-    .select('id,submission_id,opportunity_id,candidate_application_id,cover_note,status,submitted_at,updated_at,employer_job_submissions!inner(title),profiles!employer_job_applications_candidate_profile_id_fkey(id,email,full_name,headline,avatar_url,resume_file_url,linkedin_url)')
+    .select('id,submission_id,opportunity_id,candidate_application_id,cover_note,status,submitted_at,updated_at,employer_job_submissions!inner(title),profiles!employer_job_applications_candidate_profile_id_fkey(id,email,full_name,headline,avatar_url,linkedin_url)')
     .eq('employer_job_submissions.company_id', params.id)
     .order('submitted_at', { ascending: false });
   if (error) {

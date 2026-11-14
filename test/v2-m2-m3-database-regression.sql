@@ -1,6 +1,6 @@
 -- RemoteMatch V2 P0 M2/M3 database regression contract.
 -- Read-only: run against the isolated remotematch-paidtest project after
--- applying the seven migrations. No fixture rows are inserted or modified.
+-- applying all nine M2/M3 migrations. No fixture rows are inserted or modified.
 DO $$
 DECLARE
   v_count integer;
@@ -108,10 +108,10 @@ BEGIN
     RAISE EXCEPTION 'audit subject constraint does not restrict events to applications';
   END IF;
 
-  -- The seven source migrations must be represented in the applied ledger.
+  -- All nine M2/M3 source migrations must be represented in the applied ledger.
   SELECT count(*) INTO v_count FROM supabase_migrations.schema_migrations
   WHERE version IN ('20261112185212','20261112185655','20261112185730',
-    '20261112185902','20261112190030','20261112190152','20261112190248');
-  IF v_count <> 7 THEN RAISE EXCEPTION 'expected seven applied M2/M3 migrations, found %',v_count; END IF;
+    '20261112185902','20261112190030','20261112190152','20261112190248','20261113041032','20261114190000');
+  IF v_count <> 9 THEN RAISE EXCEPTION 'expected nine applied M2/M3 migrations, found %',v_count; END IF;
 END;
 $$;
