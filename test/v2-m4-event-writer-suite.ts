@@ -14,6 +14,7 @@ const check=block(migration),beforeCheck=block(preflightBefore),canonical=read('
 assert(files.includes(migrationName),'M4 tripwire exists');
 assert(!!m3&&files.indexOf(migrationName)>files.indexOf(m3),'M4 sorts after the current M3 migration');
 assert(check.length>1000&&block(preflight)===check,'postflight and tripwire contain the identical post-drop check block');
+assert(preflight.startsWith('BEGIN READ ONLY;')&&preflight.trimEnd().endsWith('COMMIT;')&&preflightBefore.startsWith('BEGIN READ ONLY;')&&preflightBefore.trimEnd().endsWith('COMMIT;'),'both operator preflights are enforced read-only transactions');
 assert(beforeCheck.replace('v_post := false','v_post := true')===check,'preflight-before uses the same canonical check with explicit pre-drop mode');
 assert(canonical.replace('__M4_POST_DROP__','true').trim()===check.trim(),'generated post-drop block matches the canonical source');
 assert(check.includes('v_post OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
