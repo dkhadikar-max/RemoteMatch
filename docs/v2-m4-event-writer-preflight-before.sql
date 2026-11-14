@@ -1,3 +1,4 @@
+BEGIN READ ONLY;
 -- V2 M4 preflight BEFORE the lifecycle policy-drop migration. READ ONLY.
 -- The legacy events_insert_own policy is expected here; every other client INSERT path is rejected.
 -- This phase tolerates lifecycle writer functions that have not been installed yet.
@@ -139,3 +140,4 @@ BEGIN
     CASE WHEN v_post THEN 'client INSERT policy already dropped' ELSE 'client INSERT policy not yet dropped' END;
 END
 $m4$;
+COMMIT;
