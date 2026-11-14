@@ -10,7 +10,7 @@ type Applicant = {
   status: string;
   submitted_at: string;
   employer_job_submissions: { title: string } | null;
-  profiles: { id: string; email: string | null; full_name: string | null; headline: string | null; avatar_url: string | null; resume_file_url: string | null; linkedin_url: string | null } | null;
+  profiles: { id: string; email: string | null; full_name: string | null; headline: string | null; avatar_url: string | null; linkedin_url: string | null } | null;
 };
 
 const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'];
@@ -51,6 +51,14 @@ export default function EmployerApplicationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const updateStatus = async (row: Applicant, status: string) => {
+    const confirmation =
+      status === 'hired'
+        ? `Mark ${row.profiles?.full_name || 'this candidate'} as hired? This records a final hiring decision.`
+        : status === 'rejected'
+          ? `Reject ${row.profiles?.full_name || 'this candidate'}? The selected decision reason will be recorded in the audit history.`
+          : null;
+    if (confirmation && !window.confirm(confirmation)) return;
+
     const reasonCode = reasons[row.id];
     const reasonRequired =
       status === 'rejected' ||
@@ -117,7 +125,6 @@ export default function EmployerApplicationsPage() {
         </label>
         {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
         <div className="flex flex-wrap gap-4 text-sm">
-          {row.profiles?.resume_file_url && <a className="text-[var(--red)] underline" href={row.profiles.resume_file_url} target="_blank" rel="noreferrer">View resume</a>}
           {row.profiles?.linkedin_url && <a className="text-[var(--red)] underline" href={row.profiles.linkedin_url} target="_blank" rel="noreferrer">LinkedIn profile</a>}
           {row.profiles?.email && <a className="text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
         </div>
