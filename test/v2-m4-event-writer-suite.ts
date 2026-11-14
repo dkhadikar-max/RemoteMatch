@@ -15,6 +15,7 @@ assert(files.includes(migrationName),'M4 tripwire exists');
 assert(!!m3&&files.indexOf(migrationName)>files.indexOf(m3),'M4 sorts after the current M3 migration');
 assert(check.length>1000&&block(preflight)===check,'preflight and tripwire contain the identical check block');
 assert(check.includes('relforcerowsecurity')&&check.includes('pg_has_role'),'check enforces FORCE RLS and inherited policy membership');
+assert(check.includes("v_post OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
 assert(!check.includes('current_user'),'read-only operator is not required to bypass RLS');
 const writers=['record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application'];
 assert(writers.every(n=>check.includes('public.'+n+'(')),'all six known writer signatures are checked');
@@ -31,12 +32,19 @@ async function main(){
  ];
  const args=(types:string)=>types.split(',').map((t,i)=>'a'+i+' '+t).join(', ');
  const sig=(name:string)=>{const x=sigs.find(x=>x[0]===name)!;return 'public.'+name+'('+x[1]+')'};
- await must("CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE owner_bypass NOLOGIN BYPASSRLS; CREATE ROLE owner_plain NOLOGIN; CREATE TABLE public.application_events(id serial primary key,application_id int,event_type text); ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY; CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true); GRANT USAGE ON SCHEMA public TO authenticated,anon,service_role,owner_bypass,owner_plain; GRANT ALL ON public.application_events TO owner_bypass,owner_plain,service_role; GRANT INSERT,SELECT ON public.application_events TO authenticated; GRANT USAGE ON SEQUENCE public.application_events_id_seq TO owner_bypass,owner_plain;");
+ await must("CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE owner_bypass NOLOGIN BYPASSRLS; CREATE ROLE owner_plain NOLOGIN; CREATE TABLE public.application_events(id serial primary key,application_id int,event_type text); ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY; CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true); GRANT USAGE ON SCHEMA public TO authenticated,anon,service_role,owner_bypass,owner_plain; GRANT ALL ON public.application_events TO owner_bypass,owner_plain,service_role; GRANT USAGE ON SEQUENCE public.application_events_id_seq TO owner_bypass,owner_plain;");
  for(const [name,types,definer] of sigs){
   const security=definer?'SECURITY DEFINER SET search_path=public,pg_temp':'SECURITY INVOKER';
   await must('CREATE FUNCTION '+sig(name)+' RETURNS jsonb LANGUAGE plpgsql '+security+" AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig(name)+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig(name)+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig(name)+" TO "+(definer?'authenticated':'service_role')+";");
  }
- assert(await run(check)===null,'pre-drop schema passes');
+ assert(await run(check)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
+ await must('CREATE POLICY unexpected_client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);');
+ const extraPolicyError=await run(check);
+ assert(!!extraPolicyError&&/client INSERT policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
+ await must('DROP POLICY unexpected_client_insert ON public.application_events; GRANT INSERT ON public.application_events TO authenticated;');
+ const preGrantError=await run(check);
+ assert(!!preGrantError&&/authenticated still has INSERT/.test(preGrantError),'preflight catches a client INSERT grant before the legacy drop');
+ await must('REVOKE INSERT ON public.application_events FROM authenticated;');
  await must('DROP FUNCTION '+sig('apply_to_employer_job')+'; DROP FUNCTION '+sig('set_application_archived')+';');
  assert(await run(check)===null,'pre-drop check tolerates later writers not installed yet');
  await must("CREATE FUNCTION public.apply_to_employer_job(a0 uuid,a1 text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('apply_to_employer_job')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('apply_to_employer_job')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('apply_to_employer_job')+" TO authenticated; CREATE FUNCTION public.set_application_archived(a0 text,a1 boolean) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('set_application_archived')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('set_application_archived')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('set_application_archived')+" TO authenticated;");
