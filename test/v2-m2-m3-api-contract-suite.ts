@@ -87,6 +87,8 @@ const employerUi = read('src/app/employer/companies/[id]/applications/page.tsx')
 const employerInboxRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 check(!employerInboxRoute.includes('resume_file_url') && !employerUi.includes('resume_file_url'), 'employer application response and UI do not expose raw resume URLs');
 check(employerUi.includes('window.confirm') && employerUi.includes('final hiring decision'), 'hire and rejection decisions require explicit confirmation');
+check(employerUi.includes('CLOSED_STATUSES.has(row.status)') && employerUi.includes('!CLOSED_STATUSES.has(row.status)'), 'closed employer applications hide decision controls and reason selectors');
+check(employerUi.includes('min-h-11 items-center px-2'), 'employer profile links meet a 44px minimum tap target');
 check(employerUi.includes('expectedStatus: row.status'), 'employer UI sends the status it actually observed');
 check(employerUi.includes('reasonRequired && !reasonCode') && !employerUi.includes("reasons[row.id] || 'insufficient_evidence'"), 'employer UI requires an explicit reason when required and never fabricates a default');
 check(employerUi.includes('...(reasonRequired ? { reasonCode } : {})'), 'employer UI sends a reason only for transitions that require one');

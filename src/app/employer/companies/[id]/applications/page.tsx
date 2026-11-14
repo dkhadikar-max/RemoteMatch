@@ -14,6 +14,7 @@ type Applicant = {
 };
 
 const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'];
+const CLOSED_STATUSES = new Set(['rejected', 'hired', 'withdrawn', 'offer_declined']);
 const REASONS = [
   ['strong_experience', 'Strong relevant experience'],
   ['relevant_achievements', 'Relevant achievements'],
@@ -51,14 +52,6 @@ export default function EmployerApplicationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const updateStatus = async (row: Applicant, status: string) => {
-    const confirmation =
-      status === 'hired'
-        ? `Mark ${row.profiles?.full_name || 'this candidate'} as hired? This records a final hiring decision.`
-        : status === 'rejected'
-          ? `Reject ${row.profiles?.full_name || 'this candidate'}? The selected decision reason will be recorded in the audit history.`
-          : null;
-    if (confirmation && !window.confirm(confirmation)) return;
-
     const reasonCode = reasons[row.id];
     const reasonRequired =
       status === 'rejected' ||
@@ -68,6 +61,14 @@ export default function EmployerApplicationsPage() {
       setError('Select a decision reason before making this transition.');
       return;
     }
+    const confirmation =
+      status === 'hired'
+        ? `Mark ${row.profiles?.full_name || 'this candidate'} as hired? This records a final hiring decision.`
+        : status === 'rejected'
+          ? `Reject ${row.profiles?.full_name || 'this candidate'}? The selected decision reason will be recorded in the audit history.`
+          : null;
+    if (confirmation && !window.confirm(confirmation)) return;
+
     setBusy(row.id); setError('');
     try {
       const response = await fetch('/api/employer/companies/' + id + '/applications', {
@@ -109,24 +110,32 @@ export default function EmployerApplicationsPage() {
             <p className="text-xs text-[var(--muted)]">{row.profiles?.email || 'Email unavailable'} · {row.employer_job_submissions?.title || 'Job'}</p>
             <p className="text-xs text-[var(--muted)]">Applied {new Date(row.submitted_at).toLocaleString()}</p>
           </div>
-          <select aria-label="Application status" className="soft-input px-3 py-2 text-sm" value={row.status}
-            disabled={busy === row.id} onChange={e => updateStatus(row, e.target.value)}>
-            {[row.status, ...STATUSES.filter(status => status !== row.status)].map(status => <option key={status} value={status}>{status.replace('_',' ')}</option>)}
-          </select>
+          {CLOSED_STATUSES.has(row.status) ? (
+            <span className="inline-flex min-h-11 items-center rounded-lg border border-[var(--line)] px-3 text-sm font-semibold text-[var(--muted)]">
+              {row.status.replace(/_/g, ' ')}
+            </span>
+          ) : (
+            <select aria-label="Application status" className="soft-input min-h-11 px-3 py-2 text-sm" value={row.status}
+              disabled={busy === row.id} onChange={e => updateStatus(row, e.target.value)}>
+              {[row.status, ...STATUSES.filter(status => status !== row.status)].map(status => <option key={status} value={status}>{status.replace(/_/g, ' ')}</option>)}
+            </select>
+          )}
         </div>
-        <label className="block text-xs text-[var(--muted)]">Decision reason
-          <select aria-label="Decision reason" className="soft-input mt-1 block w-full px-3 py-2 text-sm"
-            value={reasons[row.id] || ''}
-            disabled={busy === row.id}
-            onChange={e => setReasons(current => ({ ...current, [row.id]: e.target.value }))}>
-            <option value="">Choose only when applicable</option>
-            {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-          </select>
-        </label>
+        {!CLOSED_STATUSES.has(row.status) && (
+          <label className="block text-xs text-[var(--muted)]">Decision reason
+            <select aria-label="Decision reason" className="soft-input mt-1 block min-h-11 w-full px-3 py-2 text-sm"
+              value={reasons[row.id] || ''}
+              disabled={busy === row.id}
+              onChange={e => setReasons(current => ({ ...current, [row.id]: e.target.value }))}>
+              <option value="">Choose only when applicable</option>
+              {REASONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+        )}
         {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
         <div className="flex flex-wrap gap-4 text-sm">
           {row.profiles?.linkedin_url && <a className="text-[var(--red)] underline" href={row.profiles.linkedin_url} target="_blank" rel="noreferrer">LinkedIn profile</a>}
-          {row.profiles?.email && <a className="text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
+          {row.profiles?.email && <a className="inline-flex min-h-11 items-center px-2 text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
         </div>
       </article>)}</div>}
   </main>;

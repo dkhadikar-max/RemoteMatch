@@ -23,7 +23,9 @@ export type ApplicationStatus =
   | 'rejected'
   | 'offer'
   | 'withdrawn'
-  | 'archived';
+  | 'archived'
+  | 'offer_declined'
+  | 'hired';
 
 export type FeedbackOutcome =
   | 'applied'
