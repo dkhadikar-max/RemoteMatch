@@ -1,3 +1,4 @@
+BEGIN READ ONLY;
 -- V2 M4 preflight AFTER the lifecycle policy-drop migration. READ ONLY.
 -- events_insert_own must be absent; no client INSERT policy or privilege may remain.
 
@@ -138,3 +139,4 @@ BEGIN
     CASE WHEN v_post THEN 'client INSERT policy already dropped' ELSE 'client INSERT policy not yet dropped' END;
 END
 $m4$;
+COMMIT;
