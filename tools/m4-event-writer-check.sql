@@ -12,6 +12,16 @@ DECLARE
 BEGIN
   v_post := __M4_POST_DROP__;
 
+  IF v_post AND EXISTS (
+    SELECT 1 FROM pg_policy WHERE polrelid='public.application_events'::regclass AND polname='events_insert_own'
+  ) THEN
+    v_problems := v_problems || 'legacy events_insert_own policy still exists after the policy-drop migration'::text;
+  ELSIF NOT v_post AND NOT EXISTS (
+    SELECT 1 FROM pg_policy WHERE polrelid='public.application_events'::regclass AND polname='events_insert_own'
+  ) THEN
+    v_problems := v_problems || 'pre-drop phase expected the legacy events_insert_own policy, but it is absent'::text;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role' AND (rolbypassrls OR rolsuper)) THEN
     v_problems := v_problems || 'service_role is missing or does not bypass row-level security'::text;
   ELSE
