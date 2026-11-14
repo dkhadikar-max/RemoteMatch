@@ -71,7 +71,9 @@ export async function newVerifiedSession(): Promise<TestSession> {
   const client = anonKeyClient();
   const { data: signedIn, error: signInError } = await client.auth.signInWithPassword({ email, password });
   if (signInError || !signedIn.session) {
-    throw new Error(`Could not sign in newly-created verified test user: ${signInError?.message}`);
+    const { error: cleanupError } = await admin.auth.admin.deleteUser(created.user.id);
+    const cleanupDetail = cleanupError ? `; cleanup also failed for user ${created.user.id}: ${cleanupError.message}` : '; partially provisioned user was deleted';
+    throw new Error(`Could not sign in newly-created verified test user ${created.user.id}: ${signInError?.message}${cleanupDetail}`);
   }
 
   return { client, userId: created.user.id, email, password, token: signedIn.session.access_token };
