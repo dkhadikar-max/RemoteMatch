@@ -65,6 +65,7 @@ jobs:
             test/job-filter-data-quality-suite.ts
             test/ttl-cache-stale-invalidation-suite.ts
             test/sitemap-read-retry-suite.ts
+            test/v2-m4-event-writer-suite.ts
           )
           ran_any=false
           for f in "${suites[@]}"; do
@@ -182,6 +183,9 @@ jobs:
       # directory checks so employer coverage is reported even if that suite fails.
       - name: Live integration -- employer publication/suspension race regression
         run: npx tsx test/employer-publish-suspension-race-isolated-suite.ts
+
+      - name: Live integration -- candidate event writers after the policy drop (M4)
+        run: npx tsx test/v2-m4-event-writers-live-suite.ts
 
       - name: ChatGPT public job search and details API integration
         run: npx tsx test/chatgpt-public-api-suite.ts
