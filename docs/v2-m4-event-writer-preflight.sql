@@ -1,25 +1,19 @@
--- V2 M4 event-writer preflight. READ ONLY; not run against any project by this patch.
--- Run before and after lifecycle migrations on an explicitly approved target.
--- This block is byte-identical to the M4 tripwire migration. The operator does not need BYPASSRLS.
+-- V2 M4 preflight AFTER the lifecycle policy-drop migration. READ ONLY; not run by this patch.
+-- Run only against an explicitly approved target.
 
 SELECT p.polname AS policy,p.polcmd AS command,
  coalesce(array_to_string(ARRAY(SELECT CASE WHEN o=0 THEN 'PUBLIC' ELSE (SELECT rolname FROM pg_roles WHERE oid=o) END FROM unnest(p.polroles) o),','),'') AS roles
 FROM pg_policy p WHERE p.polrelid='public.application_events'::regclass ORDER BY 1;
 
-SELECT c.relrowsecurity AS rls_enabled,c.relforcerowsecurity AS rls_forced
-FROM pg_class c WHERE c.oid='public.application_events'::regclass;
+SELECT c.relrowsecurity AS rls_enabled,c.relforcerowsecurity AS rls_forced FROM pg_class c WHERE c.oid='public.application_events'::regclass;
 
-SELECT rolname,rolbypassrls,rolsuper FROM pg_roles
-WHERE rolname IN (current_user,'postgres','service_role','authenticated','anon') ORDER BY 1;
+SELECT rolname,rolbypassrls,rolsuper FROM pg_roles WHERE rolname IN (current_user,'postgres','service_role','authenticated','anon') ORDER BY 1;
 
-SELECT p.oid::regprocedure AS writer,p.prosecdef AS security_definer,r.rolname AS owner,
- (r.rolbypassrls OR r.rolsuper) AS owner_bypasses_rls,p.proconfig AS function_config
-FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
-WHERE p.pronamespace='public'::regnamespace
- AND p.proname IN ('record_application_feedback','update_application_notes','transition_application_status',
- 'set_application_archived','apply_to_employer_job','transition_employer_application') ORDER BY 1;
+SELECT p.oid::regprocedure AS writer,p.prosecdef AS security_definer,r.rolname AS owner,(r.rolbypassrls OR r.rolsuper) AS owner_bypasses_rls,p.proconfig AS function_config
+FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application') ORDER BY 1;
 
--- Raises one exception containing every detected problem; performs no writes.
+
+-- Post-drop phase; same canonical check logic as the before script and tripwire.
 DO $m4$
 DECLARE
   v_post boolean;
@@ -30,7 +24,7 @@ DECLARE
   v_owner_bypass boolean;
   v_cfg text[];
 BEGIN
-  v_post := NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='public.application_events'::regclass AND polname='events_insert_own');
+  v_post := true;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role' AND (rolbypassrls OR rolsuper)) THEN
     v_problems := v_problems || 'service_role is missing or does not bypass row-level security'::text;
