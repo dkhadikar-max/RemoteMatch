@@ -1,7 +1,7 @@
 # M4 event-writer dependency guard
 
-Adds a read-only preflight, additive migration tripwire, PGlite regression suite, and isolated live
-HTTP suite. Authoring did not connect to or mutate any Supabase project.
+Adds read-only phase-specific preflights, an additive migration tripwire, a PGlite regression suite,
+and an isolated live HTTP suite. Authoring did not connect to or mutate any Supabase project.
 
 ## Migration order
 The current PR head contains M3 idempotency migration 20261114190000. M4 is timestamped
@@ -14,11 +14,16 @@ bypassing RLS. transition_employer_application is SECURITY INVOKER, must be exec
 service_role, and must not be executable by anon or authenticated.
 
 ## Components
-- docs/v2-m4-event-writer-preflight.sql: read-only diagnostics/check. Run before and after lifecycle
-  rollout on each explicitly approved target. The operator itself does not need BYPASSRLS.
-- supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql: non-mutating tripwire using
-  the same DO block.
-- tools/m4-event-writer-check.sql is the canonical block; tools/gen_m4.py regenerates both SQL files.
+- docs/v2-m4-event-writer-preflight-before.sql: read-only preflight before the policy-drop migration.
+  It allows only the legacy events_insert_own policy that the migration is about to remove; it
+  rejects every other client INSERT policy and any client INSERT privilege.
+- docs/v2-m4-event-writer-preflight.sql: read-only postflight. It requires events_insert_own to be
+  absent and rejects every client INSERT policy/privilege, including a recreated policy with the
+  same name. Use this after migration rollout.
+- supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql: non-mutating post-drop
+  tripwire using the same post-drop check as the after script.
+- tools/m4-event-writer-check.sql is the canonical block; tools/gen_m4.py generates both preflights
+  and the migration. The before/after mode is explicit, not inferred from policy presence.
 - test/v2-m4-event-writer-suite.ts: source checks and PGlite execution for owner/definer drift,
   missing writers, inherited-role policies/grants, client/PUBLIC policies, forced RLS, and the
   service-role execution boundary.
