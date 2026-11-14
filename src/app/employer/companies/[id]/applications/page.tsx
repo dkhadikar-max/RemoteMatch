@@ -14,7 +14,7 @@ type Applicant = {
 };
 
 const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'];
-const CLOSED_STATUSES = new Set(['rejected', 'hired', 'withdrawn', 'offer_declined']);
+const CLOSED_STATUSES = new Set(['hired', 'withdrawn', 'offer_declined']);
 const REASONS = [
   ['strong_experience', 'Strong relevant experience'],
   ['relevant_achievements', 'Relevant achievements'],

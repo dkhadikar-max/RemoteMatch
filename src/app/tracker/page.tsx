@@ -191,7 +191,7 @@ export default function TrackerPage() {
         : activeTab === 'interview'
         ? !app.archivedAt && app.status === 'interview'
         : activeTab === 'offer'
-        ? !app.archivedAt && app.status === 'offer'
+        ? !app.archivedAt && (app.status === 'offer' || app.status === 'hired')
         : Boolean(app.archivedAt) || app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'offer_declined' || app.status === 'archived';
 
     const opp = opportunitiesById[app.opportunityId];
