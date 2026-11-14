@@ -1,5 +1,6 @@
--- V2 M4 preflight BEFORE the lifecycle policy-drop migration. READ ONLY; not run by this patch.
--- Run only against an explicitly approved target.
+-- V2 M4 preflight BEFORE the lifecycle policy-drop migration. READ ONLY.
+-- The legacy events_insert_own policy is expected here; every other client INSERT path is rejected.
+-- This phase tolerates lifecycle writer functions that have not been installed yet.
 
 SELECT p.polname AS policy,p.polcmd AS command,
  coalesce(array_to_string(ARRAY(SELECT CASE WHEN o=0 THEN 'PUBLIC' ELSE (SELECT rolname FROM pg_roles WHERE oid=o) END FROM unnest(p.polroles) o),','),'') AS roles
@@ -12,8 +13,7 @@ SELECT rolname,rolbypassrls,rolsuper FROM pg_roles WHERE rolname IN (current_use
 SELECT p.oid::regprocedure AS writer,p.prosecdef AS security_definer,r.rolname AS owner,(r.rolbypassrls OR r.rolsuper) AS owner_bypasses_rls,p.proconfig AS function_config
 FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner WHERE p.pronamespace='public'::regnamespace AND p.proname IN ('record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application') ORDER BY 1;
 
-
--- Pre-drop phase; legacy events_insert_own is expected and is excluded from client-policy failure.
+-- Pre-drop phase; same canonical check logic as the after script and tripwire.
 DO $m4$
 DECLARE
   v_post boolean;
