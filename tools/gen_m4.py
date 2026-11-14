@@ -23,7 +23,7 @@ report = (
 migration = (
     "-- M4: additive, non-mutating post-drop tripwire. Ordered after M3 migration 20261114190000.\n"
     "-- It requires events_insert_own to be absent and validates all six writer boundaries.\n\n"
-    + block(True) + "\nCOMMIT;\n"
+    + block(True) + "\n"
 )
 before = (
     "BEGIN READ ONLY;\n"
@@ -38,7 +38,7 @@ after = (
     "-- V2 M4 preflight AFTER the lifecycle policy-drop migration. READ ONLY.\n"
     "-- events_insert_own must be absent; no client INSERT policy or privilege may remain.\n\n"
     + report + "-- Post-drop phase; same canonical check logic as the before script and tripwire.\n"
-    + block(True) + "\n"
+    + block(True) + "\nCOMMIT;\n"
 )
 (root / "supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql").write_text(migration, encoding="utf-8")
 (root / "docs/v2-m4-event-writer-preflight-before.sql").write_text(before, encoding="utf-8")
