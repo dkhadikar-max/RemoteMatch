@@ -53,7 +53,7 @@ async function main(){
   const security=definer?'SECURITY DEFINER SET search_path=public,pg_temp':'SECURITY INVOKER SET search_path=public,pg_temp';
   await must('CREATE FUNCTION '+sig(name)+' RETURNS jsonb LANGUAGE plpgsql '+security+" AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig(name)+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig(name)+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig(name)+" TO "+(definer?'authenticated':'service_role')+";");
  }
- assert(await run(check)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
+ assert(await run(beforeCheck)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
  await must('CREATE POLICY unexpected_client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);');
  const extraPolicyError=await run(beforeCheck);
  assert(!!extraPolicyError&&/client INSERT policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
