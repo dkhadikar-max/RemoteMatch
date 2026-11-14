@@ -46,7 +46,6 @@ async function main(){
  ['transition_application_status','text,text,text,text',true],['set_application_archived','text,boolean',true],
  ['apply_to_employer_job','uuid,text',true],['transition_employer_application','uuid,uuid,uuid,text,text,text,text',false]
  ];
- const args=(types:string)=>types.split(',').map((t,i)=>'a'+i+' '+t).join(', ');
  const sig=(name:string)=>{const x=sigs.find(x=>x[0]===name)!;return 'public.'+name+'('+x[1]+')'};
  await must("CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE owner_bypass NOLOGIN BYPASSRLS; CREATE ROLE owner_plain NOLOGIN; CREATE TABLE public.application_events(id serial primary key,application_id int,event_type text); ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY; CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true); GRANT USAGE ON SCHEMA public TO authenticated,anon,service_role,owner_bypass,owner_plain; GRANT ALL ON public.application_events TO owner_bypass,owner_plain,service_role; GRANT USAGE ON SEQUENCE public.application_events_id_seq TO owner_bypass,owner_plain;");
  for(const [name,types,definer] of sigs){
@@ -97,6 +96,7 @@ async function main(){
  await expect('detects authenticated INSERT privilege','GRANT INSERT ON public.application_events TO authenticated;','REVOKE INSERT ON public.application_events FROM authenticated;',/authenticated still has INSERT/);
  await expect('detects anon INSERT privilege','GRANT INSERT ON public.application_events TO anon;','REVOKE INSERT ON public.application_events FROM anon;',/anon still has INSERT/);
  await expect('detects authenticated INSERT policy','CREATE POLICY client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY client_insert ON public.application_events;',/client INSERT policy exists/);
+ await expect('detects the legacy policy recreated after the migration','CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY events_insert_own ON public.application_events;',/client INSERT policy exists/);
  await expect('detects PUBLIC FOR ALL policy','CREATE POLICY public_all ON public.application_events FOR ALL TO PUBLIC USING(true) WITH CHECK(true);','DROP POLICY public_all ON public.application_events;',/client INSERT policy exists/);
  await must('CREATE ROLE client_parent NOLOGIN; GRANT client_parent TO authenticated;');
  await expect('detects inherited-role INSERT policy','CREATE POLICY parent_insert ON public.application_events FOR INSERT TO client_parent WITH CHECK(true);','DROP POLICY parent_insert ON public.application_events;',/inherited roles/);
