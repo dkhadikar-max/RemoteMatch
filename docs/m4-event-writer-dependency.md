@@ -23,10 +23,11 @@ service_role, and must not be executable by anon or authenticated.
 - supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql: non-mutating post-drop
   tripwire using the same post-drop check as the after script.
 - tools/m4-event-writer-check.sql is the canonical block; tools/gen_m4.py generates both preflights
-  and the migration. The before/after mode is explicit, not inferred from policy presence.
-- test/v2-m4-event-writer-suite.ts: source checks and PGlite execution for owner/definer drift,
-  missing writers, inherited-role policies/grants, client/PUBLIC policies, forced RLS, and the
-  service-role execution boundary.
+  and the migration. The before/after mode is explicit, not inferred from policy presence. Each script rejects being run
+against the opposite phase, and the post-drop check catches the legacy policy even if it is recreated.
+- test/v2-m4-event-writer-suite.ts: source checks and PGlite execution for owner/definer drift, writer-owner table/schema privileges, public-first search_path, missing
+  writers, inherited-role policies/grants, client/PUBLIC policies, forced RLS, and the service-role
+  execution boundary.
 - test/v2-m4-event-writers-live-suite.ts: real verified users and HTTP routes against only isolated
   project xyahktsgdigutxartafb. It tests notes, feedback, status, direct INSERT denial, same-
   opportunity cross-user isolation, and cleanup.
