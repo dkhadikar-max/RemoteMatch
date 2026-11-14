@@ -8,7 +8,7 @@ DECLARE
   v_owner_bypass boolean;
   v_cfg text[];
 BEGIN
-  v_post := NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='public.application_events'::regclass AND polname='events_insert_own');
+  v_post := __M4_POST_DROP__;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role' AND (rolbypassrls OR rolsuper)) THEN
     v_problems := v_problems || 'service_role is missing or does not bypass row-level security'::text;
