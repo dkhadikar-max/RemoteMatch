@@ -18,6 +18,8 @@ assert(beforeCheck.replace('v_post := false','v_post := true')===check,'prefligh
 assert(canonical.replace('__M4_POST_DROP__','true').trim()===check.trim(),'generated post-drop block matches the canonical source');
 assert(check.includes('v_post OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
 assert(check.includes('relforcerowsecurity')&&check.includes('pg_has_role'),'check enforces FORCE RLS and inherited policy membership');
+assert(check.includes('has_table_privilege')&&check.includes('has_schema_privilege'),'check verifies writer table and schema privileges');
+assert(check.includes('must remain SECURITY INVOKER')&&check.includes('search_path=public(,|$)'),'employer RPC remains invoker with public-first search_path');
 assert(check.includes("v_post OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
 assert(!check.includes('current_user'),'read-only operator is not required to bypass RLS');
 const writers=['record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application'];
@@ -37,7 +39,7 @@ async function main(){
  const sig=(name:string)=>{const x=sigs.find(x=>x[0]===name)!;return 'public.'+name+'('+x[1]+')'};
  await must("CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE owner_bypass NOLOGIN BYPASSRLS; CREATE ROLE owner_plain NOLOGIN; CREATE TABLE public.application_events(id serial primary key,application_id int,event_type text); ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY; CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true); GRANT USAGE ON SCHEMA public TO authenticated,anon,service_role,owner_bypass,owner_plain; GRANT ALL ON public.application_events TO owner_bypass,owner_plain,service_role; GRANT USAGE ON SEQUENCE public.application_events_id_seq TO owner_bypass,owner_plain;");
  for(const [name,types,definer] of sigs){
-  const security=definer?'SECURITY DEFINER SET search_path=public,pg_temp':'SECURITY INVOKER';
+  const security=definer?'SECURITY DEFINER SET search_path=public,pg_temp':'SECURITY INVOKER SET search_path=public,pg_temp';
   await must('CREATE FUNCTION '+sig(name)+' RETURNS jsonb LANGUAGE plpgsql '+security+" AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig(name)+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig(name)+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig(name)+" TO "+(definer?'authenticated':'service_role')+";");
  }
  assert(await run(check)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
@@ -70,6 +72,13 @@ async function main(){
   await must(mutate);const e=await run(check);await must(revert);assert(!!e&&pattern.test(e),label);
  };
  await expect('detects definer owner without BYPASSRLS','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_plain;','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_bypass;',/update_application_notes.*does not bypass/);
+ await expect('detects definer owner without table INSERT','REVOKE INSERT ON public.application_events FROM owner_bypass;','GRANT INSERT ON public.application_events TO owner_bypass;',/owner lacks INSERT/);
+ await expect('detects definer owner without schema USAGE','REVOKE USAGE ON SCHEMA public FROM owner_bypass;','GRANT USAGE ON SCHEMA public TO owner_bypass;',/owner lacks USAGE/);
+ await expect('detects non-public-first search_path','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=pg_temp,public;','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
+ await expect('detects service_role without table INSERT','REVOKE INSERT ON public.application_events FROM service_role;','GRANT INSERT ON public.application_events TO service_role;',/service_role lacks INSERT/);
+ await expect('detects service_role without schema USAGE','REVOKE USAGE ON SCHEMA public FROM service_role;','GRANT USAGE ON SCHEMA public TO service_role;',/service_role lacks USAGE/);
+ await expect('detects employer function security-definer drift','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY DEFINER;','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY INVOKER;',/must remain SECURITY INVOKER/);
+ await expect('detects employer function without pinned search_path','ALTER FUNCTION '+sig('transition_employer_application')+' RESET search_path;','ALTER FUNCTION '+sig('transition_employer_application')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
  await expect('detects SECURITY INVOKER drift','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY INVOKER;','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY DEFINER;',/transition_application_status.*not SECURITY DEFINER/);
  await expect('detects missing writer','ALTER FUNCTION '+sig('update_application_notes')+' RENAME TO notes_missing;','ALTER FUNCTION public.notes_missing(text,text) RENAME TO update_application_notes;',/update_application_notes.*does not exist/);
  await expect('detects disabled RLS','ALTER TABLE public.application_events DISABLE ROW LEVEL SECURITY;','ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY;',/not enabled and forced/);
