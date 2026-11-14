@@ -23,16 +23,18 @@ report = (
 migration = (
     "-- M4: additive, non-mutating post-drop tripwire. Ordered after M3 migration 20261114190000.\n"
     "-- It requires events_insert_own to be absent and validates all six writer boundaries.\n\n"
-    + block(True) + "\n"
+    + block(True) + "\nCOMMIT;\n"
 )
 before = (
+    "BEGIN READ ONLY;\n"
     "-- V2 M4 preflight BEFORE the lifecycle policy-drop migration. READ ONLY.\n"
     "-- The legacy events_insert_own policy is expected here; every other client INSERT path is rejected.\n"
     "-- This phase tolerates lifecycle writer functions that have not been installed yet.\n\n"
     + report + "-- Pre-drop phase; same canonical check logic as the after script and tripwire.\n"
-    + block(False) + "\n"
+    + block(False) + "\nCOMMIT;\n"
 )
 after = (
+    "BEGIN READ ONLY;\n"
     "-- V2 M4 preflight AFTER the lifecycle policy-drop migration. READ ONLY.\n"
     "-- events_insert_own must be absent; no client INSERT policy or privilege may remain.\n\n"
     + report + "-- Post-drop phase; same canonical check logic as the before script and tripwire.\n"
