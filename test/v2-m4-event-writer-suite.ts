@@ -24,6 +24,17 @@ assert(check.includes("v_post OR p.polname <> 'events_insert_own'")&&!check.incl
 assert(!check.includes('current_user'),'read-only operator is not required to bypass RLS');
 const writers=['record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application'];
 assert(writers.every(n=>check.includes('public.'+n+'(')),'all six known writer signatures are checked');
+const latestDefinitions=new Map<string,string>();
+for(const file of files){
+ const sql=read('supabase/migrations/'+file);
+ const re=/CREATE OR REPLACE FUNCTION public\\.(\\w+)\\s*\\([\\s\\S]*?\\)\\s*RETURNS[\\s\\S]*?AS \\$\\$([\\s\\S]*?)\\$\\$;/g;
+ let match:RegExpExecArray|null;
+ while((match=re.exec(sql)))latestDefinitions.set(match[1],match[2]);
+}
+const actualWriters=Array.from(latestDefinitions).filter(([,body])=>/INSERT\\s+INTO\\s+(?:public\\.)?application_events/i.test(body)).map(([name])=>name).sort();
+assert(JSON.stringify(actualWriters)===JSON.stringify(writers.slice().sort()),'canonical writer list matches every current migration function that inserts application_events');
+const synthetic=new Map(latestDefinitions);synthetic.set('new_unlisted_writer','BEGIN INSERT INTO public.application_events(application_id) VALUES (1); END;');
+assert(Array.from(synthetic).filter(([,body])=>/INSERT\\s+INTO\\s+(?:public\\.)?application_events/i.test(body)).length===actualWriters.length+1,'negative control detects a newly added event writer');
 assert(/DROP POLICY IF EXISTS events_insert_own/.test(read('supabase/migrations/20261112190030_v2_p0_m3_event_writer_rls_and_fk_indexes.sql')),'the M3 policy drop is the guarded change');
 
 async function main(){
