@@ -129,4 +129,3 @@ BEGIN
     CASE WHEN v_post THEN 'client INSERT policy already dropped' ELSE 'client INSERT policy not yet dropped' END;
 END
 $m4$;
-
