@@ -22,9 +22,11 @@ BEGIN
   END IF;
 
   -- Includes policies granted to roles inherited by authenticated/anon and PUBLIC policies.
-  IF v_post AND EXISTS (
+  IF EXISTS (
     SELECT 1 FROM pg_policy p CROSS JOIN LATERAL unnest(p.polroles) AS policy_role(role_oid)
-    WHERE p.polrelid='public.application_events'::regclass AND p.polcmd IN ('a','*')
+    WHERE p.polrelid='public.application_events'::regclass
+      AND (v_post OR p.polname <> 'events_insert_own')
+      AND p.polcmd IN ('a','*')
       AND (
         policy_role.role_oid=0
         OR (policy_role.role_oid<>0 AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated')
@@ -36,15 +38,13 @@ BEGIN
     v_problems := v_problems || 'a client INSERT policy exists on application_events (including inherited roles)'::text;
   END IF;
 
-  IF v_post THEN
-    IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated')
-       AND has_table_privilege('authenticated','public.application_events','INSERT') THEN
-      v_problems := v_problems || 'authenticated still has INSERT on application_events'::text;
-    END IF;
-    IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon')
-       AND has_table_privilege('anon','public.application_events','INSERT') THEN
-      v_problems := v_problems || 'anon still has INSERT on application_events'::text;
-    END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated')
+     AND has_table_privilege('authenticated','public.application_events','INSERT') THEN
+    v_problems := v_problems || 'authenticated still has INSERT on application_events'::text;
+  END IF;
+  IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon')
+     AND has_table_privilege('anon','public.application_events','INSERT') THEN
+    v_problems := v_problems || 'anon still has INSERT on application_events'::text;
   END IF;
 
   FOREACH v_sig IN ARRAY ARRAY[
