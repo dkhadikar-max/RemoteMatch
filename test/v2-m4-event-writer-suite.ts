@@ -18,6 +18,7 @@ assert(beforeCheck.replace('v_post := false','v_post := true')===check,'prefligh
 assert(canonical.replace('__M4_POST_DROP__','true').trim()===check.trim(),'generated post-drop block matches the canonical source');
 assert(check.includes('v_post OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
 assert(check.includes('relforcerowsecurity')&&check.includes('pg_has_role'),'check enforces FORCE RLS and inherited policy membership');
+assert(check.includes('legacy events_insert_own policy still exists')&&beforeCheck.includes('pre-drop phase expected'),'explicit phases reject being run against the wrong migration state');
 assert(check.includes('has_table_privilege')&&check.includes('has_schema_privilege'),'check verifies writer table and schema privileges');
 assert(check.includes('must remain SECURITY INVOKER')&&check.includes('search_path=public(,|$)'),'employer RPC remains invoker with public-first search_path');
 assert(check.includes("v_post OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
@@ -53,6 +54,8 @@ async function main(){
   await must('CREATE FUNCTION '+sig(name)+' RETURNS jsonb LANGUAGE plpgsql '+security+" AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig(name)+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig(name)+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig(name)+" TO "+(definer?'authenticated':'service_role')+";");
  }
  assert(await run(beforeCheck)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
+ const wrongPostPhase=await run(check);
+ assert(!!wrongPostPhase&&/legacy events_insert_own policy still exists/.test(wrongPostPhase),'post-drop check refuses to run before the legacy policy is dropped');
  await must('CREATE POLICY unexpected_client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);');
  const extraPolicyError=await run(beforeCheck);
  assert(!!extraPolicyError&&/client INSERT policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
@@ -64,6 +67,8 @@ async function main(){
  assert(await run(beforeCheck)===null,'pre-drop check tolerates later writers not installed yet');
  await must("CREATE FUNCTION public.apply_to_employer_job(a0 uuid,a1 text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('apply_to_employer_job')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('apply_to_employer_job')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('apply_to_employer_job')+" TO authenticated; CREATE FUNCTION public.set_application_archived(a0 text,a1 boolean) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('set_application_archived')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('set_application_archived')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('set_application_archived')+" TO authenticated;");
  await must('DROP POLICY events_insert_own ON public.application_events; REVOKE INSERT ON public.application_events FROM authenticated,anon;');
+ const wrongPrePhase=await run(beforeCheck);
+ assert(!!wrongPrePhase&&/pre-drop phase expected/.test(wrongPrePhase),'pre-drop check refuses to run after the legacy policy has been dropped');
  assert(await run('BEGIN READ ONLY; '+check+' COMMIT;')===null,'post-drop check succeeds inside READ ONLY transaction');
 
  // Demonstrate the exact FORCE RLS dependency with real PostgreSQL roles and function owners.
