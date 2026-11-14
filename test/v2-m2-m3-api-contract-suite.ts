@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const root = join(__dirname, '..');
+function suiteIncludesReplayGate() { return readFileSync(join(root, 'test/employer-company-accounts-suite.ts'), 'utf8').includes('CI_V2_M3_REPLAY_BINDING_ENABLED'); }
 let passed = 0;
 let failed = 0;
 
@@ -46,6 +47,8 @@ check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.transition_employer_
 const reviewFixes = read('supabase/migrations/20261113041032_v2_p0_m3_lifecycle_review_fixes.sql');
 const replayBinding = read('supabase/migrations/20261114190000_v2_p0_m3_idempotency_payload_binding.sql');
 check(replayBinding.includes('v_event.previous_state IS DISTINCT FROM p_expected_status') && replayBinding.includes('v_event.reason_code IS DISTINCT FROM p_reason_code'), 'idempotency replay rejects a reused key when expected state or reason differs');
+const workflow = read('.github/workflows/ci.yml');
+check(workflow.includes('CI_V2_M3_REPLAY_BINDING_ENABLED') && suiteIncludesReplayGate(), 'CI exposes an explicit gate for live replay-payload checks after the isolated migration is applied');
 check(reviewFixes.indexOf('FOR UPDATE OF e;') < reviewFixes.indexOf('WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;'), 'employer transition locks the application before checking idempotency for concurrent replay');
 check(reviewFixes.includes('IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN'), 'legacy employer applications transition without requiring a candidate-side link');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.set_application_archived'), 'archive preference RPC is in the migration source');
