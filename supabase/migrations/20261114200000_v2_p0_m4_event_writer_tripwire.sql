@@ -1,5 +1,5 @@
--- M4: additive, non-mutating tripwire. Ordered after M3 migration 20261114190000.
--- Same DO block as the read-only preflight in docs/v2-m4-event-writer-preflight.sql.
+-- M4: additive, non-mutating post-drop tripwire. Ordered after M3 migration 20261114190000.
+-- It requires events_insert_own to be absent and validates all six writer boundaries.
 
 DO $m4$
 DECLARE
@@ -11,7 +11,7 @@ DECLARE
   v_owner_bypass boolean;
   v_cfg text[];
 BEGIN
-  v_post := NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid='public.application_events'::regclass AND polname='events_insert_own');
+  v_post := true;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='service_role' AND (rolbypassrls OR rolsuper)) THEN
     v_problems := v_problems || 'service_role is missing or does not bypass row-level security'::text;
