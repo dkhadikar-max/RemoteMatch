@@ -31,9 +31,9 @@ concurrency:
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, integration/m2-m3-corrections]
   push:
-    branches: [main]
+    branches: [main, integration/m2-m3-corrections]
 
 jobs:
   typecheck-and-unit:
