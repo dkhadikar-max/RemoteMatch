@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(__dirname, '..');
-const migration = readFileSync(join(root, 'supabase/migrations/20261115190000_feed_first_page_query_plan.sql'), 'utf8');
+const migration = readFileSync(join(root, 'supabase/migrations/20261115220000_feed_first_page_query_plan.sql'), 'utf8');
 let passed = 0;
 let failed = 0;
 
