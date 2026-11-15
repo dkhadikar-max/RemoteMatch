@@ -1,4 +1,9 @@
 -- V2 P0 M3 review fixes.
+-- Renamed from 20261113041032 to 20261113120000 (PR #120 review remediation): the
+-- original timestamp sorted before main's already-applied
+-- 20261113090201_lock_company_on_vacancy_publish.sql, which this PR's branch was
+-- never rebased past. No statement in this file changed; only the filename/timestamp
+-- moved so it applies after that migration instead of before it.
 -- This follow-up migration preserves the byte-for-byte source of the already-applied
 -- 20261112185212 migration and hardens its employer lifecycle RPC in place.
 -- Legacy employer applications without candidate_application_id remain auditable
@@ -59,9 +64,14 @@ BEGIN
   FROM public.hiring_decision_events
   WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;
   IF FOUND THEN
+    -- A replay is valid only when every state-changing input matches the
+    -- original request. previous_state captures p_expected_status; comparing
+    -- reason_code prevents a retry from silently changing the audit rationale.
     IF v_event.subject_type <> 'application'
        OR v_event.employer_application_id <> p_application_id
-       OR v_event.new_state <> p_new_status
+       OR v_event.previous_state IS DISTINCT FROM p_expected_status
+       OR v_event.new_state IS DISTINCT FROM p_new_status
+       OR v_event.reason_code IS DISTINCT FROM p_reason_code
        OR v_event.actor_id IS DISTINCT FROM p_actor_id THEN
       RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE='P0001';
     END IF;

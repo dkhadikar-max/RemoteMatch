@@ -158,15 +158,28 @@ BEGIN
   SET status=p_new_status,updated_at=now()
   WHERE id=v_eja.id;
 
-  INSERT INTO public.hiring_decision_events(
-    company_id,submission_id,opportunity_id,candidate_profile_id,
-    subject_type,employer_application_id,actor_id,actor_role,action,
-    reason_code,previous_state,new_state,corrects_event_id,idempotency_key
-  ) VALUES (
-    p_company_id,v_eja.submission_id,v_eja.opportunity_id,v_eja.candidate_profile_id,
-    'application',v_eja.id,p_actor_id,v_actor_role,v_action,
-    p_reason_code,v_eja.status,p_new_status,v_corrects,p_idempotency_key
-  ) RETURNING * INTO v_event;
+  -- The existence check above (lines ~62-76) is an unlocked SELECT scoped to
+  -- (company_id, idempotency_key), not to this application: it only serializes
+  -- against another request for the SAME application (via the FOR UPDATE OF e
+  -- lock above), not against a concurrent request reusing the same key for a
+  -- DIFFERENT application in this company. A genuine race there would hit the
+  -- UNIQUE(company_id, idempotency_key) constraint here as a raw unique_violation.
+  -- Catch it and surface the same idempotency_conflict error the payload-mismatch
+  -- check above already uses, instead of letting it propagate as an unhandled
+  -- 500 (PR #120 review remediation).
+  BEGIN
+    INSERT INTO public.hiring_decision_events(
+      company_id,submission_id,opportunity_id,candidate_profile_id,
+      subject_type,employer_application_id,actor_id,actor_role,action,
+      reason_code,previous_state,new_state,corrects_event_id,idempotency_key
+    ) VALUES (
+      p_company_id,v_eja.submission_id,v_eja.opportunity_id,v_eja.candidate_profile_id,
+      'application',v_eja.id,p_actor_id,v_actor_role,v_action,
+      p_reason_code,v_eja.status,p_new_status,v_corrects,p_idempotency_key
+    ) RETURNING * INTO v_event;
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE='P0001';
+  END;
 
   IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN
     UPDATE public.applications

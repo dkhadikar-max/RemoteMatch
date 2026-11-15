@@ -71,6 +71,14 @@ BEGIN
   SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure;
   IF v_security_definer IS DISTINCT FROM false THEN RAISE EXCEPTION 'employer transition RPC must be SECURITY INVOKER'; END IF;
 
+  -- Same-key replay must bind all state-changing inputs to the original event.
+  SELECT pg_get_functiondef('public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure)
+    INTO v_def;
+  IF v_def NOT LIKE '%v_event.previous_state IS DISTINCT FROM p_expected_status%'
+     OR v_def NOT LIKE '%v_event.reason_code IS DISTINCT FROM p_reason_code%' THEN
+    RAISE EXCEPTION 'employer transition idempotency does not bind expected status and reason';
+  END IF;
+
   -- State-machine characterization.
   IF NOT public.is_valid_linked_application_transition('applied','interview','employer_sync') OR
      NOT public.is_valid_linked_application_transition('interview','offer','employer_sync') OR
@@ -111,7 +119,7 @@ BEGIN
   -- All nine M2/M3 source migrations must be represented in the applied ledger.
   SELECT count(*) INTO v_count FROM supabase_migrations.schema_migrations
   WHERE version IN ('20261112185212','20261112185655','20261112185730',
-    '20261112185902','20261112190030','20261112190152','20261112190248','20261113041032','20261114190000');
+    '20261112185902','20261112190030','20261112190152','20261112190248','20261113120000','20261114190000');
   IF v_count <> 9 THEN RAISE EXCEPTION 'expected nine applied M2/M3 migrations, found %',v_count; END IF;
 END;
 $$;
