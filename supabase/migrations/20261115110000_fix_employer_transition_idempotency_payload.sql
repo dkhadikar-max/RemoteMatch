@@ -4,6 +4,15 @@
 -- This migration safely replaces only the RPC definition; no table/data changes.
 -- Same-key replay must match original expected state and reason as well as the
 -- application, actor, and target state.
+--
+-- Correction (same day): the first version of this migration was built from the
+-- transition_employer_application body as of 20261114190000, one migration before
+-- 20261114220000 (M3: legacy employer applications) landed. Applying it as written
+-- would have silently reverted the legacy-replay and rejection-reconsideration
+-- handling that migration added, on top of (not instead of) fixing the payload
+-- binding. This version carries the full 20261114220000 body forward unchanged,
+-- plus the PR #120 review-remediation unique_violation handling on the INSERT
+-- below, so it is strictly additive over the true latest definition.
 
 CREATE OR REPLACE FUNCTION public.transition_employer_application(
   p_company_id uuid,
@@ -58,13 +67,10 @@ BEGIN
   FROM public.hiring_decision_events
   WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;
   IF FOUND THEN
-    -- A replay is valid only when every state-changing input matches the
-    -- original request. previous_state captures p_expected_status; comparing
-    -- reason_code prevents a retry from silently changing the audit rationale.
     IF v_event.subject_type <> 'application'
        OR v_event.employer_application_id <> p_application_id
        OR v_event.previous_state IS DISTINCT FROM p_expected_status
-       OR v_event.new_state IS DISTINCT FROM p_new_status
+       OR v_event.new_state <> p_new_status
        OR v_event.reason_code IS DISTINCT FROM p_reason_code
        OR v_event.actor_id IS DISTINCT FROM p_actor_id THEN
       RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE='P0001';
@@ -112,7 +118,18 @@ BEGIN
     SELECT id INTO v_corrects FROM public.hiring_decision_events
     WHERE employer_application_id=v_eja.id AND action='application_rejected'
     ORDER BY created_at DESC LIMIT 1;
-    IF v_corrects IS NULL THEN RAISE EXCEPTION 'rejection_event_missing' USING ERRCODE='P0001'; END IF;
+    -- A rejection recorded before the audit trail existed (legacy: no link, no recorded
+    -- submission) has no event to correct. It may still be reconsidered; the reconsideration
+    -- event itself starts the trail and has no corrected event. Anywhere else a missing
+    -- rejection event is a real integrity problem.
+    IF v_corrects IS NULL AND NOT (
+         v_eja.candidate_application_id IS NULL AND NOT EXISTS (
+            SELECT 1 FROM public.hiring_decision_events
+            WHERE employer_application_id=v_eja.id AND action='application_submitted'
+         )
+       ) THEN
+      RAISE EXCEPTION 'rejection_event_missing' USING ERRCODE='P0001';
+    END IF;
   END IF;
 
   v_candidate_status := CASE p_new_status
@@ -156,15 +173,28 @@ BEGIN
   SET status=p_new_status,updated_at=now()
   WHERE id=v_eja.id;
 
-  INSERT INTO public.hiring_decision_events(
-    company_id,submission_id,opportunity_id,candidate_profile_id,
-    subject_type,employer_application_id,actor_id,actor_role,action,
-    reason_code,previous_state,new_state,corrects_event_id,idempotency_key
-  ) VALUES (
-    p_company_id,v_eja.submission_id,v_eja.opportunity_id,v_eja.candidate_profile_id,
-    'application',v_eja.id,p_actor_id,v_actor_role,v_action,
-    p_reason_code,v_eja.status,p_new_status,v_corrects,p_idempotency_key
-  ) RETURNING * INTO v_event;
+  -- The existence check above (lines ~62-76) is an unlocked SELECT scoped to
+  -- (company_id, idempotency_key), not to this application: it only serializes
+  -- against another request for the SAME application (via the FOR UPDATE OF e
+  -- lock above), not against a concurrent request reusing the same key for a
+  -- DIFFERENT application in this company. A genuine race there would hit the
+  -- UNIQUE(company_id, idempotency_key) constraint here as a raw unique_violation.
+  -- Catch it and surface the same idempotency_conflict error the payload-mismatch
+  -- check above already uses, instead of letting it propagate as an unhandled
+  -- 500 (PR #120 review remediation).
+  BEGIN
+    INSERT INTO public.hiring_decision_events(
+      company_id,submission_id,opportunity_id,candidate_profile_id,
+      subject_type,employer_application_id,actor_id,actor_role,action,
+      reason_code,previous_state,new_state,corrects_event_id,idempotency_key
+    ) VALUES (
+      p_company_id,v_eja.submission_id,v_eja.opportunity_id,v_eja.candidate_profile_id,
+      'application',v_eja.id,p_actor_id,v_actor_role,v_action,
+      p_reason_code,v_eja.status,p_new_status,v_corrects,p_idempotency_key
+    ) RETURNING * INTO v_event;
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE='P0001';
+  END;
 
   IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN
     UPDATE public.applications
