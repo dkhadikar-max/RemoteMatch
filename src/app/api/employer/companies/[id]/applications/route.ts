@@ -68,6 +68,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (message.includes('candidate_state_conflict') || message.includes('application_integrity_conflict')) {
       return NextResponse.json({ error: 'application_state_conflict', message: 'The candidate application is not in a compatible state. Refresh before making another decision.' }, { status: 409 });
     }
+    if (message.includes('rejection_event_missing')) {
+      // Only reachable for a linked application whose rejection was never recorded. A legacy
+      // rejection (no link, no audit trail) can be reconsidered, so this is a real data problem.
+      return NextResponse.json({ error: 'rejection_event_missing', message: 'This rejection has no audit record to correct, so it cannot be reconsidered here. Contact support.' }, { status: 409 });
+    }
     if (message.includes('reason_required')) return NextResponse.json({ error: 'reason_required', message: 'Select a reason for this decision.' }, { status: 400 });
     if (message.includes('invalid_reason_code')) return NextResponse.json({ error: 'invalid_reason_code' }, { status: 400 });
     if (message.includes('invalid_transition')) return NextResponse.json({ error: 'invalid_transition', message: 'That status transition is not permitted.' }, { status: 409 });

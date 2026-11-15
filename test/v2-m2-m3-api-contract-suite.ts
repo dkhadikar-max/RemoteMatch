@@ -87,8 +87,8 @@ check(trackerUi.includes('handleArchivePreference') && !trackerUi.includes('if (
 check(trackerUi.includes('const totalCount = applications.length;') && !trackerUi.includes('.length || 12') && !trackerUi.includes('.length || 4') && !trackerUi.includes('.length || 1') && !trackerUi.includes('.length || 3'), 'tracker counts reflect actual rows without placeholder fallbacks');
 check(trackerUi.includes("status === 'offer_declined'") && trackerUi.includes("status === 'hired'"), 'terminal candidate outcomes have explicit tracker labels');
 check(trackerUi.includes("app.status === 'offer' || app.status === 'hired'"), 'hired applications remain grouped with offers');
-check(employerUi.includes("new Set(['hired', 'withdrawn', 'offer_declined'])"), 'rejected applications retain the reason control needed for reconsideration');
 const employerUi = read('src/app/employer/companies/[id]/applications/page.tsx');
+check(employerUi.includes("new Set(['hired', 'withdrawn', 'offer_declined'])"), 'rejected applications retain the reason control needed for reconsideration');
 const employerInboxRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
 check(!employerInboxRoute.includes('resume_file_url') && !employerUi.includes('resume_file_url'), 'employer application response and UI do not expose raw resume URLs');
 check(employerUi.includes('window.confirm') && employerUi.includes('final hiring decision'), 'hire and rejection decisions require explicit confirmation');

@@ -80,7 +80,7 @@ async function main(){
  assert(good===null,'BYPASSRLS definer owner can write after policy drop');
  assert(!!bad&&/row-level security/i.test(bad),'non-BYPASSRLS definer owner is blocked by FORCE RLS');
  assert(!!direct&&/permission denied/i.test(direct),'client direct INSERT is denied');
- const rows=await db.query('SELECT count(*)::int AS n FROM public.application_events');
+ const rows=await db.query<{n:number}>('SELECT count(*)::int AS n FROM public.application_events');
  assert(rows.rows[0].n===1,'only the trusted definer write landed');
  await must('DROP FUNCTION public.demo_bypass(); DROP FUNCTION public.demo_plain();');
 
@@ -89,10 +89,10 @@ async function main(){
  };
  await expect('detects definer owner without BYPASSRLS','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_plain;','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_bypass;',/update_application_notes.*does not bypass/);
  await expect('detects definer owner without table INSERT','REVOKE INSERT ON public.application_events FROM owner_bypass;','GRANT INSERT ON public.application_events TO owner_bypass;',/owner lacks INSERT/);
- await expect('detects definer owner without schema USAGE','REVOKE USAGE ON SCHEMA public FROM owner_bypass;','GRANT USAGE ON SCHEMA public TO owner_bypass;',/owner lacks USAGE/);
+ await expect('detects definer owner without schema USAGE','REVOKE USAGE ON SCHEMA public FROM PUBLIC, owner_bypass;','GRANT USAGE ON SCHEMA public TO PUBLIC, owner_bypass;',/owner lacks USAGE/);
  await expect('detects non-public-first search_path','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=pg_temp,public;','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
  await expect('detects service_role without table INSERT','REVOKE INSERT ON public.application_events FROM service_role;','GRANT INSERT ON public.application_events TO service_role;',/service_role lacks INSERT/);
- await expect('detects service_role without schema USAGE','REVOKE USAGE ON SCHEMA public FROM service_role;','GRANT USAGE ON SCHEMA public TO service_role;',/service_role lacks USAGE/);
+ await expect('detects service_role without schema USAGE','REVOKE USAGE ON SCHEMA public FROM PUBLIC, service_role;','GRANT USAGE ON SCHEMA public TO PUBLIC, service_role;',/service_role lacks USAGE/);
  await expect('detects employer function security-definer drift','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY DEFINER;','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY INVOKER;',/must remain SECURITY INVOKER/);
  await expect('detects employer function without pinned search_path','ALTER FUNCTION '+sig('transition_employer_application')+' RESET search_path;','ALTER FUNCTION '+sig('transition_employer_application')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
  await expect('detects SECURITY INVOKER drift','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY INVOKER;','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY DEFINER;',/transition_application_status.*not SECURITY DEFINER/);
