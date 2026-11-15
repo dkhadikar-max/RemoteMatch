@@ -1,4 +1,4 @@
-import { canonicalSkillKey, isKnownSkillAlias } from "../src/lib/matching/skill-taxonomy";
+import { canonicalSkillKey, isKnownSkillAlias, normalizeSkillLabel } from "../src/lib/matching/skill-taxonomy";
 import { retrieveHybridCandidates } from "../src/lib/matching/hybrid-retrieval";
 import type { CanonicalOpportunity, PersonProfile } from "../src/types/byn";
 
@@ -23,6 +23,7 @@ const profile = {
   intent: { targetRoles: ["Backend Engineer"] },
 } as unknown as Pick<PersonProfile, "skills" | "intent">;
 
+assert(normalizeSkillLabel("  Senior   Node.js Engineer  ") === "senior node.js engineer", "skill normalization collapses repeated whitespace");
 assert(canonicalSkillKey("Node.js") === "nodejs", "Node.js canonicalizes");
 assert(canonicalSkillKey("golang") === "go", "Golang canonicalizes to Go");
 assert(canonicalSkillKey("K8s") === "kubernetes", "K8s canonicalizes");
