@@ -1,4 +1,5 @@
 import { createAsyncTtlCache } from '../src/lib/seo/ttl-cache';
+import { getOrCreateCatalogCache, invalidateCatalogCaches } from '../src/lib/ingestion/catalog-caches';
 
 let passed = 0;
 let failed = 0;
@@ -33,7 +34,9 @@ async function main() {
     }
   );
 
+  assert(!cache.hasValue(), 'a new TTL cache starts without a snapshot');
   assert(await cache.get() === 'snapshot-1', 'initial successful load is cached');
+  assert(cache.hasValue(), 'a successful load exposes a complete cached snapshot');
   now += 101;
   cache.invalidate();
   shouldFail = true;
@@ -78,6 +81,35 @@ async function main() {
   release('possibly-stale-in-flight-read');
   assert(await pending === 'possibly-stale-in-flight-read', 'the in-flight caller receives its completed read');
   assert(await raced.get() === 'after-write' && raceCalls === 3, 'invalidation during refresh forces another read instead of blessing a stale result');
+
+  // A large sitemap snapshot should be served immediately while its refresh runs.
+  let swrNow = 10_000;
+  let releaseRefresh: (value: string) => void = () => { throw new Error('SWR refresh resolver was not registered'); };
+  let swrCalls = 0;
+  const swr = createAsyncTtlCache(
+    async () => {
+      swrCalls++;
+      if (swrCalls === 1) return 'sitemap-v1';
+      return new Promise<string>((resolve) => { releaseRefresh = resolve; });
+    },
+    { ttlMs: 100, maxStaleMs: 1_000, now: () => swrNow, staleWhileRevalidate: true }
+  );
+  assert(await swr.get() === 'sitemap-v1', 'SWR cache obtains its initial complete sitemap');
+  swrNow += 101;
+  assert(await swr.get() === 'sitemap-v1', 'expired sitemap returns last-good XML immediately without waiting for refresh');
+  assert(swrCalls === 2, 'only one background refresh starts for concurrent/stale callers');
+  releaseRefresh('sitemap-v2');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(await swr.get() === 'sitemap-v2', 'subsequent request receives the newly refreshed sitemap');
+
+  // Sync invalidation excludes only the expensive sitemap snapshot.
+  let productInvalidations = 0;
+  let sitemapInvalidations = 0;
+  getOrCreateCatalogCache('test-product-cache', () => ({ invalidate: () => { productInvalidations++; } }));
+  getOrCreateCatalogCache('sitemap-entries', () => ({ invalidate: () => { sitemapInvalidations++; } }));
+  const invalidated = invalidateCatalogCaches(['sitemap-entries']);
+  assert(invalidated.includes('test-product-cache') && productInvalidations === 1, 'catalog sync still invalidates product caches');
+  assert(!invalidated.includes('sitemap-entries') && sitemapInvalidations === 0, 'catalog sync preserves the sitemap snapshot until TTL expiry');
 
   console.log(`\nRESULT: ${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
