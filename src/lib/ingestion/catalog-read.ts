@@ -202,11 +202,11 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  // Full-record batches are sensitive to description size. Production anonymous-role
-  // probes: 1,000 rows timed out; 500 rows took ~1.71s; a later 250-row cursor timed
-  // out; the same cursor completed in ~0.53s at 100 rows. Start at 100 and fall back
-  // to 50/25 on SQLSTATE 57014 so one unusually large page cannot fail the feed.
-  const initialPageSize = 100;
+  // The fresh + translation-safe feed path has a key-first database plan:
+  // it selects bounded keys from the partial covering index before fetching wide rows.
+  // Other catalog callers retain 100-row batches. If a page still hits the 3s
+  // statement timeout, halve it progressively down to 25 rows.
+  const initialPageSize = options?.freshOnly && options?.translationSafe ? 1000 : 100;
   let pageSize = initialPageSize;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
@@ -230,7 +230,7 @@ export async function getActiveOpportunities(
       p_translation_safe: options?.translationSafe ?? false,
     });
     let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
-    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 5; retry++) {
       const failedPageSize = pageSize;
       pageSize = Math.max(25, Math.floor(pageSize / 2));
       console.warn('[catalog-read] keyset-page-retry', JSON.stringify({
@@ -330,44 +330,24 @@ export interface SitemapJobEntry {
  *  with OFFSET. The database RPC runs under the caller's RLS policies. */
 export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
   const entries: SitemapJobEntry[] = [];
-  // Start at 1,000 rows: the exact production 3,000-row cursor timed out,
-  // while representative 1,000-row batches completed under the anon 3s limit.
-  // Adapt downward on SQLSTATE 57014 and retain the reduced size for later pages.
-  const initialPageSize = 1000;
-  const minimumPageSize = 25;
-  const maximumTimeoutRetries = 6; // 1000 -> 500 -> 250 -> 125 -> 62 -> 31 -> 25
-  let pageSize = initialPageSize;
+  // JSONB RPC batches bypass PostgREST's setof max_rows cap while keeping
+  // each response bounded. The covering partial index makes this a narrow
+  // index-only seek. Production 3,000-row probes completed below the 3s
+  // statement timeout; retain the bounded size and record each cursor.
+  const pageSize = 3000;
   let afterSource: string | null = null;
   let afterSourceId: string | null = null;
   let pageIndex = 0;
 
   while (true) {
+    const pageStartedAt = performance.now();
     const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
-    let pageStartedAt = performance.now();
-    let response = await supabase.rpc('get_remote_job_sitemap_page_json', {
+    const { data, error } = await supabase.rpc('get_remote_job_sitemap_page_json', {
       p_after_source: afterSource,
       p_after_source_id: afterSourceId,
       p_page_size: pageSize,
     });
-    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
-
-    for (let retry = 0; response.error?.code === '57014' && pageSize > minimumPageSize && retry < maximumTimeoutRetries; retry++) {
-      const failedPageSize = pageSize;
-      pageSize = Math.max(minimumPageSize, Math.floor(pageSize / 2));
-      console.warn('[sitemap] batch-retry', JSON.stringify({
-        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize,
-        durationMs, code: response.error.code,
-      }));
-      pageStartedAt = performance.now();
-      response = await supabase.rpc('get_remote_job_sitemap_page_json', {
-        p_after_source: afterSource,
-        p_after_source_id: afterSourceId,
-        p_page_size: pageSize,
-      });
-      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
-    }
-
-    const { data, error } = response;
+    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
     if (error) {
       console.error('[sitemap] batch-failed', JSON.stringify({
         page: pageIndex, pageSize, durationMs, cursor,
