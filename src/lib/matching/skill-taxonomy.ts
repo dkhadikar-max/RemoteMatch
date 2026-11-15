@@ -38,7 +38,7 @@ export function normalizeSkillLabel(raw: string): string {
     .toLowerCase()
     .trim()
     .replace(/[’']/g, "")
-    .replace(/\\s+/g, " ");
+    .replace(/\s+/g, " ");
 }
 
 /** Returns a canonical key only for vetted aliases; otherwise normalized text. */
