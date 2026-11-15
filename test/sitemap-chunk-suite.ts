@@ -256,7 +256,7 @@ console.log('\n7. Static guards');
   }
   assert(/sitemap: `\$\{SITE_URL\}\/sitemap\.xml`/.test(strip(read('src/app/robots.ts'))), 'robots.txt still advertises /sitemap.xml (now an index when needed)');
   const catalogRead = strip(read('src/lib/ingestion/catalog-read.ts'));
-  assert(/const pageSize = 3000/.test(catalogRead), 'sitemap cold reads use measured 3,000-row keyset batches');
+  assert(/const initialPageSize = 1000/.test(catalogRead), 'sitemap cold reads use measured 1,000-row keyset batches with adaptive timeout fallback');
   const data = strip(read('src/lib/seo/sitemap-data.ts'));
   const syncRoute = strip(read('src/app/api/opportunities/sync/route.ts'));
   const careerSyncRoute = strip(read('src/app/api/opportunities/sync/career-pages/route.ts'));
