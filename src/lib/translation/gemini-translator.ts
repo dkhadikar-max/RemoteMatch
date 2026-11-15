@@ -136,7 +136,7 @@ async function generateWithGemini(prompt: string): Promise<string> {
       temperature: 0.1, // High determinism for factual translation
     },
   });
-  const res = await model.generateContent(prompt);
+  const res = await model.generateContent(prompt, { timeout: 20_000 });
   return res.response.text();
 }
 
