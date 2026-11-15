@@ -37,40 +37,85 @@ export interface ResumeEligibilityRow {
 export const RESUME_INDEX_TTL_MS = 6 * 60 * 60 * 1000;
 export const RESUME_INDEX_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
-/** Every active listing (RLS), reduced to its eligibility fields. Pages over a
- *  deterministic (source, source_id) order so a concurrent write cannot skip or
- *  repeat rows across the 1,000-row PostgREST pages. */
+/** Every active listing (RLS), reduced to the four eligibility fields plus
+ *  internal composite cursor keys. Uses the unique (source, source_id) index
+ *  for bounded keyset pages; never OFFSET-scans the catalog tail. */
 export async function loadResumeEligibilityRows(supabase: SupabaseClient): Promise<ResumeEligibilityRow[]> {
   const out: ResumeEligibilityRow[] = [];
-  const pageSize = 1000;
-  let from = 0;
+  const initialPageSize = 1000;
+  let pageSize = initialPageSize;
+  let afterSource: string | null = null;
+  let afterSourceId: string | null = null;
   let pageIndex = 0;
+
   while (true) {
-    const pageStartedAt = performance.now();
-    const { data, error } = await supabase
-      .from('opportunities')
-      .select(RESUME_ELIGIBILITY_COLUMNS)
-      .order('source', { ascending: true })
-      .order('source_id', { ascending: true })
-      .range(from, from + pageSize - 1);
-    const durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
+    let pageStartedAt = performance.now();
+    let response = await supabase.rpc('get_resume_eligibility_page', {
+      p_after_source: afterSource,
+      p_after_source_id: afterSourceId,
+      p_page_size: pageSize,
+    });
+    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 5; retry++) {
+      const failedPageSize = pageSize;
+      pageSize = Math.max(25, Math.floor(pageSize / 2));
+      console.warn('[resume] eligibility-page-retry', JSON.stringify({
+        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize, durationMs,
+        code: response.error.code,
+      }));
+      pageStartedAt = performance.now();
+      response = await supabase.rpc('get_resume_eligibility_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+      });
+      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    }
+
+    const { data, error } = response;
     if (error) {
       console.error('[resume] eligibility-page-failed', JSON.stringify({
-        page: pageIndex, offset: from, pageSize, durationMs,
+        page: pageIndex, cursor, pageSize, durationMs,
         code: error.code ?? null, message: error.message,
       }));
       throw new Error(`Could not read resume eligibility rows: ${error.message}`);
     }
+    if (!Array.isArray(data)) {
+      throw new Error('Resume eligibility keyset RPC returned an invalid payload');
+    }
+
+    const rows = data as unknown as Array<{
+      source: string;
+      source_id: string;
+      title: string;
+      remote_type: string | null;
+      employment_type: string | null;
+      required_skills: string[] | null;
+    }>;
     console.info('[resume] eligibility-page', JSON.stringify({
-      page: pageIndex, offset: from, pageSize, rows: data?.length ?? 0, durationMs,
+      page: pageIndex, pageSize, rows: rows.length, durationMs, cursor,
     }));
     pageIndex += 1;
-    if (!data || data.length === 0) break;
-    for (const r of data as unknown as Array<{ title: string; remote_type: string | null; employment_type: string | null; required_skills: string[] | null }>) {
-      out.push({ title: r.title, remoteType: r.remote_type, employmentType: r.employment_type, requiredSkills: r.required_skills ?? [] });
+    if (rows.length === 0) break;
+
+    for (const r of rows) {
+      out.push({
+        title: r.title,
+        remoteType: r.remote_type,
+        employmentType: r.employment_type,
+        requiredSkills: r.required_skills ?? [],
+      });
     }
-    if (data.length < pageSize) break;
-    from += pageSize;
+
+    const last = rows[rows.length - 1];
+    if (!last.source || !last.source_id) {
+      throw new Error('Resume eligibility keyset RPC returned a row without its cursor key');
+    }
+    afterSource = last.source;
+    afterSourceId = last.source_id;
+    if (rows.length < pageSize) break;
   }
   return out;
 }
