@@ -11,6 +11,7 @@ concurrency:
 # check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
 # tests). This workflow is intentionally narrow and generic, so it's safe to
 # land on main or the M2/M3 integration branch independently of product
+# The same branch filters are installed on the target branch so this PR is triggered.
 # migration rollout. It does not hardcode assumptions about merge order.
 #
 #   - Typecheck and self-contained suites run without external credentials.
