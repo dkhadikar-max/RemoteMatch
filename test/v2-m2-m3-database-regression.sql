@@ -71,6 +71,14 @@ BEGIN
   SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure;
   IF v_security_definer IS DISTINCT FROM false THEN RAISE EXCEPTION 'employer transition RPC must be SECURITY INVOKER'; END IF;
 
+  -- Same-key replay must bind all state-changing inputs to the original event.
+  SELECT pg_get_functiondef('public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure)
+    INTO v_def;
+  IF v_def NOT LIKE '%v_event.previous_state IS DISTINCT FROM p_expected_status%'
+     OR v_def NOT LIKE '%v_event.reason_code IS DISTINCT FROM p_reason_code%' THEN
+    RAISE EXCEPTION 'employer transition idempotency does not bind expected status and reason';
+  END IF;
+
   -- State-machine characterization.
   IF NOT public.is_valid_linked_application_transition('applied','interview','employer_sync') OR
      NOT public.is_valid_linked_application_transition('interview','offer','employer_sync') OR
