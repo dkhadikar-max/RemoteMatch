@@ -64,9 +64,14 @@ BEGIN
   FROM public.hiring_decision_events
   WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;
   IF FOUND THEN
+    -- A replay is valid only when every state-changing input matches the
+    -- original request. previous_state captures p_expected_status; comparing
+    -- reason_code prevents a retry from silently changing the audit rationale.
     IF v_event.subject_type <> 'application'
        OR v_event.employer_application_id <> p_application_id
-       OR v_event.new_state <> p_new_status
+       OR v_event.previous_state IS DISTINCT FROM p_expected_status
+       OR v_event.new_state IS DISTINCT FROM p_new_status
+       OR v_event.reason_code IS DISTINCT FROM p_reason_code
        OR v_event.actor_id IS DISTINCT FROM p_actor_id THEN
       RAISE EXCEPTION 'idempotency_conflict' USING ERRCODE='P0001';
     END IF;
