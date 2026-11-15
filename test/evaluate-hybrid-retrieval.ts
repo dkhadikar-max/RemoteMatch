@@ -76,9 +76,9 @@ const rows = dataset.cases.map((item) => {
   const legacyTop10CoverageInHybridTop50 = legacyTop10.length
     ? legacyTop10.filter((id) => hybridTop50.has(id)).length / legacyTop10.length
     : 1;
-  const top10Overlap = new Set(hybridTop10).size
-    ? hybridTop10.filter((id) => legacyTop10.includes(id)).length / Math.max(legacyTop10.length, hybridTop10.length, 1)
-    : 1;
+  const top10Intersection = hybridTop10.filter((id) => legacyTop10.includes(id)).length;
+  const top10Union = new Set([...legacyTop10, ...hybridTop10]).size;
+  const top10Overlap = top10Union ? top10Intersection / top10Union : 1;
   return {
     id: item.id,
     legacy: {
