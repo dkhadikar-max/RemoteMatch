@@ -1,0 +1,137 @@
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { PGlite } from '@electric-sql/pglite';
+
+let passed=0,failed=0;
+function assert(ok:boolean,label:string){if(ok){passed++;console.log('PASS '+label)}else{failed++;console.error('FAIL '+label)}}
+const root=join(__dirname,'..'),dir=join(root,'supabase','migrations');
+const files=readdirSync(dir).filter(f=>f.endsWith('.sql')).sort();
+const read=(p:string)=>readFileSync(join(root,p),'utf8');
+const migrationName='20261114200000_v2_p0_m4_event_writer_tripwire.sql';
+const migration=read('supabase/migrations/'+migrationName),preflight=read('docs/v2-m4-event-writer-preflight.sql'),preflightBefore=read('docs/v2-m4-event-writer-preflight-before.sql');
+const block=(s:string)=>{const i=s.indexOf('DO $m4$'),j=s.indexOf('$m4$;',i);return i<0||j<0?'':s.slice(i,j+5)};
+const check=block(migration),beforeCheck=block(preflightBefore),canonical=read('tools/m4-event-writer-check.sql'),m3=files.find(f=>f.includes('20261114190000_v2_p0_m3_idempotency_payload_binding'));
+assert(files.includes(migrationName),'M4 tripwire exists');
+assert(!!m3&&files.indexOf(migrationName)>files.indexOf(m3),'M4 sorts after the current M3 migration');
+assert(check.length>1000&&block(preflight)===check,'postflight and tripwire contain the identical post-drop check block');
+assert(preflight.startsWith('BEGIN READ ONLY;')&&preflight.trimEnd().endsWith('COMMIT;')&&preflightBefore.startsWith('BEGIN READ ONLY;')&&preflightBefore.trimEnd().endsWith('COMMIT;'),'both operator preflights are enforced read-only transactions');
+assert(beforeCheck.replace('v_post := false','v_post := true')===check,'preflight-before uses the same canonical check with explicit pre-drop mode');
+assert(canonical.replace('__M4_POST_DROP__','true').trim()===check.trim(),'generated post-drop block matches the canonical source');
+assert(check.includes('v_post OR v_table<>\'public.application_events\' OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
+assert(check.includes('relforcerowsecurity')&&check.includes('pg_has_role'),'check enforces FORCE RLS and inherited policy membership');
+assert(check.includes('legacy events_insert_own policy still exists')&&beforeCheck.includes('pre-drop phase expected'),'explicit phases reject being run against the wrong migration state');
+assert(check.includes('has_table_privilege')&&check.includes('has_schema_privilege'),'check verifies writer table and schema privileges');
+assert(check.includes('must remain SECURITY INVOKER')&&check.includes('search_path=public(,|$)'),'employer RPC remains invoker with public-first search_path');
+assert(check.includes("v_post OR v_table<>'public.application_events' OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
+assert(!check.includes('current_user'),'read-only operator is not required to bypass RLS');
+const writers=['record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application'];
+assert(writers.every(n=>check.includes('public.'+n+'(')),'all six known writer signatures are checked');
+const latestDefinitions=new Map<string,string>();
+for(const file of files){
+ const sql=read('supabase/migrations/'+file);
+ const re=/CREATE OR REPLACE FUNCTION public\.(\w+)\s*\([\s\S]*?\)\s*RETURNS[\s\S]*?AS \$\$([\s\S]*?)\$\$;/g;
+ let match:RegExpExecArray|null;
+ while((match=re.exec(sql)))latestDefinitions.set(match[1],match[2]);
+}
+const actualWriters=Array.from(latestDefinitions).filter(([,body])=>/INSERT\s+INTO\s+(?:public\.)?application_events/i.test(body)).map(([name])=>name).sort();
+assert(JSON.stringify(actualWriters)===JSON.stringify(writers.slice().sort()),'canonical writer list matches every current migration function that inserts application_events');
+const synthetic=new Map(latestDefinitions);synthetic.set('new_unlisted_writer','BEGIN INSERT INTO public.application_events(application_id) VALUES (1); END;');
+assert(Array.from(synthetic).filter(([,body])=>/INSERT\s+INTO\s+(?:public\.)?application_events/i.test(body)).length===actualWriters.length+1,'negative control detects a newly added event writer');
+assert(/DROP POLICY IF EXISTS events_insert_own/.test(read('supabase/migrations/20261112190030_v2_p0_m3_event_writer_rls_and_fk_indexes.sql')),'the M3 policy drop is the guarded change');
+
+async function main(){
+ const db=new PGlite();
+ const run=async(sql:string):Promise<string|null>=>{try{await db.exec(sql);return null}catch(e){return String((e as Error).message)}};
+ const must=async(sql:string)=>{const e=await run(sql);if(e)throw new Error('setup/revert failed: '+e)};
+ const sigs:[string,string,boolean][]=[
+ ['record_application_feedback','text,text,text',true],['update_application_notes','text,text',true],
+ ['transition_application_status','text,text,text,text',true],['set_application_archived','text,boolean',true],
+ ['apply_to_employer_job','uuid,text',true],['transition_employer_application','uuid,uuid,uuid,text,text,text,text',false]
+ ];
+ const sig=(name:string)=>{const x=sigs.find(x=>x[0]===name)!;return 'public.'+name+'('+x[1]+')'};
+ await must("CREATE ROLE authenticated NOLOGIN; CREATE ROLE anon NOLOGIN; CREATE ROLE service_role NOLOGIN BYPASSRLS; CREATE ROLE owner_bypass NOLOGIN BYPASSRLS; CREATE ROLE owner_plain NOLOGIN; CREATE TABLE public.application_events(id serial primary key,application_id int,event_type text); ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY; CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true); GRANT USAGE ON SCHEMA public TO authenticated,anon,service_role,owner_bypass,owner_plain; GRANT ALL ON public.application_events TO owner_bypass,owner_plain,service_role; GRANT USAGE ON SEQUENCE public.application_events_id_seq TO owner_bypass,owner_plain;");
+ for(const [name,types,definer] of sigs){
+  const security=definer?'SECURITY DEFINER SET search_path=public,pg_temp':'SECURITY INVOKER SET search_path=public,pg_temp';
+  await must('CREATE FUNCTION '+sig(name)+' RETURNS jsonb LANGUAGE plpgsql '+security+" AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig(name)+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig(name)+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig(name)+" TO "+(definer?'authenticated':'service_role')+";");
+ }
+ assert(await run(beforeCheck)===null,'pre-drop schema passes when only the soon-to-be-dropped legacy policy exists');
+ const wrongPostPhase=await run(check);
+ assert(!!wrongPostPhase&&/legacy events_insert_own policy still exists/.test(wrongPostPhase),'post-drop check refuses to run before the legacy policy is dropped');
+ await must('CREATE POLICY unexpected_client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);');
+ const extraPolicyError=await run(beforeCheck);
+ assert(!!extraPolicyError&&/client INSERT\/UPDATE\/DELETE policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
+ await must('DROP POLICY unexpected_client_insert ON public.application_events; GRANT INSERT ON public.application_events TO authenticated;');
+ const preGrantError=await run(beforeCheck);
+ assert(!!preGrantError&&/authenticated still has INSERT/.test(preGrantError),'preflight catches a client INSERT grant before the legacy drop');
+ await must('REVOKE INSERT ON public.application_events FROM authenticated;');
+ await must('DROP FUNCTION '+sig('apply_to_employer_job')+'; DROP FUNCTION '+sig('set_application_archived')+';');
+ assert(await run(beforeCheck)===null,'pre-drop check tolerates later writers not installed yet');
+ await must("CREATE FUNCTION public.apply_to_employer_job(a0 uuid,a1 text) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('apply_to_employer_job')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('apply_to_employer_job')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('apply_to_employer_job')+" TO authenticated; CREATE FUNCTION public.set_application_archived(a0 text,a1 boolean) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN RETURN '{}'::jsonb; END $$; ALTER FUNCTION "+sig('set_application_archived')+" OWNER TO owner_bypass; REVOKE ALL ON FUNCTION "+sig('set_application_archived')+" FROM PUBLIC; GRANT EXECUTE ON FUNCTION "+sig('set_application_archived')+" TO authenticated;");
+ await must('DROP POLICY events_insert_own ON public.application_events; REVOKE INSERT ON public.application_events FROM authenticated,anon;');
+ const wrongPrePhase=await run(beforeCheck);
+ assert(!!wrongPrePhase&&/pre-drop phase expected/.test(wrongPrePhase),'pre-drop check refuses to run after the legacy policy has been dropped');
+ assert(await run('BEGIN READ ONLY; '+check+' COMMIT;')===null,'post-drop check succeeds inside READ ONLY transaction');
+
+ // Demonstrate the exact FORCE RLS dependency with real PostgreSQL roles and function owners.
+ await must("CREATE FUNCTION public.demo_bypass() RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN INSERT INTO public.application_events(application_id,event_type) VALUES(1,'valid'); END $$; CREATE FUNCTION public.demo_plain() RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$ BEGIN INSERT INTO public.application_events(application_id,event_type) VALUES(2,'blocked'); END $$; ALTER FUNCTION public.demo_bypass() OWNER TO owner_bypass; ALTER FUNCTION public.demo_plain() OWNER TO owner_plain; GRANT EXECUTE ON FUNCTION public.demo_bypass(),public.demo_plain() TO authenticated;");
+ await must('SET ROLE authenticated');
+ const good=await run('SELECT public.demo_bypass()'),bad=await run('SELECT public.demo_plain()'),direct=await run("INSERT INTO public.application_events(application_id,event_type) VALUES(3,'forged')");
+ await must('RESET ROLE');
+ assert(good===null,'BYPASSRLS definer owner can write after policy drop');
+ assert(!!bad&&/row-level security/i.test(bad),'non-BYPASSRLS definer owner is blocked by FORCE RLS');
+ assert(!!direct&&/permission denied/i.test(direct),'client direct INSERT is denied');
+ const rows=await db.query<{n:number}>('SELECT count(*)::int AS n FROM public.application_events');
+ assert(rows.rows[0].n===1,'only the trusted definer write landed');
+ await must('DROP FUNCTION public.demo_bypass(); DROP FUNCTION public.demo_plain();');
+
+ const expect=async(label:string,mutate:string,revert:string,pattern:RegExp)=>{
+  await must(mutate);const e=await run(check);await must(revert);assert(!!e&&pattern.test(e),label);
+ };
+ await expect('detects definer owner without BYPASSRLS','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_plain;','ALTER FUNCTION '+sig('update_application_notes')+' OWNER TO owner_bypass;',/update_application_notes.*does not bypass/);
+ await expect('detects definer owner without table INSERT','REVOKE INSERT ON public.application_events FROM owner_bypass;','GRANT INSERT ON public.application_events TO owner_bypass;',/owner lacks INSERT/);
+ await expect('detects definer owner without schema USAGE','REVOKE USAGE ON SCHEMA public FROM PUBLIC, owner_bypass;','GRANT USAGE ON SCHEMA public TO PUBLIC, owner_bypass;',/owner lacks USAGE/);
+ await expect('detects non-public-first search_path','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=pg_temp,public;','ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
+ await expect('detects service_role without table INSERT','REVOKE INSERT ON public.application_events FROM service_role;','GRANT INSERT ON public.application_events TO service_role;',/service_role lacks INSERT/);
+ await expect('detects service_role without schema USAGE','REVOKE USAGE ON SCHEMA public FROM PUBLIC, service_role;','GRANT USAGE ON SCHEMA public TO PUBLIC, service_role;',/service_role lacks USAGE/);
+ await expect('detects employer function security-definer drift','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY DEFINER;','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY INVOKER;',/must remain SECURITY INVOKER/);
+ await expect('detects employer function without pinned search_path','ALTER FUNCTION '+sig('transition_employer_application')+' RESET search_path;','ALTER FUNCTION '+sig('transition_employer_application')+' SET search_path=public,pg_temp;',/does not pin search_path to public,pg_temp/);
+ // PR #120 review remediation: the tripwire must hold a NEW writer to the strict
+ // public,pg_temp pattern even when it only drops to the weaker public-only form
+ // (not just when search_path is reset entirely, which the case above already covers).
+ await expect('detects a new writer silently weakened to the legacy public-only pattern','ALTER FUNCTION '+sig('transition_application_status')+' SET search_path=public;','ALTER FUNCTION '+sig('transition_application_status')+' SET search_path=public,pg_temp;',/transition_application_status.*does not pin search_path to public,pg_temp/);
+ // The same weak public-only pattern on a documented LEGACY writer (record_application_feedback
+ // / update_application_notes) must NOT fail the check -- that debt is known and deferred --
+ // it should only be reported as a non-fatal legacy-debt NOTICE.
+ await must('ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public;');
+ const legacyWeakResult=await run(check);
+ await must('ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public,pg_temp;');
+ assert(legacyWeakResult===null,'a known-legacy writer on the weaker public-only search_path does not fail the tripwire');
+ await expect('detects SECURITY INVOKER drift','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY INVOKER;','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY DEFINER;',/transition_application_status.*not SECURITY DEFINER/);
+ await expect('detects missing writer','ALTER FUNCTION '+sig('update_application_notes')+' RENAME TO notes_missing;','ALTER FUNCTION public.notes_missing(text,text) RENAME TO update_application_notes;',/update_application_notes.*does not exist/);
+ await expect('detects disabled RLS','ALTER TABLE public.application_events DISABLE ROW LEVEL SECURITY;','ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY;',/not enabled and forced/);
+ await expect('detects unforced RLS','ALTER TABLE public.application_events NO FORCE ROW LEVEL SECURITY;','ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY;',/not enabled and forced/);
+ await expect('detects authenticated INSERT privilege','GRANT INSERT ON public.application_events TO authenticated;','REVOKE INSERT ON public.application_events FROM authenticated;',/authenticated still has INSERT/);
+ await expect('detects anon INSERT privilege','GRANT INSERT ON public.application_events TO anon;','REVOKE INSERT ON public.application_events FROM anon;',/anon still has INSERT/);
+ await expect('detects authenticated INSERT policy','CREATE POLICY client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY client_insert ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects the legacy policy recreated after the migration','CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY events_insert_own ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects PUBLIC FOR ALL policy','CREATE POLICY public_all ON public.application_events FOR ALL TO PUBLIC USING(true) WITH CHECK(true);','DROP POLICY public_all ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ // PR #120 review remediation: the tripwire must also catch a client-reachable UPDATE or
+ // DELETE policy on an append-only audit table, not just INSERT/ALL -- this is the exact
+ // blind spot the review flagged (a prior version only scanned polcmd IN ('a','*')).
+ await expect('detects a client UPDATE policy (not just INSERT) on application_events','CREATE POLICY client_update ON public.application_events FOR UPDATE TO authenticated USING(true);','DROP POLICY client_update ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects a client DELETE policy on hiring_decision_events','CREATE TABLE public.hiring_decision_events(id serial primary key); ALTER TABLE public.hiring_decision_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.hiring_decision_events FORCE ROW LEVEL SECURITY; CREATE POLICY client_delete ON public.hiring_decision_events FOR DELETE TO authenticated USING(true);','DROP TABLE public.hiring_decision_events;',/client INSERT\/UPDATE\/DELETE policy exists on public\.hiring_decision_events/);
+ await must('CREATE ROLE client_parent NOLOGIN; GRANT client_parent TO authenticated;');
+ await expect('detects inherited-role INSERT policy','CREATE POLICY parent_insert ON public.application_events FOR INSERT TO client_parent WITH CHECK(true);','DROP POLICY parent_insert ON public.application_events;',/inherited roles/);
+ await expect('detects inherited INSERT privilege','GRANT INSERT ON public.application_events TO client_parent;','REVOKE INSERT ON public.application_events FROM client_parent;',/authenticated still has INSERT/);
+ await must('REVOKE client_parent FROM authenticated; DROP ROLE client_parent;');
+ await expect('detects service_role BYPASSRLS loss','ALTER ROLE service_role NOBYPASSRLS;','ALTER ROLE service_role BYPASSRLS;',/service_role.*does not bypass/);
+ await expect('detects missing service_role EXECUTE','REVOKE EXECUTE ON FUNCTION '+sig('transition_employer_application')+' FROM service_role;','GRANT EXECUTE ON FUNCTION '+sig('transition_employer_application')+' TO service_role;',/not executable by service_role/);
+ await expect('detects employer RPC client EXECUTE','GRANT EXECUTE ON FUNCTION '+sig('transition_employer_application')+' TO authenticated;','REVOKE EXECUTE ON FUNCTION '+sig('transition_employer_application')+' FROM authenticated;',/executable by a client role/);
+ await must('CREATE POLICY service_only ON public.application_events FOR INSERT TO service_role WITH CHECK(true);');
+ assert(await run(check)===null,'service_role-only policy is harmless');
+ await must('DROP POLICY service_only ON public.application_events; CREATE POLICY select_only ON public.application_events FOR SELECT TO authenticated USING(true);');
+ assert(await run(check)===null,'SELECT-only policy is harmless');
+ console.log('M4 PGlite suite: '+passed+' passed, '+failed+' failed');
+ process.exit(failed?1:0);
+}
+main().catch(e=>{console.error('M4 PGlite suite error',e);process.exit(1)});

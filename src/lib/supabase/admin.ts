@@ -32,6 +32,13 @@ let adminClient: SupabaseClient | null = null;
  *     caller's own RLS-scoped `applications` query has already proven, in
  *     the same request, that every id passed in belongs to THAT user's own
  *     applications — this function is never given a client-supplied id.
+ *   - `GET /api/integrations/chatgpt/jobs` (public ChatGPT catalogue search).
+ *     This route is intentionally public and session-independent, and it
+ *     enforces the same public visibility predicates explicitly (active,
+ *     not superseded, translation-safe) before returning only the public
+ *     job projection. The service client is required because anon RLS
+ *     security quals prevent PostgreSQL from using the partial trigram
+ *     indexes for the route's ILIKE search predicates.
  *   - `recordFunnelEvent()` (src/lib/funnel/events.ts), used only by
  *     POST /api/funnel/event (Funnel Instrumentation). Different shape of
  *     justification from the two above: `funnel_events` has RLS enabled
