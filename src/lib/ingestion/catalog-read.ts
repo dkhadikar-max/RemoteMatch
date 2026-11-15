@@ -217,18 +217,32 @@ export async function getActiveOpportunities(
   // The RPC is SECURITY INVOKER, so the caller's active-row RLS policy remains
   // in force; the optional gates match the previous PostgREST implementation.
   const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
+  // The feed always enables BOTH gates. Give it a dedicated RPC whose first-page
+  // query has no nullable-cursor OR predicate, allowing the planner to use the
+  // posted_at range index even when the 48-hour window contains very few rows.
+  // Other catalog consumers retain the general-purpose RPC and its old semantics.
+  const useFreshFeedRpc = options?.freshOnly === true && options?.translationSafe === true;
+  const readPage = () => useFreshFeedRpc
+    ? supabase.rpc('get_fresh_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness!.from,
+        p_fresh_to: freshness!.to,
+      })
+    : supabase.rpc('get_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness?.from ?? null,
+        p_fresh_to: freshness?.to ?? null,
+        p_translation_safe: options?.translationSafe ?? false,
+      });
 
   while (true) {
     const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
     let pageStartedAt = performance.now();
-    let response = await supabase.rpc('get_active_opportunities_keyset_page', {
-      p_after_source: afterSource,
-      p_after_source_id: afterSourceId,
-      p_page_size: pageSize,
-      p_fresh_from: freshness?.from ?? null,
-      p_fresh_to: freshness?.to ?? null,
-      p_translation_safe: options?.translationSafe ?? false,
-    });
+    let response = await readPage();
     let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
     for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
       const failedPageSize = pageSize;
@@ -238,14 +252,7 @@ export async function getActiveOpportunities(
         durationMs, code: response.error.code,
       }));
       pageStartedAt = performance.now();
-      response = await supabase.rpc('get_active_opportunities_keyset_page', {
-        p_after_source: afterSource,
-        p_after_source_id: afterSourceId,
-        p_page_size: pageSize,
-        p_fresh_from: freshness?.from ?? null,
-        p_fresh_to: freshness?.to ?? null,
-        p_translation_safe: options?.translationSafe ?? false,
-      });
+      response = await readPage();
       durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
     }
     const { data, error } = response;
