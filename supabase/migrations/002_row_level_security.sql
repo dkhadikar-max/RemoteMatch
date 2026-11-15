@@ -26,19 +26,23 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profiles_select_own" ON profiles;
 CREATE POLICY "profiles_select_own"
   ON profiles FOR SELECT
   USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_insert_own" ON profiles;
 CREATE POLICY "profiles_insert_own"
   ON profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_update_own" ON profiles;
 CREATE POLICY "profiles_update_own"
   ON profiles FOR UPDATE
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "profiles_delete_own" ON profiles;
 CREATE POLICY "profiles_delete_own"
   ON profiles FOR DELETE
   USING (auth.uid() = id);
@@ -47,19 +51,23 @@ CREATE POLICY "profiles_delete_own"
 ALTER TABLE profile_intents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profile_intents FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profile_intents_select_own" ON profile_intents;
 CREATE POLICY "profile_intents_select_own"
   ON profile_intents FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_intents_insert_own" ON profile_intents;
 CREATE POLICY "profile_intents_insert_own"
   ON profile_intents FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_intents_update_own" ON profile_intents;
 CREATE POLICY "profile_intents_update_own"
   ON profile_intents FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_intents_delete_own" ON profile_intents;
 CREATE POLICY "profile_intents_delete_own"
   ON profile_intents FOR DELETE
   USING (auth.uid() = profile_id);
@@ -68,19 +76,23 @@ CREATE POLICY "profile_intents_delete_own"
 ALTER TABLE profile_skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profile_skills FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profile_skills_select_own" ON profile_skills;
 CREATE POLICY "profile_skills_select_own"
   ON profile_skills FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_skills_insert_own" ON profile_skills;
 CREATE POLICY "profile_skills_insert_own"
   ON profile_skills FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_skills_update_own" ON profile_skills;
 CREATE POLICY "profile_skills_update_own"
   ON profile_skills FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_skills_delete_own" ON profile_skills;
 CREATE POLICY "profile_skills_delete_own"
   ON profile_skills FOR DELETE
   USING (auth.uid() = profile_id);
@@ -89,19 +101,23 @@ CREATE POLICY "profile_skills_delete_own"
 ALTER TABLE profile_experiences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profile_experiences FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profile_experiences_select_own" ON profile_experiences;
 CREATE POLICY "profile_experiences_select_own"
   ON profile_experiences FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_experiences_insert_own" ON profile_experiences;
 CREATE POLICY "profile_experiences_insert_own"
   ON profile_experiences FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_experiences_update_own" ON profile_experiences;
 CREATE POLICY "profile_experiences_update_own"
   ON profile_experiences FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_experiences_delete_own" ON profile_experiences;
 CREATE POLICY "profile_experiences_delete_own"
   ON profile_experiences FOR DELETE
   USING (auth.uid() = profile_id);
@@ -110,19 +126,23 @@ CREATE POLICY "profile_experiences_delete_own"
 ALTER TABLE profile_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profile_locations FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "profile_locations_select_own" ON profile_locations;
 CREATE POLICY "profile_locations_select_own"
   ON profile_locations FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_locations_insert_own" ON profile_locations;
 CREATE POLICY "profile_locations_insert_own"
   ON profile_locations FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_locations_update_own" ON profile_locations;
 CREATE POLICY "profile_locations_update_own"
   ON profile_locations FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "profile_locations_delete_own" ON profile_locations;
 CREATE POLICY "profile_locations_delete_own"
   ON profile_locations FOR DELETE
   USING (auth.uid() = profile_id);
@@ -132,11 +152,13 @@ ALTER TABLE opportunities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE opportunities FORCE ROW LEVEL SECURITY;
 
 -- Anyone (authenticated or anon) can read active opportunities
+DROP POLICY IF EXISTS "opportunities_select_active" ON opportunities;
 CREATE POLICY "opportunities_select_active"
   ON opportunities FOR SELECT
   USING (status = 'active');
 
 -- Mutating opportunities is restricted exclusively to service_role
+DROP POLICY IF EXISTS "opportunities_manage_service_role" ON opportunities;
 CREATE POLICY "opportunities_manage_service_role"
   ON opportunities FOR ALL
   USING (auth.role() = 'service_role')
@@ -146,19 +168,23 @@ CREATE POLICY "opportunities_manage_service_role"
 ALTER TABLE swipes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE swipes FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "swipes_select_own" ON swipes;
 CREATE POLICY "swipes_select_own"
   ON swipes FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "swipes_insert_own" ON swipes;
 CREATE POLICY "swipes_insert_own"
   ON swipes FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "swipes_update_own" ON swipes;
 CREATE POLICY "swipes_update_own"
   ON swipes FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "swipes_delete_own" ON swipes;
 CREATE POLICY "swipes_delete_own"
   ON swipes FOR DELETE
   USING (auth.uid() = profile_id);
@@ -167,19 +193,23 @@ CREATE POLICY "swipes_delete_own"
 ALTER TABLE matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE matches FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "matches_select_own" ON matches;
 CREATE POLICY "matches_select_own"
   ON matches FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "matches_insert_own" ON matches;
 CREATE POLICY "matches_insert_own"
   ON matches FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "matches_update_own" ON matches;
 CREATE POLICY "matches_update_own"
   ON matches FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "matches_delete_own" ON matches;
 CREATE POLICY "matches_delete_own"
   ON matches FOR DELETE
   USING (auth.uid() = profile_id);
@@ -188,19 +218,23 @@ CREATE POLICY "matches_delete_own"
 ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE applications FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "applications_select_own" ON applications;
 CREATE POLICY "applications_select_own"
   ON applications FOR SELECT
   USING (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "applications_insert_own" ON applications;
 CREATE POLICY "applications_insert_own"
   ON applications FOR INSERT
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "applications_update_own" ON applications;
 CREATE POLICY "applications_update_own"
   ON applications FOR UPDATE
   USING (auth.uid() = profile_id)
   WITH CHECK (auth.uid() = profile_id);
 
+DROP POLICY IF EXISTS "applications_delete_own" ON applications;
 CREATE POLICY "applications_delete_own"
   ON applications FOR DELETE
   USING (auth.uid() = profile_id);
@@ -209,6 +243,7 @@ CREATE POLICY "applications_delete_own"
 ALTER TABLE application_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE application_feedback FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "feedback_select_own" ON application_feedback;
 CREATE POLICY "feedback_select_own"
   ON application_feedback FOR SELECT
   USING (
@@ -219,6 +254,7 @@ CREATE POLICY "feedback_select_own"
     )
   );
 
+DROP POLICY IF EXISTS "feedback_insert_own" ON application_feedback;
 CREATE POLICY "feedback_insert_own"
   ON application_feedback FOR INSERT
   WITH CHECK (
@@ -229,6 +265,7 @@ CREATE POLICY "feedback_insert_own"
     )
   );
 
+DROP POLICY IF EXISTS "feedback_update_own" ON application_feedback;
 CREATE POLICY "feedback_update_own"
   ON application_feedback FOR UPDATE
   USING (
@@ -246,6 +283,7 @@ CREATE POLICY "feedback_update_own"
     )
   );
 
+DROP POLICY IF EXISTS "feedback_delete_own" ON application_feedback;
 CREATE POLICY "feedback_delete_own"
   ON application_feedback FOR DELETE
   USING (
@@ -260,6 +298,7 @@ CREATE POLICY "feedback_delete_own"
 ALTER TABLE application_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE application_events FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "events_select_own" ON application_events;
 CREATE POLICY "events_select_own"
   ON application_events FOR SELECT
   USING (
@@ -270,6 +309,7 @@ CREATE POLICY "events_select_own"
     )
   );
 
+DROP POLICY IF EXISTS "events_insert_own" ON application_events;
 CREATE POLICY "events_insert_own"
   ON application_events FOR INSERT
   WITH CHECK (
@@ -286,6 +326,7 @@ CREATE POLICY "events_insert_own"
 ALTER TABLE generated_materials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE generated_materials FORCE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "materials_select_own" ON generated_materials;
 CREATE POLICY "materials_select_own"
   ON generated_materials FOR SELECT
   USING (
@@ -296,6 +337,7 @@ CREATE POLICY "materials_select_own"
     )
   );
 
+DROP POLICY IF EXISTS "materials_insert_own" ON generated_materials;
 CREATE POLICY "materials_insert_own"
   ON generated_materials FOR INSERT
   WITH CHECK (
@@ -306,6 +348,7 @@ CREATE POLICY "materials_insert_own"
     )
   );
 
+DROP POLICY IF EXISTS "materials_update_own" ON generated_materials;
 CREATE POLICY "materials_update_own"
   ON generated_materials FOR UPDATE
   USING (
@@ -323,6 +366,7 @@ CREATE POLICY "materials_update_own"
     )
   );
 
+DROP POLICY IF EXISTS "materials_delete_own" ON generated_materials;
 CREATE POLICY "materials_delete_own"
   ON generated_materials FOR DELETE
   USING (
