@@ -15,9 +15,11 @@
  *           The SECURITY INVOKER RPC returns only the requested full rows.
  *   cache   requested hub pages are cached in-process (LRU + 30 min TTL) and
  *           invalidated by the existing catalog-sync invalidation path.
- *   search  a `?q=` query is answered by the DATABASE (ilike on title, company,
- *           description, remote type, plus skill tags) with LIMIT/OFFSET and an
- *           exact count — never by loading the catalog.
+ *   search  a `?q=` query is answered by a narrowly scoped public-search RPC.
+ *           It applies active, non-superseded, translation-safe visibility inside
+ *           a SECURITY DEFINER boundary so Postgres can use trigram and short-token
+ *           prefix indexes despite the opportunities RLS barrier. It returns an
+ *           exact count and at most 24 full rows — never the whole catalog.
  *
  * Behavior differences from the old whole-catalog path (deliberate, tested):
  *   - listings are ordered newest first (the old order was unspecified);
@@ -157,6 +159,12 @@ export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, r
 /** One page of search results, answered by the database (never the catalog). */
 export async function getSearchPage(supabase: SupabaseClient, q: string, requestedPage: number): Promise<DirectoryPage> {
   const terms = buildSearchTerms(q);
+  if (terms.length === 0) {
+    return {
+      jobs: [], total: 0, page: 1, totalPages: 1,
+      pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false,
+    };
+  }
   const from = (Math.max(requestedPage, 1) - 1) * DIRECTORY_PAGE_SIZE;
   try {
     const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });

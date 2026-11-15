@@ -47,6 +47,23 @@ async function rpc<T>(db: PGlite, args: { p_category_slug: string | null; p_page
   return (typeof value === 'string' ? JSON.parse(value) : value) as T;
 }
 
+async function searchRpc(db: PGlite, args: {
+  p_terms: string[];
+  p_offset: number;
+  p_page_size: number;
+}): Promise<{ total: number; jobs: Array<Record<string, any>> }> {
+  const result = await db.query(
+    `SELECT public.get_remote_job_search_page(
+      p_terms := $1::text[],
+      p_offset := $2,
+      p_page_size := $3
+    ) AS result;`,
+    [args.p_terms, args.p_offset, args.p_page_size]
+  );
+  const value = (result.rows[0] as any).result;
+  return (typeof value === 'string' ? JSON.parse(value) : value) as { total: number; jobs: Array<Record<string, any>> };
+}
+
 async function sitemapRpc(db: PGlite, args: {
   p_after_source: string | null;
   p_after_source_id: string | null;
@@ -94,6 +111,9 @@ interface Fixture {
   status: string;
   source_language: string | null;
   translation_status: string | null;
+  company?: string;
+  description?: string;
+  superseded_by_opportunity_id?: string | null;
 }
 
 function finish() {
@@ -173,12 +193,30 @@ async function main() {
     assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
     await db.exec(read('supabase/migrations/20261109120000_sitemap_batched_read.sql'));
     assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
+    await db.exec(read('supabase/migrations/20261111110000_split_category_count_and_page.sql'));
+    assert(true, 'category hub RPC separates exact totals from bounded page retrieval');
+    await db.exec(read('supabase/migrations/20261111130000_search_remote_opportunities_page.sql'));
+    assert(true, 'public search RPC applies the visibility gate and returns a bounded exact-count page');
+    await db.exec(read('supabase/migrations/20261111150000_exclude_superseded_catalog_rows.sql'));
+    assert(true, 'catalog projection trigger excludes superseded rows on insert and update');
+    await db.exec(read('supabase/migrations/20261111170000_align_public_catalog_supersession_and_search.sql'));
+    assert(true, 'all public catalogue, sitemap, and normalized-skill search readers apply the final visibility rules');
+    const usCountIndex = await db.query(`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND indexname = 'opportunity_catalog_index_united_states_count';
+    `);
+    assert(
+      String((usCountIndex.rows[0] as any)?.indexdef ?? '').includes('opportunity_catalog_index_united_states_count'),
+      'broad US category has a dedicated partial count index'
+    );
 
     const fixtures: Fixture[] = [];
     const now = Date.UTC(2026, 10, 1);
     const base = (source_id: string, i: number, overrides: Partial<Fixture> = {}): Fixture => ({
       source_id,
       title: `General role ${i}`,
+      company: 'Fixture Co',
+      description: 'Fixture description',
       posted_at: new Date(now + i * 60_000).toISOString(),
       required_skills: [],
       remote_type: 'APAC',
@@ -187,6 +225,7 @@ async function main() {
       status: 'active',
       source_language: 'en',
       translation_status: null,
+      superseded_by_opportunity_id: null,
       ...overrides,
     });
 
@@ -208,6 +247,18 @@ async function main() {
       // Same source_id across providers, but only alpha belongs in software engineering.
       base('collision', 29, { title: 'Operations Coordinator', required_skills: ['Payroll'], source: 'zeta' }),
       base('collision', 29, { title: 'Collision Engineer', required_skills: ['React'], source: 'alpha' }),
+      base('search-title', 30, { title: 'searchtoken Specialist' }),
+      base('search-company', 31, { company: 'searchtoken Industries' }),
+      base('search-description', 32, { description: 'This role involves searchtoken research.' }),
+      base('search-remote', 33, { remote_type: 'searchtoken' }),
+      base('search-skill', 34, { required_skills: ['searchtoken'] }),
+      base('search-multiterm', 35, { title: 'Senior Specialist', company: 'Engineer Labs' }),
+      base('search-short-go', 39, { title: 'Senior Go Developer', required_skills: ['Go'] }),
+      base('search-short-csharp', 40, { title: 'C# Developer', required_skills: ['C#'] }),
+      base('search-short-cpp', 41, { title: 'C++ Developer', required_skills: ['C++'] }),
+      base('search-hidden-expired', 36, { title: 'searchtoken hidden', status: 'expired' }),
+      base('search-hidden-translation-error', 37, { title: 'searchtoken hidden foreign', source_language: 'de', translation_status: 'error' }),
+      base('search-hidden-superseded', 38, { title: 'searchtoken superseded', superseded_by_opportunity_id: '00000000-0000-4000-8000-000000000001' }),
     );
 
     await setRole(db, 'service_role');
@@ -215,19 +266,21 @@ async function main() {
       const f = fixtures[i];
       await db.query(
         `INSERT INTO public.opportunities (
-          id, source, source_id, title, posted_at, required_skills,
+          id, source, source_id, title, company, description, posted_at, required_skills,
           remote_type, eligible_countries, experience_requirement,
-          status, source_language, translation_status,
+          status, source_language, translation_status, superseded_by_opportunity_id,
           canonical_url_hash, content_hash
         ) VALUES (
-          $1::uuid, $2, $3, $4, $5::timestamptz, $6::text[],
-          $7, $8::text[], $9, $10, $11, $12, $13, $14
+          $1::uuid, $2, $3, $4, $5, $6, $7::timestamptz, $8::text[],
+          $9, $10::text[], $11, $12, $13, $14, $15::uuid, $16, $17
         );`,
         [
           `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
           f.source ?? 'fixture',
           f.source_id,
           f.title,
+          f.company ?? 'Fixture Co',
+          f.description ?? 'Fixture description',
           f.posted_at,
           f.required_skills,
           f.remote_type,
@@ -236,14 +289,89 @@ async function main() {
           f.status,
           f.source_language,
           f.translation_status,
+          f.superseded_by_opportunity_id ?? null,
           `hash-${f.source_id}-${f.source ?? 'fixture'}`,
           `content-${f.source_id}-${f.source ?? 'fixture'}`,
         ]
       );
     }
 
+    await setRole(db, 'anon');
+    const indexedSearch = await searchRpc(db, {
+      p_terms: ['searchtoken'], p_offset: 0, p_page_size: 24,
+    });
+    const indexedSearchIds = new Set(indexedSearch.jobs.map((job) => job.source_id));
+    assert(
+      indexedSearch.total === 5 &&
+      indexedSearch.jobs.length === 5 &&
+      ['search-title', 'search-company', 'search-description', 'search-remote', 'search-skill'].every((id) => indexedSearchIds.has(id)),
+      'public search matches title, company, description, remote type and whole skill tags',
+      { total: indexedSearch.total, returned: indexedSearch.jobs.length, ids: Array.from(indexedSearchIds) }
+    );
+    assert(
+      !indexedSearchIds.has('search-hidden-expired') &&
+      !indexedSearchIds.has('search-hidden-translation-error') &&
+      !indexedSearchIds.has('search-hidden-superseded'),
+      'public search RPC never exposes expired, translation-error or superseded rows'
+    );
+    const multiTermSearch = await searchRpc(db, {
+      p_terms: ['senior', 'engineer'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      multiTermSearch.total === 1 &&
+      multiTermSearch.jobs[0]?.source_id === 'search-multiterm',
+      'public search ANDs terms while allowing each term to match a different searchable field'
+    );
+    const secondSearchPage = await searchRpc(db, {
+      p_terms: ['searchtoken'], p_offset: 5, p_page_size: 24,
+    });
+    assert(
+      secondSearchPage.total === 5 && secondSearchPage.jobs.length === 0,
+      'search pagination preserves the exact total when the requested page is empty',
+      { total: secondSearchPage.total, returned: secondSearchPage.jobs.length }
+    );
+    const shortGoSearch = await searchRpc(db, {
+      p_terms: ['go'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortGoSearch.jobs.some((job) => job.source_id === 'search-short-go'),
+      'one/two-character alphanumeric terms use token-prefix matching and exact skill tags'
+    );
+    const shortCSharpSearch = await searchRpc(db, {
+      p_terms: ['c#'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortCSharpSearch.jobs.some((job) => job.source_id === 'search-short-csharp'),
+      'short punctuation-bearing skill terms use indexed prefixes and exact skill tags'
+    );
+    const shortCppSearch = await searchRpc(db, {
+      p_terms: ['c++'], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      shortCppSearch.jobs.some((job) => job.source_id === 'search-short-cpp'),
+      'punctuation-heavy short terms avoid trigram scans while retaining C++ skill/title matching'
+    );
+    const emptyTermSearch = await searchRpc(db, {
+      p_terms: [], p_offset: 0, p_page_size: 24,
+    });
+    assert(
+      emptyTermSearch.total === 0 && emptyTermSearch.jobs.length === 0,
+      'an empty/sanitized-away search query returns zero results without a full-catalog count'
+    );
+    const searchSecurity = await db.query(`
+      SELECT p.prosecdef AS security_definer, p.proconfig
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = 'get_remote_job_search_page';
+    `);
+    assert(
+      (searchSecurity.rows[0] as any).security_definer === true &&
+      JSON.stringify((searchSecurity.rows[0] as any).proconfig ?? []).includes('row_security=off'),
+      'search RPC is SECURITY DEFINER with row_security disabled and explicit public visibility predicates'
+    );
+
     const visible = fixtures.filter((f) =>
       f.status === 'active' &&
+      f.superseded_by_opportunity_id == null &&
       (f.source_language === null || f.source_language === 'en' || f.translation_status === 'ok') &&
       (f.translation_status === null || f.translation_status !== 'error')
     );
@@ -448,7 +576,7 @@ async function main() {
         'Scale role ' || g::text,
         timestamptz '2026-11-02 00:00:00+00' + g * interval '1 second',
         ARRAY[]::text[],
-        'APAC',
+        'US',
         ARRAY[]::text[],
         NULL,
         'active',
@@ -476,6 +604,14 @@ async function main() {
       largePage2.jobs.length === 24 &&
       largePage2.jobs.every((j) => !largeIds1.has(j.source_id)),
       'large-catalog page 2 is bounded and does not repeat page 1 listings'
+    );
+
+    const largeUsPage = await rpc<{ total: number; jobs: Array<{ source_id: string }> }>(db, {
+      p_category_slug: 'united-states', p_page: 1, p_page_size: 24,
+    });
+    assert(
+      largeUsPage.total === 92358 && largeUsPage.jobs.length === 24,
+      'broad US category returns an exact 92k+ total and only one bounded 24-row page'
     );
 
     const largeSitemapBatch1 = await sitemapJsonRpc(db, {
