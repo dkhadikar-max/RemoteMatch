@@ -21,6 +21,9 @@ export const metadata: Metadata = {
   alternates: {
     canonical: SITE_URL,
   },
+  icons: {
+    icon: '/favicon.svg',
+  },
   description:
     'RemoteMatch is a remote job search platform that helps professionals discover remote jobs matched to their experience and preferences, understand why a job fits, identify what may be missing, and track applications from application to offer.',
   keywords: [
