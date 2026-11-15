@@ -13,6 +13,7 @@
  * Semantics:
  *  - value younger than ttlMs and not invalidated -> returned with no load
  *  - older, invalidated, or absent -> ONE load runs; concurrent callers await it
+ *  - optional staleWhileRevalidate -> a retained value is returned immediately while ONE background refresh runs
  *  - load throws, retained value younger than maxStaleMs -> serve stale value
  *    and keep retrying on the next call
  *  - load throws, no/too-old value -> error propagates (never cache a partial read)
@@ -71,13 +72,15 @@ export function createLruTtlMap<V>(options: { max: number; ttlMs: number; now?: 
 
 export interface TtlCache<T> {
   get(): Promise<T>;
+  /** Whether this process has a complete last-successful value available. */
+  hasValue(): boolean;
   /** Force a refresh while retaining the last successful value as stale fallback. */
   invalidate(): void;
 }
 
 export function createAsyncTtlCache<T>(
   load: () => Promise<T>,
-  options: { ttlMs: number; maxStaleMs: number; now?: () => number; onStaleServed?: (err: unknown) => void }
+  options: { ttlMs: number; maxStaleMs: number; now?: () => number; onStaleServed?: (err: unknown) => void; staleWhileRevalidate?: boolean }
 ): TtlCache<T> {
   const now = options.now ?? Date.now;
   let value: { v: T; at: number } | null = null;
@@ -110,15 +113,30 @@ export function createAsyncTtlCache<T>(
     }
   }
 
+  function startRefresh(): Promise<T> {
+    if (!inflight) {
+      inflight = refresh().finally(() => {
+        inflight = null;
+      });
+    }
+    return inflight;
+  }
+
   return {
     async get() {
       if (value && !invalidated && now() - value.at < options.ttlMs) return value.v;
-      if (!inflight) {
-        inflight = refresh().finally(() => {
-          inflight = null;
-        });
+      // For large shared snapshots (the sitemap), do not make the request that
+      // discovers expiry pay the full refresh cost. Serve the last good snapshot
+      // immediately while one background refresh runs. A cold process still
+      // waits for its first successful load; stale data is never fabricated.
+      if (options.staleWhileRevalidate && value && now() - value.at < options.maxStaleMs) {
+        void startRefresh().catch(() => undefined);
+        return value.v;
       }
-      return inflight;
+      return startRefresh();
+    },
+    hasValue() {
+      return value !== null;
     },
     invalidate() {
       // Do not discard the last-known-good value. Mark it stale so the next
