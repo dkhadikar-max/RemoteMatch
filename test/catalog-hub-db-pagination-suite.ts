@@ -196,7 +196,7 @@ async function main() {
     assert(true, 'migration 051 applies cleanly and keeps the directory RPC SECURITY INVOKER');
     await db.exec(read('supabase/migrations/20261109120000_sitemap_batched_read.sql'));
     assert(true, 'migration 052 adds the covering sitemap index and bounded JSONB batch RPC');
-    await db.exec(read('supabase/migrations/20261109195500_fresh_feed_keyset_index_only_page.sql'));
+    await db.exec(read('supabase/migrations/20261115143000_fresh_feed_keyset_index_only_page.sql'));
     assert(true, 'fresh-feed migration keeps the generic RPC signature and adds the narrow key-first plan');
 
     const fixtures: Fixture[] = [];
