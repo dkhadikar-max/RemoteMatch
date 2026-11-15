@@ -8,10 +8,32 @@
  *
  * Run: npx tsx test/v2-m2-m3-api-contract-suite.ts
  */
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const root = join(__dirname, '..');
+// PR #120 review remediation found that a fix applied to one migration's copy of a
+// function can be silently superseded by a LATER migration's own CREATE OR REPLACE of
+// the same function (five separate migrations redefine transition_employer_application).
+// Always check the EFFECTIVE (latest, across every migration file) definition, never
+// just the one file a fix happened to land in.
+function effectiveFunctionBody(name: string): string {
+  const dir = join(root, 'supabase', 'migrations');
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  let found = '';
+  for (const f of files) {
+    const s = readFileSync(join(dir, f), 'utf8');
+    let from = 0;
+    for (;;) {
+      const i = s.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`, from);
+      if (i < 0) break;
+      const j = s.indexOf('\n$$;', i);
+      found = s.slice(i, j + 4);
+      from = j;
+    }
+  }
+  return found;
+}
 function suiteRunsReplayChecksUnconditionally() {
   const src = readFileSync(join(root, 'test/employer-company-accounts-suite.ts'), 'utf8');
   return src.includes('replayWrongExpected') && src.includes('replayWrongReason') &&
@@ -53,6 +75,19 @@ const replayBinding = read('supabase/migrations/20261114190000_v2_p0_m3_idempote
 check(/EXCEPTION WHEN unique_violation THEN\s*\n\s*RAISE EXCEPTION 'idempotency_conflict'/.test(replayBinding),
   'a concurrent same-key-different-application race on hiring_decision_events surfaces idempotency_conflict, not a raw unique_violation (PR #120 review remediation)');
 check(replayBinding.includes('v_event.previous_state IS DISTINCT FROM p_expected_status') && replayBinding.includes('v_event.reason_code IS DISTINCT FROM p_reason_code'), 'idempotency replay rejects a reused key when expected state or reason differs');
+
+const effectiveEmployerTransition = effectiveFunctionBody('transition_employer_application');
+check(/EXCEPTION WHEN unique_violation THEN\s*\n\s*RAISE EXCEPTION 'idempotency_conflict'/.test(effectiveEmployerTransition),
+  'the EFFECTIVE (latest-across-all-migrations) transition_employer_application still catches the unique_violation race, not just the 20261114190000 copy');
+check(effectiveEmployerTransition.includes('v_event.previous_state IS DISTINCT FROM p_expected_status') && effectiveEmployerTransition.includes('v_event.reason_code IS DISTINCT FROM p_reason_code'),
+  'the EFFECTIVE transition_employer_application still rejects a reused key when expected state or reason differs');
+
+const effectiveCandidateTransition = effectiveFunctionBody('transition_application_status');
+check(effectiveCandidateTransition.includes("'success',true,'status',p_new_status,'replayed',true"),
+  'the EFFECTIVE transition_application_status still has the idempotent-replay return path (both branches)');
+const effectiveRewind = effectiveFunctionBody('rewind_last_decision');
+check(/EXISTS \(\s*SELECT 1 FROM public\.employer_job_applications WHERE candidate_application_id=v_app\.id\s*\)/.test(effectiveRewind),
+  'the EFFECTIVE rewind_last_decision still re-checks for a concurrently-created link under the lock');
 const workflow = read('.github/workflows/ci.yml');
 check(!workflow.includes('vars.CI_V2_M3_REPLAY_BINDING_ENABLED') && suiteRunsReplayChecksUnconditionally(), 'live replay-payload checks run unconditionally now that the isolated migration is applied, not behind an opt-in gate');
 check(reviewFixes.indexOf('FOR UPDATE OF e;') < reviewFixes.indexOf('WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;'), 'employer transition locks the application before checking idempotency for concurrent replay');
