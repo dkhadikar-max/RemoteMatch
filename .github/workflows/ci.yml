@@ -100,6 +100,14 @@ jobs:
         if: hashFiles('test/v2-m2-m3-api-contract-suite.ts') != ''
         run: npm run test:v2:m2-m3:contracts
 
+      - name: V2 M2 lock-order static regression suite
+        if: hashFiles('test/v2-m2-lock-order-suite.ts') != ''
+        run: npx tsx test/v2-m2-lock-order-suite.ts
+
+      - name: V2 M3 legacy employer applications static regression suite
+        if: hashFiles('test/v2-m3-legacy-suite.ts') != ''
+        run: npx tsx test/v2-m3-legacy-suite.ts
+
   # ----------------------------------------------------------------------------
   # Direct Employer Supply (migrations 044/045/047) -- LIVE integration tier.
   #
@@ -140,7 +148,12 @@ jobs:
       ADMIN_HOST_OVERRIDE: admin.ci.local:3100
       TEST_BASE_URL: http://localhost:3100
       TEST_ADMIN_HOST: admin.ci.local:3100
-      CI_V2_M3_REPLAY_BINDING_ENABLED: ${{ vars.CI_V2_M3_REPLAY_BINDING_ENABLED || 'false' }}
+      # Direct Postgres connection string for the isolated project (session pooler or
+      # direct connection, NOT the REST API URL above) -- needed only to run
+      # test/v2-m2-m3-database-regression.sql via psql. Optional: if unset, that one
+      # step is skipped with a clear message rather than failing the job, since this
+      # secret has not been requested/added yet (PR #120 review remediation).
+      CI_ISOLATED_DATABASE_URL: ${{ secrets.CI_ISOLATED_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -178,6 +191,24 @@ jobs:
           }
           console.log(`Verified isolated test project: ${actual}`);
           NODE
+
+      - name: V2 M2/M3 database regression contract (live, isolated project only)
+        if: hashFiles('test/v2-m2-m3-database-regression.sql') != ''
+        run: |
+          if [ -z "$CI_ISOLATED_DATABASE_URL" ]; then
+            echo "CI_ISOLATED_DATABASE_URL is not set -- skipping test/v2-m2-m3-database-regression.sql."
+            echo "This secret (the isolated project's direct Postgres connection string, NOT the REST API URL) needs to be added for this check to run; see PR #120 review remediation notes."
+            exit 0
+          fi
+          node - <<'NODE'
+          const u = new URL(process.env.CI_ISOLATED_DATABASE_URL);
+          const expected = 'xyahktsgdigutxartafb';
+          if (!u.hostname.includes(expected)) {
+            throw new Error(`Refusing to run the database regression contract against an unexpected host: ${u.hostname}`);
+          }
+          console.log(`Verified isolated database target: ${u.hostname}`);
+          NODE
+          psql "$CI_ISOLATED_DATABASE_URL" -v ON_ERROR_STOP=1 -f test/v2-m2-m3-database-regression.sql
 
       # Employer P1 #1: run the publication/suspension regression before unrelated
       # directory checks so employer coverage is reported even if that suite fails.

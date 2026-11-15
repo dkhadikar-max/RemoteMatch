@@ -12,7 +12,11 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
 const root = join(__dirname, '..');
-function suiteIncludesReplayGate() { return readFileSync(join(root, 'test/employer-company-accounts-suite.ts'), 'utf8').includes('CI_V2_M3_REPLAY_BINDING_ENABLED'); }
+function suiteRunsReplayChecksUnconditionally() {
+  const src = readFileSync(join(root, 'test/employer-company-accounts-suite.ts'), 'utf8');
+  return src.includes('replayWrongExpected') && src.includes('replayWrongReason') &&
+    !src.includes('process.env.CI_V2_M3_REPLAY_BINDING_ENABLED');
+}
 let passed = 0;
 let failed = 0;
 
@@ -32,7 +36,7 @@ const migrations = [
   '20261112190030_v2_p0_m3_event_writer_rls_and_fk_indexes.sql',
   '20261112190152_v2_p0_m3_event_timestamps_and_fk_indexes.sql',
   '20261112190248_v2_p0_m3_scope_guard_application_audit_only.sql',
-  '20261113041032_v2_p0_m3_lifecycle_review_fixes.sql',
+  '20261113120000_v2_p0_m3_lifecycle_review_fixes.sql',
   '20261114190000_v2_p0_m3_idempotency_payload_binding.sql',
 ];
 
@@ -44,11 +48,13 @@ for (const file of migrations) {
 const lifecycle = read('supabase/migrations/20261112185212_v2_p0_m2_m3_application_lifecycle.sql');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.apply_to_employer_job'), 'atomic direct-apply RPC is in the migration source');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.transition_employer_application'), 'employer transition RPC is in the migration source');
-const reviewFixes = read('supabase/migrations/20261113041032_v2_p0_m3_lifecycle_review_fixes.sql');
+const reviewFixes = read('supabase/migrations/20261113120000_v2_p0_m3_lifecycle_review_fixes.sql');
 const replayBinding = read('supabase/migrations/20261114190000_v2_p0_m3_idempotency_payload_binding.sql');
+check(/EXCEPTION WHEN unique_violation THEN\s*\n\s*RAISE EXCEPTION 'idempotency_conflict'/.test(replayBinding),
+  'a concurrent same-key-different-application race on hiring_decision_events surfaces idempotency_conflict, not a raw unique_violation (PR #120 review remediation)');
 check(replayBinding.includes('v_event.previous_state IS DISTINCT FROM p_expected_status') && replayBinding.includes('v_event.reason_code IS DISTINCT FROM p_reason_code'), 'idempotency replay rejects a reused key when expected state or reason differs');
 const workflow = read('.github/workflows/ci.yml');
-check(workflow.includes('CI_V2_M3_REPLAY_BINDING_ENABLED') && suiteIncludesReplayGate(), 'CI exposes an explicit gate for live replay-payload checks after the isolated migration is applied');
+check(!workflow.includes('vars.CI_V2_M3_REPLAY_BINDING_ENABLED') && suiteRunsReplayChecksUnconditionally(), 'live replay-payload checks run unconditionally now that the isolated migration is applied, not behind an opt-in gate');
 check(reviewFixes.indexOf('FOR UPDATE OF e;') < reviewFixes.indexOf('WHERE company_id=p_company_id AND idempotency_key=p_idempotency_key;'), 'employer transition locks the application before checking idempotency for concurrent replay');
 check(reviewFixes.includes('IF v_eja.candidate_application_id IS NOT NULL AND v_app.status <> v_candidate_status THEN'), 'legacy employer applications transition without requiring a candidate-side link');
 check(lifecycle.includes('CREATE OR REPLACE FUNCTION public.set_application_archived'), 'archive preference RPC is in the migration source');
@@ -64,6 +70,9 @@ check(directApply.includes("rpc('apply_to_employer_job'"), 'direct apply HTTP ro
 check(!directApply.includes(".from('employer_job_applications').insert"), 'direct apply route does not write employer application rows directly');
 
 const employerRoute = read('src/app/api/employer/companies/[id]/applications/route.ts');
+const employerRouteGet = employerRoute.slice(employerRoute.indexOf('export async function GET'), employerRoute.indexOf('export async function PATCH'));
+check(/role\s*===\s*'member'/.test(employerRouteGet) && /status:\s*403/.test(employerRouteGet),
+  "GET applicant list enforces the same owner/admin-only boundary as PATCH (PR #120 review remediation)");
 check(employerRoute.includes("rpc('transition_employer_application'"), 'employer PATCH calls the controlled transition RPC');
 check(!employerRoute.includes(".from('employer_job_applications')\\n    .update"), 'employer PATCH does not mutate lifecycle status directly');
 check(employerRoute.includes('expectedStatus') && employerRoute.includes('idempotencyKey'), 'employer transition requires compare-and-swap and idempotency key');

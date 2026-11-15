@@ -226,13 +226,28 @@ BEGIN
     IF v_expected_candidate_status IS NULL OR v_app.status IS DISTINCT FROM v_expected_candidate_status THEN
       RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001';
     END IF;
+
+    -- Idempotent replay: if the application is already in the requested target
+    -- state AND the deterministic hiring_decision_events row for this exact
+    -- transition already exists, this is a retry of an already-committed
+    -- transition (e.g. a client retrying after a timeout), not a real conflict.
+    -- Must be checked before the p_expected_status comparison below, because on
+    -- a genuine replay v_app.status now equals p_new_status, not p_expected_status.
+    v_employer_new_status:=CASE p_new_status
+      WHEN 'withdrawn' THEN 'withdrawn' WHEN 'offer_declined' THEN 'offer_declined' ELSE NULL END;
+    IF v_employer_new_status IS NOT NULL AND v_app.status=p_new_status AND v_eja.status=v_employer_new_status
+       AND EXISTS (
+         SELECT 1 FROM public.hiring_decision_events
+         WHERE employer_application_id=v_eja.id
+           AND idempotency_key='candidate-transition:'||v_eja.id::text||':'||v_employer_new_status
+       ) THEN
+      RETURN jsonb_build_object('success',true,'status',p_new_status,'replayed',true);
+    END IF;
+
     IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;
     IF NOT public.is_valid_linked_application_transition(v_app.status,p_new_status,'candidate') THEN
       RAISE EXCEPTION 'managed_by_employer_or_invalid_transition' USING ERRCODE='22023';
     END IF;
-
-    v_employer_new_status:=CASE p_new_status
-      WHEN 'withdrawn' THEN 'withdrawn' WHEN 'offer_declined' THEN 'offer_declined' ELSE NULL END;
     IF v_employer_new_status IS NULL THEN RAISE EXCEPTION 'managed_by_employer' USING ERRCODE='22023'; END IF;
 
     UPDATE public.employer_job_applications SET status=v_employer_new_status,updated_at=now() WHERE id=v_eja.id;
@@ -263,6 +278,26 @@ BEGIN
   SELECT * INTO v_app FROM public.applications
   WHERE profile_id=v_uid AND opportunity_id=p_opportunity_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'application_not_found' USING ERRCODE='P0002'; END IF;
+
+  -- Idempotent replay: if the application is already in the requested target
+  -- state AND the most recent recorded event for it is exactly this
+  -- expected->new transition, this is a retry of an already-committed
+  -- transition, not a real conflict. Matching only the LATEST event (not any
+  -- historical one) avoids treating a legitimately repeated transition
+  -- (e.g. interested -> applied -> withdrawn -> applied -> withdrawn again)
+  -- as a stale replay of the earlier one.
+  IF v_app.status=p_new_status AND EXISTS (
+    SELECT 1 FROM (
+      SELECT event_payload FROM public.application_events
+      WHERE application_id=v_app.id AND event_type='status_changed'
+      ORDER BY created_at DESC LIMIT 1
+    ) last_event
+    WHERE (last_event.event_payload->>'fromStatus')=p_expected_status
+      AND (last_event.event_payload->>'toStatus')=p_new_status
+  ) THEN
+    RETURN jsonb_build_object('success',true,'status',p_new_status,'replayed',true);
+  END IF;
+
   IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;
   IF NOT public.is_valid_application_transition(v_app.status,p_new_status) THEN
     RAISE EXCEPTION 'invalid_transition' USING ERRCODE='22023';
@@ -372,6 +407,18 @@ BEGIN
         SELECT * INTO v_app FROM public.applications WHERE id=v_app.id AND profile_id=v_uid FOR UPDATE;
         IF FOUND AND v_app.status IS DISTINCT FROM 'interested' THEN
           RETURN jsonb_build_object('success',false,'error','application_state_conflict');
+        END IF;
+        -- Re-check for a link under the lock: the first lookup above (line ~395) was
+        -- unlocked, so a concurrent apply_to_employer_job could have linked this exact
+        -- application between that read and this lock being granted. Relying only on
+        -- v_app.status matching 'interested' is not a sufficient guard: nothing proves a
+        -- link cannot be created without changing that status. Re-check explicitly and
+        -- take the same conflict path as the IF branch above, instead of falling through
+        -- to the unconditional DELETE below (PR #120 review remediation).
+        IF FOUND AND EXISTS (
+          SELECT 1 FROM public.employer_job_applications WHERE candidate_application_id=v_app.id
+        ) THEN
+          RETURN jsonb_build_object('success',false,'error','application_submitted');
         END IF;
       END IF;
     END IF;

@@ -1,6 +1,23 @@
 -- Recovered verbatim from the applied migration ledger on isolated project remotematch-paidtest.
 -- Version: 20261112185212
 -- Name: v2_p0_m2_m3_application_lifecycle
+--
+-- PR #120 review remediation: the three CHECK constraints below were rewritten to
+-- NOT VALID + a separate VALIDATE CONSTRAINT so they take a brief ACCESS EXCLUSIVE
+-- lock only to add the constraint (no scan), then a much lighter SHARE UPDATE
+-- EXCLUSIVE lock while validating, which does not block concurrent reads/writes.
+-- A preflight DO block before each ALTER/CREATE UNIQUE INDEX now checks for rows
+-- that would violate the new constraint/index and RAISEs a clear, actionable
+-- exception identifying them instead of letting the ALTER/CREATE fail with an
+-- opaque constraint-violation error. CREATE INDEX CONCURRENTLY was deliberately
+-- NOT added here: Postgres forbids it inside a transaction block, and this file
+-- is applied as a single transactional script, so adding it would make the whole
+-- migration fail to apply rather than make it safer. The CONCURRENTLY form of
+-- these same three indexes is instead shipped as a separate, manually-run
+-- companion script -- see docs/v2-m2-m3-concurrent-index-preapply.sql -- to be
+-- run (as individual statements, outside any transaction) before this migration
+-- if a near-zero-downtime rollout is required; the CREATE UNIQUE INDEX IF NOT
+-- EXISTS statements below then no-op against the indexes it already built.
 
 
 -- RemoteMatch V2 P0 M2/M3 isolated implementation.
@@ -16,26 +33,67 @@ ALTER TABLE public.applications
   CHECK (application_channel IN ('external','remotematch_direct')),
   ADD COLUMN archived_at timestamptz NULL;
 
-CREATE UNIQUE INDEX uq_eja_candidate_opportunity
+DO $preflight$
+DECLARE
+  v_dupe_count int;
+  v_bad_status text[];
+BEGIN
+  SELECT count(*) INTO v_dupe_count FROM (
+    SELECT candidate_profile_id, opportunity_id FROM public.employer_job_applications
+    GROUP BY candidate_profile_id, opportunity_id HAVING count(*) > 1
+  ) d;
+  IF v_dupe_count > 0 THEN
+    RAISE EXCEPTION 'uq_eja_candidate_opportunity preflight failed: % existing (candidate_profile_id, opportunity_id) pairs are duplicated in employer_job_applications; resolve before this migration can run', v_dupe_count;
+  END IF;
+
+  SELECT count(*) INTO v_dupe_count FROM (
+    SELECT candidate_application_id FROM public.employer_job_applications
+    WHERE candidate_application_id IS NOT NULL
+    GROUP BY candidate_application_id HAVING count(*) > 1
+  ) d;
+  IF v_dupe_count > 0 THEN
+    RAISE EXCEPTION 'uq_eja_candidate_application preflight failed: % existing candidate_application_id values are referenced by more than one employer_job_applications row; resolve before this migration can run', v_dupe_count;
+  END IF;
+
+  SELECT array_agg(DISTINCT status) INTO v_bad_status FROM public.applications
+  WHERE status NOT IN ('interested','applied','interview','offer','rejected','withdrawn','archived','offer_declined','hired');
+  IF v_bad_status IS NOT NULL THEN
+    RAISE EXCEPTION 'applications_status_check preflight failed: existing rows use status values outside the new vocabulary: %', v_bad_status;
+  END IF;
+
+  SELECT array_agg(DISTINCT status) INTO v_bad_status FROM public.employer_job_applications
+  WHERE status NOT IN ('submitted','reviewing','shortlisted','interviewing','offered','rejected','hired','withdrawn','offer_declined');
+  IF v_bad_status IS NOT NULL THEN
+    RAISE EXCEPTION 'employer_job_applications_status_check preflight failed: existing rows use status values outside the new vocabulary: %', v_bad_status;
+  END IF;
+END;
+$preflight$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_eja_candidate_opportunity
   ON public.employer_job_applications(candidate_profile_id, opportunity_id);
-CREATE UNIQUE INDEX uq_eja_candidate_application
+CREATE UNIQUE INDEX IF NOT EXISTS uq_eja_candidate_application
   ON public.employer_job_applications(candidate_application_id)
   WHERE candidate_application_id IS NOT NULL;
 
 -- Extend candidate status vocabulary only for linked applications.
+-- NOT VALID + VALIDATE CONSTRAINT: the ADD takes an instant ACCESS EXCLUSIVE lock
+-- (no table scan); VALIDATE then only needs SHARE UPDATE EXCLUSIVE, so concurrent
+-- reads/writes against this table are not blocked while existing rows are checked.
 ALTER TABLE public.applications DROP CONSTRAINT applications_status_check;
 ALTER TABLE public.applications ADD CONSTRAINT applications_status_check
   CHECK (status = ANY (ARRAY[
     'interested','applied','interview','offer','rejected','withdrawn','archived',
     'offer_declined','hired'
-  ]::text[]));
+  ]::text[])) NOT VALID;
+ALTER TABLE public.applications VALIDATE CONSTRAINT applications_status_check;
 
 ALTER TABLE public.employer_job_applications DROP CONSTRAINT employer_job_applications_status_check;
 ALTER TABLE public.employer_job_applications ADD CONSTRAINT employer_job_applications_status_check
   CHECK (status = ANY (ARRAY[
     'submitted','reviewing','shortlisted','interviewing','offered',
     'rejected','hired','withdrawn','offer_declined'
-  ]::text[]));
+  ]::text[])) NOT VALID;
+ALTER TABLE public.employer_job_applications VALIDATE CONSTRAINT employer_job_applications_status_check;
 
 -- Typed event relationship and a truthful event-occurrence timestamp.
 ALTER TABLE public.application_events
@@ -43,15 +101,39 @@ ALTER TABLE public.application_events
     REFERENCES public.employer_job_applications(id) ON DELETE RESTRICT,
   ADD COLUMN occurred_at timestamptz NULL;
 
+DO $preflight2$
+DECLARE
+  v_bad_type text[];
+  v_dupe_count int;
+BEGIN
+  SELECT array_agg(DISTINCT event_type) INTO v_bad_type FROM public.application_events
+  WHERE event_type NOT IN ('status_changed','feedback_submitted','interview_scheduled',
+    'offer_received','rejection_received','note_added','direct_application_submitted','archived','unarchived');
+  IF v_bad_type IS NOT NULL THEN
+    RAISE EXCEPTION 'application_events_event_type_check preflight failed: existing rows use event_type values outside the new vocabulary: %', v_bad_type;
+  END IF;
+
+  SELECT count(*) INTO v_dupe_count FROM (
+    SELECT employer_application_id FROM public.application_events
+    WHERE event_type = 'direct_application_submitted' AND employer_application_id IS NOT NULL
+    GROUP BY employer_application_id HAVING count(*) > 1
+  ) d;
+  IF v_dupe_count > 0 THEN
+    RAISE EXCEPTION 'uq_application_events_direct_submission preflight failed: % employer_application_id values have more than one direct_application_submitted event; resolve before this migration can run', v_dupe_count;
+  END IF;
+END;
+$preflight2$;
+
 ALTER TABLE public.application_events DROP CONSTRAINT application_events_event_type_check;
 ALTER TABLE public.application_events ADD CONSTRAINT application_events_event_type_check
   CHECK (event_type = ANY (ARRAY[
     'status_changed','feedback_submitted','interview_scheduled',
     'offer_received','rejection_received','note_added',
     'direct_application_submitted','archived','unarchived'
-  ]::text[]));
+  ]::text[])) NOT VALID;
+ALTER TABLE public.application_events VALIDATE CONSTRAINT application_events_event_type_check;
 
-CREATE UNIQUE INDEX uq_application_events_direct_submission
+CREATE UNIQUE INDEX IF NOT EXISTS uq_application_events_direct_submission
   ON public.application_events(employer_application_id)
   WHERE event_type = 'direct_application_submitted';
 

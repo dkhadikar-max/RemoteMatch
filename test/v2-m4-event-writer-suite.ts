@@ -17,12 +17,12 @@ assert(check.length>1000&&block(preflight)===check,'postflight and tripwire cont
 assert(preflight.startsWith('BEGIN READ ONLY;')&&preflight.trimEnd().endsWith('COMMIT;')&&preflightBefore.startsWith('BEGIN READ ONLY;')&&preflightBefore.trimEnd().endsWith('COMMIT;'),'both operator preflights are enforced read-only transactions');
 assert(beforeCheck.replace('v_post := false','v_post := true')===check,'preflight-before uses the same canonical check with explicit pre-drop mode');
 assert(canonical.replace('__M4_POST_DROP__','true').trim()===check.trim(),'generated post-drop block matches the canonical source');
-assert(check.includes('v_post OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
+assert(check.includes('v_post OR v_table<>\'public.application_events\' OR p.polname <> \'events_insert_own\''),'post-drop mode checks even if the legacy policy is recreated');
 assert(check.includes('relforcerowsecurity')&&check.includes('pg_has_role'),'check enforces FORCE RLS and inherited policy membership');
 assert(check.includes('legacy events_insert_own policy still exists')&&beforeCheck.includes('pre-drop phase expected'),'explicit phases reject being run against the wrong migration state');
 assert(check.includes('has_table_privilege')&&check.includes('has_schema_privilege'),'check verifies writer table and schema privileges');
 assert(check.includes('must remain SECURITY INVOKER')&&check.includes('search_path=public(,|$)'),'employer RPC remains invoker with public-first search_path');
-assert(check.includes("v_post OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
+assert(check.includes("v_post OR v_table<>'public.application_events' OR p.polname <> 'events_insert_own'")&&!check.includes('IF v_post THEN\n    IF EXISTS'),'preflight checks other client policies and INSERT grants before the legacy policy is dropped');
 assert(!check.includes('current_user'),'read-only operator is not required to bypass RLS');
 const writers=['record_application_feedback','update_application_notes','transition_application_status','set_application_archived','apply_to_employer_job','transition_employer_application'];
 assert(writers.every(n=>check.includes('public.'+n+'(')),'all six known writer signatures are checked');
@@ -59,7 +59,7 @@ async function main(){
  assert(!!wrongPostPhase&&/legacy events_insert_own policy still exists/.test(wrongPostPhase),'post-drop check refuses to run before the legacy policy is dropped');
  await must('CREATE POLICY unexpected_client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);');
  const extraPolicyError=await run(beforeCheck);
- assert(!!extraPolicyError&&/client INSERT policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
+ assert(!!extraPolicyError&&/client INSERT\/UPDATE\/DELETE policy exists/.test(extraPolicyError),'preflight catches a second client INSERT policy before the legacy drop');
  await must('DROP POLICY unexpected_client_insert ON public.application_events; GRANT INSERT ON public.application_events TO authenticated;');
  const preGrantError=await run(beforeCheck);
  assert(!!preGrantError&&/authenticated still has INSERT/.test(preGrantError),'preflight catches a client INSERT grant before the legacy drop');
@@ -94,16 +94,32 @@ async function main(){
  await expect('detects service_role without table INSERT','REVOKE INSERT ON public.application_events FROM service_role;','GRANT INSERT ON public.application_events TO service_role;',/service_role lacks INSERT/);
  await expect('detects service_role without schema USAGE','REVOKE USAGE ON SCHEMA public FROM PUBLIC, service_role;','GRANT USAGE ON SCHEMA public TO PUBLIC, service_role;',/service_role lacks USAGE/);
  await expect('detects employer function security-definer drift','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY DEFINER;','ALTER FUNCTION '+sig('transition_employer_application')+' SECURITY INVOKER;',/must remain SECURITY INVOKER/);
- await expect('detects employer function without pinned search_path','ALTER FUNCTION '+sig('transition_employer_application')+' RESET search_path;','ALTER FUNCTION '+sig('transition_employer_application')+' SET search_path=public,pg_temp;',/does not pin search_path with public first/);
+ await expect('detects employer function without pinned search_path','ALTER FUNCTION '+sig('transition_employer_application')+' RESET search_path;','ALTER FUNCTION '+sig('transition_employer_application')+' SET search_path=public,pg_temp;',/does not pin search_path to public,pg_temp/);
+ // PR #120 review remediation: the tripwire must hold a NEW writer to the strict
+ // public,pg_temp pattern even when it only drops to the weaker public-only form
+ // (not just when search_path is reset entirely, which the case above already covers).
+ await expect('detects a new writer silently weakened to the legacy public-only pattern','ALTER FUNCTION '+sig('transition_application_status')+' SET search_path=public;','ALTER FUNCTION '+sig('transition_application_status')+' SET search_path=public,pg_temp;',/transition_application_status.*does not pin search_path to public,pg_temp/);
+ // The same weak public-only pattern on a documented LEGACY writer (record_application_feedback
+ // / update_application_notes) must NOT fail the check -- that debt is known and deferred --
+ // it should only be reported as a non-fatal legacy-debt NOTICE.
+ await must('ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public;');
+ const legacyWeakResult=await run(check);
+ await must('ALTER FUNCTION '+sig('update_application_notes')+' SET search_path=public,pg_temp;');
+ assert(legacyWeakResult===null,'a known-legacy writer on the weaker public-only search_path does not fail the tripwire');
  await expect('detects SECURITY INVOKER drift','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY INVOKER;','ALTER FUNCTION '+sig('transition_application_status')+' SECURITY DEFINER;',/transition_application_status.*not SECURITY DEFINER/);
  await expect('detects missing writer','ALTER FUNCTION '+sig('update_application_notes')+' RENAME TO notes_missing;','ALTER FUNCTION public.notes_missing(text,text) RENAME TO update_application_notes;',/update_application_notes.*does not exist/);
  await expect('detects disabled RLS','ALTER TABLE public.application_events DISABLE ROW LEVEL SECURITY;','ALTER TABLE public.application_events ENABLE ROW LEVEL SECURITY;',/not enabled and forced/);
  await expect('detects unforced RLS','ALTER TABLE public.application_events NO FORCE ROW LEVEL SECURITY;','ALTER TABLE public.application_events FORCE ROW LEVEL SECURITY;',/not enabled and forced/);
  await expect('detects authenticated INSERT privilege','GRANT INSERT ON public.application_events TO authenticated;','REVOKE INSERT ON public.application_events FROM authenticated;',/authenticated still has INSERT/);
  await expect('detects anon INSERT privilege','GRANT INSERT ON public.application_events TO anon;','REVOKE INSERT ON public.application_events FROM anon;',/anon still has INSERT/);
- await expect('detects authenticated INSERT policy','CREATE POLICY client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY client_insert ON public.application_events;',/client INSERT policy exists/);
- await expect('detects the legacy policy recreated after the migration','CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY events_insert_own ON public.application_events;',/client INSERT policy exists/);
- await expect('detects PUBLIC FOR ALL policy','CREATE POLICY public_all ON public.application_events FOR ALL TO PUBLIC USING(true) WITH CHECK(true);','DROP POLICY public_all ON public.application_events;',/client INSERT policy exists/);
+ await expect('detects authenticated INSERT policy','CREATE POLICY client_insert ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY client_insert ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects the legacy policy recreated after the migration','CREATE POLICY events_insert_own ON public.application_events FOR INSERT TO authenticated WITH CHECK(true);','DROP POLICY events_insert_own ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects PUBLIC FOR ALL policy','CREATE POLICY public_all ON public.application_events FOR ALL TO PUBLIC USING(true) WITH CHECK(true);','DROP POLICY public_all ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ // PR #120 review remediation: the tripwire must also catch a client-reachable UPDATE or
+ // DELETE policy on an append-only audit table, not just INSERT/ALL -- this is the exact
+ // blind spot the review flagged (a prior version only scanned polcmd IN ('a','*')).
+ await expect('detects a client UPDATE policy (not just INSERT) on application_events','CREATE POLICY client_update ON public.application_events FOR UPDATE TO authenticated USING(true);','DROP POLICY client_update ON public.application_events;',/client INSERT\/UPDATE\/DELETE policy exists/);
+ await expect('detects a client DELETE policy on hiring_decision_events','CREATE TABLE public.hiring_decision_events(id serial primary key); ALTER TABLE public.hiring_decision_events ENABLE ROW LEVEL SECURITY; ALTER TABLE public.hiring_decision_events FORCE ROW LEVEL SECURITY; CREATE POLICY client_delete ON public.hiring_decision_events FOR DELETE TO authenticated USING(true);','DROP TABLE public.hiring_decision_events;',/client INSERT\/UPDATE\/DELETE policy exists on public\.hiring_decision_events/);
  await must('CREATE ROLE client_parent NOLOGIN; GRANT client_parent TO authenticated;');
  await expect('detects inherited-role INSERT policy','CREATE POLICY parent_insert ON public.application_events FOR INSERT TO client_parent WITH CHECK(true);','DROP POLICY parent_insert ON public.application_events;',/inherited roles/);
  await expect('detects inherited INSERT privilege','GRANT INSERT ON public.application_events TO client_parent;','REVOKE INSERT ON public.application_events FROM client_parent;',/authenticated still has INSERT/);

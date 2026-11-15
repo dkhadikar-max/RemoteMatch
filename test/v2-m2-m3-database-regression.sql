@@ -111,7 +111,7 @@ BEGIN
   -- All nine M2/M3 source migrations must be represented in the applied ledger.
   SELECT count(*) INTO v_count FROM supabase_migrations.schema_migrations
   WHERE version IN ('20261112185212','20261112185655','20261112185730',
-    '20261112185902','20261112190030','20261112190152','20261112190248','20261113041032','20261114190000');
+    '20261112185902','20261112190030','20261112190152','20261112190248','20261113120000','20261114190000');
   IF v_count <> 9 THEN RAISE EXCEPTION 'expected nine applied M2/M3 migrations, found %',v_count; END IF;
 END;
 $$;

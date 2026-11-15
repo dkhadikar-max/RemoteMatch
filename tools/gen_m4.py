@@ -40,7 +40,7 @@ after = (
     + report + "-- Post-drop phase; same canonical check logic as the before script and tripwire.\n"
     + block(True) + "\nCOMMIT;\n"
 )
-(root / "supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql").write_text(migration, encoding="utf-8")
-(root / "docs/v2-m4-event-writer-preflight-before.sql").write_text(before, encoding="utf-8")
-(root / "docs/v2-m4-event-writer-preflight.sql").write_text(after, encoding="utf-8")
+(root / "supabase/migrations/20261114200000_v2_p0_m4_event_writer_tripwire.sql").write_text(migration, encoding="utf-8", newline="\n")
+(root / "docs/v2-m4-event-writer-preflight-before.sql").write_text(before, encoding="utf-8", newline="\n")
+(root / "docs/v2-m4-event-writer-preflight.sql").write_text(after, encoding="utf-8", newline="\n")
 print("Generated post-drop tripwire and phase-explicit read-only preflight scripts.")

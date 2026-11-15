@@ -6,8 +6,15 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'] as const;
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  try { await getAuthenticatedEmployer(req, params.id); }
+  let employer;
+  try { employer = await getAuthenticatedEmployer(req, params.id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
+  // PR #120 review remediation: applicant PII (email, full name, LinkedIn, avatar) is only
+  // for owners/admins, same boundary PATCH already enforces for status changes. There is no
+  // read-only "member" workflow that needs this data today.
+  if (employer.role === 'member') {
+    return NextResponse.json({ error: 'Only company owners and admins can view applicants.' }, { status: 403 });
+  }
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 

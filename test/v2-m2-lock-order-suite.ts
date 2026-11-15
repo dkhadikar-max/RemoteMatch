@@ -126,9 +126,114 @@ const body = (name: string) => {
   return fix.slice(i, fix.indexOf('\n$$;', i) + 4);
 };
 const revertLock = (s: string) => s.replace(/profiles WHERE id=v_uid FOR NO KEY UPDATE;/g, 'profiles WHERE id=v_uid FOR UPDATE;');
-for (const n of ['apply_to_employer_job', 'transition_application_status', 'rewind_last_decision']) {
+for (const n of ['apply_to_employer_job']) {
   assert(revertLock(body(n)) === before(n), `${n}: identical to the previous definition except the profile lock mode`);
 }
+
+// rewind_last_decision additionally gained a PR #120 review-remediation fix: the unlinked
+// (ELSE) branch now re-checks for a concurrently-created link under the applications lock
+// before falling through to the DELETE, instead of relying only on v_app.status matching
+// 'interested' as an implicit (and incomplete) proxy for "no link was created meanwhile".
+const revertRewindLinkRecheck = (s: string) => s.replace(/\r\n/g, '\n').replace(
+  `        IF FOUND AND v_app.status IS DISTINCT FROM 'interested' THEN
+          RETURN jsonb_build_object('success',false,'error','application_state_conflict');
+        END IF;
+        -- Re-check for a link under the lock: the first lookup above (line ~395) was
+        -- unlocked, so a concurrent apply_to_employer_job could have linked this exact
+        -- application between that read and this lock being granted. Relying only on
+        -- v_app.status matching 'interested' is not a sufficient guard: nothing proves a
+        -- link cannot be created without changing that status. Re-check explicitly and
+        -- take the same conflict path as the IF branch above, instead of falling through
+        -- to the unconditional DELETE below (PR #120 review remediation).
+        IF FOUND AND EXISTS (
+          SELECT 1 FROM public.employer_job_applications WHERE candidate_application_id=v_app.id
+        ) THEN
+          RETURN jsonb_build_object('success',false,'error','application_submitted');
+        END IF;`,
+  `        IF FOUND AND v_app.status IS DISTINCT FROM 'interested' THEN
+          RETURN jsonb_build_object('success',false,'error','application_state_conflict');
+        END IF;`,
+);
+assert(revertLock(revertRewindLinkRecheck(body('rewind_last_decision'))) === before('rewind_last_decision').replace(/\r\n/g, '\n'),
+  'rewind_last_decision: identical to the previous definition except the profile lock mode and the added concurrent-link recheck (PR #120 review remediation)');
+assert(/EXISTS \(\s*SELECT 1 FROM public\.employer_job_applications WHERE candidate_application_id=v_app\.id\s*\)/.test(body('rewind_last_decision')),
+  'rewind_last_decision: the unlinked branch re-checks for a link under the lock, not just the status side effect');
+
+// transition_application_status additionally gained PR #120 review-remediation idempotent
+// replay checks (both the linked and unlinked branches) on top of the lock-mode change, so
+// it gets its own revert that strips both in addition to the lock-mode revert, keeping the
+// same "no other silent drift" guarantee the loop above gives the other two writers.
+const revertReplayChecks = (s: string) => s
+  .replace(/\r\n/g, '\n')
+  .replace(
+    `    IF v_expected_candidate_status IS NULL OR v_app.status IS DISTINCT FROM v_expected_candidate_status THEN
+      RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001';
+    END IF;
+
+    -- Idempotent replay: if the application is already in the requested target
+    -- state AND the deterministic hiring_decision_events row for this exact
+    -- transition already exists, this is a retry of an already-committed
+    -- transition (e.g. a client retrying after a timeout), not a real conflict.
+    -- Must be checked before the p_expected_status comparison below, because on
+    -- a genuine replay v_app.status now equals p_new_status, not p_expected_status.
+    v_employer_new_status:=CASE p_new_status
+      WHEN 'withdrawn' THEN 'withdrawn' WHEN 'offer_declined' THEN 'offer_declined' ELSE NULL END;
+    IF v_employer_new_status IS NOT NULL AND v_app.status=p_new_status AND v_eja.status=v_employer_new_status
+       AND EXISTS (
+         SELECT 1 FROM public.hiring_decision_events
+         WHERE employer_application_id=v_eja.id
+           AND idempotency_key='candidate-transition:'||v_eja.id::text||':'||v_employer_new_status
+       ) THEN
+      RETURN jsonb_build_object('success',true,'status',p_new_status,'replayed',true);
+    END IF;
+
+    IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;
+    IF NOT public.is_valid_linked_application_transition(v_app.status,p_new_status,'candidate') THEN
+      RAISE EXCEPTION 'managed_by_employer_or_invalid_transition' USING ERRCODE='22023';
+    END IF;
+    IF v_employer_new_status IS NULL THEN RAISE EXCEPTION 'managed_by_employer' USING ERRCODE='22023'; END IF;`,
+    `    IF v_expected_candidate_status IS NULL OR v_app.status IS DISTINCT FROM v_expected_candidate_status THEN
+      RAISE EXCEPTION 'application_integrity_conflict' USING ERRCODE='P0001';
+    END IF;
+    IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;
+    IF NOT public.is_valid_linked_application_transition(v_app.status,p_new_status,'candidate') THEN
+      RAISE EXCEPTION 'managed_by_employer_or_invalid_transition' USING ERRCODE='22023';
+    END IF;
+
+    v_employer_new_status:=CASE p_new_status
+      WHEN 'withdrawn' THEN 'withdrawn' WHEN 'offer_declined' THEN 'offer_declined' ELSE NULL END;
+    IF v_employer_new_status IS NULL THEN RAISE EXCEPTION 'managed_by_employer' USING ERRCODE='22023'; END IF;`,
+  )
+  .replace(
+    `  IF NOT FOUND THEN RAISE EXCEPTION 'application_not_found' USING ERRCODE='P0002'; END IF;
+
+  -- Idempotent replay: if the application is already in the requested target
+  -- state AND the most recent recorded event for it is exactly this
+  -- expected->new transition, this is a retry of an already-committed
+  -- transition, not a real conflict. Matching only the LATEST event (not any
+  -- historical one) avoids treating a legitimately repeated transition
+  -- (e.g. interested -> applied -> withdrawn -> applied -> withdrawn again)
+  -- as a stale replay of the earlier one.
+  IF v_app.status=p_new_status AND EXISTS (
+    SELECT 1 FROM (
+      SELECT event_payload FROM public.application_events
+      WHERE application_id=v_app.id AND event_type='status_changed'
+      ORDER BY created_at DESC LIMIT 1
+    ) last_event
+    WHERE (last_event.event_payload->>'fromStatus')=p_expected_status
+      AND (last_event.event_payload->>'toStatus')=p_new_status
+  ) THEN
+    RETURN jsonb_build_object('success',true,'status',p_new_status,'replayed',true);
+  END IF;
+
+  IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;`,
+    `  IF NOT FOUND THEN RAISE EXCEPTION 'application_not_found' USING ERRCODE='P0002'; END IF;
+  IF v_app.status<>p_expected_status THEN RAISE EXCEPTION 'status_conflict' USING ERRCODE='P0003'; END IF;`,
+  );
+assert(revertLock(revertReplayChecks(body('transition_application_status'))) === before('transition_application_status').replace(/\r\n/g, '\n'),
+  'transition_application_status: identical to the previous definition except the profile lock mode and the two added idempotent-replay checks (PR #120 review remediation)');
+assert(body('transition_application_status').includes("RETURN jsonb_build_object('success',true,'status',p_new_status,'replayed',true);"),
+  'transition_application_status: both branches have a real replayed:true return path, not just a comment');
 const raises = (s: string) => Array.from(new Set(Array.from(s.matchAll(/RAISE EXCEPTION '([a-z_]+)'/g)).map((m) => m[1]))).sort().join();
 assert(raises(body('set_application_archived')) === raises(before('set_application_archived')), 'set_application_archived raises exactly the same error codes as before');
 const errCode = (s: string, code: string) => new RegExp(`RAISE EXCEPTION '${code}' USING ERRCODE='([A-Z0-9]+)'`).exec(s)?.[1];

@@ -1,4 +1,9 @@
 -- V2 P0 M3 review fixes.
+-- Renamed from 20261113041032 to 20261113120000 (PR #120 review remediation): the
+-- original timestamp sorted before main's already-applied
+-- 20261113090201_lock_company_on_vacancy_publish.sql, which this PR's branch was
+-- never rebased past. No statement in this file changed; only the filename/timestamp
+-- moved so it applies after that migration instead of before it.
 -- This follow-up migration preserves the byte-for-byte source of the already-applied
 -- 20261112185212 migration and hardens its employer lifecycle RPC in place.
 -- Legacy employer applications without candidate_application_id remain auditable
