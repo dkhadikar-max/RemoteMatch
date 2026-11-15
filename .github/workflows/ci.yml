@@ -55,6 +55,7 @@ jobs:
             test/job-filter-data-quality-suite.ts
             test/ttl-cache-stale-invalidation-suite.ts
             test/sitemap-read-retry-suite.ts
+            test/sitemap-chunk-suite.ts
             test/v2-m4-event-writer-suite.ts
           )
           ran_any=false
