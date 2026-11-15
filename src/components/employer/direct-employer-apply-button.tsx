@@ -7,6 +7,7 @@ export function DirectEmployerApplyButton({ sourceId }: { sourceId: string }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [replayed, setReplayed] = useState(false);
 
   const apply = async () => {
     setBusy(true); setError(''); setMessage('');
@@ -21,8 +22,12 @@ export function DirectEmployerApplyButton({ sourceId }: { sourceId: string }) {
         window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
         return;
       }
-      if (!response.ok) throw new Error(data.error || 'Could not submit application.');
-      setMessage('Application submitted. The employer can now review your profile.');
+      // Show the readable message; the error field is a machine code such as application_conflict.
+      if (!response.ok) throw new Error(data.message || data.error || 'Could not submit application.');
+      setReplayed(Boolean(data.replayed));
+      setMessage(data.replayed
+        ? 'You have already applied to this job. The employer can see your application.'
+        : 'Application submitted. The employer can now review your profile.');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -40,7 +45,7 @@ export function DirectEmployerApplyButton({ sourceId }: { sourceId: string }) {
       </label>
       <button type="button" onClick={apply} disabled={busy || Boolean(message)}
         className="soft-button primary text-sm w-full disabled:opacity-50">
-        {busy ? 'Submitting…' : message ? 'Application submitted' : 'Apply on RemoteMatch'}
+        {busy ? 'Submitting…' : message ? (replayed ? 'Already applied' : 'Application submitted') : 'Apply on RemoteMatch'}
       </button>
       {message && <p role="status" className="text-xs text-green-700">{message}</p>}
       {error && <p role="alert" className="text-xs text-[var(--danger)]">{error}</p>}

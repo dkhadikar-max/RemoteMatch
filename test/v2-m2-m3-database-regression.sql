@@ -1,0 +1,157 @@
+-- RemoteMatch V2 P0 M2/M3 database regression contract.
+-- Read-only: run against the isolated remotematch-paidtest project after
+-- applying all nine M2/M3 migrations. No fixture rows are inserted or modified.
+DO $$
+DECLARE
+  v_count integer;
+  v_security_definer boolean;
+  v_def text;
+BEGIN
+  -- Schema/link contract.
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='employer_job_applications' AND column_name='candidate_application_id') THEN
+    RAISE EXCEPTION 'missing employer_job_applications.candidate_application_id';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='applications' AND column_name='application_channel') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='applications' AND column_name='archived_at') THEN
+    RAISE EXCEPTION 'missing candidate application channel/archive columns';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='application_events' AND column_name='employer_application_id') OR
+     NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='application_events' AND column_name='occurred_at') THEN
+    RAISE EXCEPTION 'missing typed application event link/timestamp';
+  END IF;
+  IF to_regclass('public.hiring_decision_events') IS NULL OR to_regclass('public.hiring_decision_reason_codes') IS NULL THEN
+    RAISE EXCEPTION 'missing M3 audit tables';
+  END IF;
+
+  -- Direct client event forgery must remain impossible.
+  IF has_table_privilege('authenticated','public.application_events','INSERT') OR
+     has_table_privilege('anon','public.application_events','INSERT') THEN
+    RAISE EXCEPTION 'client INSERT privilege remains on application_events';
+  END IF;
+  SELECT count(*) INTO v_count FROM pg_policy
+  WHERE polrelid='public.application_events'::regclass AND polcmd='a';
+  IF v_count <> 0 THEN RAISE EXCEPTION 'application_events INSERT policy remains'; END IF;
+
+  -- Append-only audit and reference vocabulary remain server-controlled.
+  IF has_table_privilege('authenticated','public.hiring_decision_events','SELECT') OR
+     has_table_privilege('anon','public.hiring_decision_events','SELECT') OR
+     has_table_privilege('authenticated','public.hiring_decision_events','INSERT') OR
+     has_table_privilege('anon','public.hiring_decision_events','INSERT') THEN
+    RAISE EXCEPTION 'hiring decision audit table is exposed to client roles';
+  END IF;
+  IF has_table_privilege('authenticated','public.hiring_decision_reason_codes','INSERT') OR
+     has_table_privilege('anon','public.hiring_decision_reason_codes','INSERT') OR
+     has_table_privilege('service_role','public.hiring_decision_reason_codes','INSERT') THEN
+    RAISE EXCEPTION 'reason-code vocabulary is writable by an application role';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid='public.application_events'::regclass AND relforcerowsecurity) OR
+     NOT EXISTS (SELECT 1 FROM pg_class WHERE oid='public.hiring_decision_events'::regclass AND relforcerowsecurity) OR
+     NOT EXISTS (SELECT 1 FROM pg_class WHERE oid='public.hiring_decision_reason_codes'::regclass AND relforcerowsecurity) THEN
+    RAISE EXCEPTION 'FORCE RLS missing from one or more lifecycle event/reference tables';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.hiring_decision_events'::regclass AND tgname='hiring_decision_events_immutable' AND NOT tgisinternal) THEN
+    RAISE EXCEPTION 'append-only hiring decision trigger missing';
+  END IF;
+
+  -- RPC grants and execution context.
+  IF NOT has_function_privilege('authenticated','public.apply_to_employer_job(uuid,text)','EXECUTE') OR
+     has_function_privilege('anon','public.apply_to_employer_job(uuid,text)','EXECUTE') THEN
+    RAISE EXCEPTION 'direct apply RPC grants are incorrect';
+  END IF;
+  IF NOT has_function_privilege('authenticated','public.set_application_archived(text,boolean)','EXECUTE') OR
+     has_function_privilege('anon','public.set_application_archived(text,boolean)','EXECUTE') THEN
+    RAISE EXCEPTION 'archive RPC grants are incorrect';
+  END IF;
+  IF NOT has_function_privilege('service_role','public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)','EXECUTE') OR
+     has_function_privilege('authenticated','public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)','EXECUTE') THEN
+    RAISE EXCEPTION 'employer transition RPC grants are incorrect';
+  END IF;
+  SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.apply_to_employer_job(uuid,text)'::regprocedure;
+  IF v_security_definer IS DISTINCT FROM true THEN RAISE EXCEPTION 'direct apply RPC must be SECURITY DEFINER'; END IF;
+  SELECT prosecdef INTO v_security_definer FROM pg_proc WHERE oid='public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure;
+  IF v_security_definer IS DISTINCT FROM false THEN RAISE EXCEPTION 'employer transition RPC must be SECURITY INVOKER'; END IF;
+
+  -- Same-key replay must bind all state-changing inputs to the original event.
+  SELECT pg_get_functiondef('public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure)
+    INTO v_def;
+  IF v_def NOT LIKE '%v_event.previous_state IS DISTINCT FROM p_expected_status%'
+     OR v_def NOT LIKE '%v_event.reason_code IS DISTINCT FROM p_reason_code%' THEN
+    RAISE EXCEPTION 'employer transition idempotency does not bind expected status and reason';
+  END IF;
+
+  -- State-machine characterization.
+  IF NOT public.is_valid_linked_application_transition('applied','interview','employer_sync') OR
+     NOT public.is_valid_linked_application_transition('interview','offer','employer_sync') OR
+     NOT public.is_valid_linked_application_transition('offer','withdrawn','candidate') OR
+     NOT public.is_valid_linked_application_transition('offer','offer_declined','candidate') OR
+     NOT public.is_valid_linked_application_transition('rejected','applied','system_correction') THEN
+    RAISE EXCEPTION 'an approved linked candidate transition is missing';
+  END IF;
+  IF public.is_valid_linked_application_transition('applied','offer','candidate') OR
+     public.is_valid_linked_application_transition('applied','rejected','candidate') OR
+     public.is_valid_linked_application_transition('offer','hired','candidate') THEN
+    RAISE EXCEPTION 'an unapproved linked candidate transition is allowed';
+  END IF;
+  IF NOT public.is_valid_employer_application_transition('submitted','reviewing','employer') OR
+     NOT public.is_valid_employer_application_transition('interviewing','offered','employer') OR
+     NOT public.is_valid_employer_application_transition('offered','hired','employer') OR
+     NOT public.is_valid_employer_application_transition('rejected','reviewing','employer') THEN
+    RAISE EXCEPTION 'an approved employer transition is missing';
+  END IF;
+  IF public.is_valid_employer_application_transition('submitted','hired','employer') OR
+     public.is_valid_employer_application_transition('offered','reviewing','employer') THEN
+    RAISE EXCEPTION 'an unapproved employer transition is allowed';
+  END IF;
+
+  -- Scope guard: M3 is application audit only; M6 sourcing is not enabled.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid='public.hiring_decision_events'::regclass
+      AND conname='hiring_decision_events_subject_check'
+  ) THEN RAISE EXCEPTION 'application-only audit subject constraint missing'; END IF;
+  SELECT pg_get_constraintdef(oid) INTO v_def FROM pg_constraint
+  WHERE conrelid='public.hiring_decision_events'::regclass
+    AND conname='hiring_decision_events_subject_check';
+  IF v_def NOT LIKE '%sourcing_decision_id IS NULL%' OR v_def NOT LIKE '%employer_application_id IS NOT NULL%' THEN
+    RAISE EXCEPTION 'audit subject constraint does not restrict events to applications';
+  END IF;
+
+  -- Verify the effective lock-order behavior rather than exact migration version IDs.
+  -- Supabase migration ledgers retain historical versions when a migration is renamed
+  -- after it has already been applied; forward-fix migrations may also supersede bodies.
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.apply_to_employer_job(uuid,text)'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%' THEN
+    RAISE EXCEPTION 'M2 lock-order fix missing from apply_to_employer_job';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.transition_application_status(text,text,text,text)'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%' THEN
+    RAISE EXCEPTION 'M2 lock-order fix missing from transition_application_status';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.set_application_archived(text,boolean)'::regprocedure;
+  IF position('employer_job_applications WHERE id=v_link_id FOR UPDATE' IN v_def)=0
+     OR position('WHERE id=v_app_id AND profile_id=v_uid AND opportunity_id=p_opportunity_id FOR UPDATE' IN v_def)=0
+     OR position('employer_job_applications WHERE id=v_link_id FOR UPDATE' IN v_def)
+        > position('WHERE id=v_app_id AND profile_id=v_uid AND opportunity_id=p_opportunity_id FOR UPDATE' IN v_def) THEN
+    RAISE EXCEPTION 'M2 employer-before-candidate lock order missing from set_application_archived';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.rewind_last_decision()'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%'
+     OR v_def NOT LIKE '%IF FOUND AND EXISTS (%' THEN
+    RAISE EXCEPTION 'M2 lock-order or concurrent-link guard missing from rewind_last_decision';
+  END IF;
+
+  -- Verify effective legacy replay/reconsideration behavior and payload binding.
+  SELECT pg_get_functiondef('public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure)
+    INTO v_def;
+  IF v_def NOT LIKE '%v_corrects IS NULL AND NOT (%'
+     OR v_def NOT LIKE '%v_event.previous_state IS DISTINCT FROM p_expected_status%'
+     OR v_def NOT LIKE '%v_event.reason_code IS DISTINCT FROM p_reason_code%'
+     OR v_def NOT LIKE '%EXCEPTION WHEN unique_violation%' THEN
+    RAISE EXCEPTION 'legacy employer application or idempotency correction is missing';
+  END IF;
+END;
+$$;
