@@ -116,10 +116,42 @@ BEGIN
     RAISE EXCEPTION 'audit subject constraint does not restrict events to applications';
   END IF;
 
-  -- All nine M2/M3 source migrations must be represented in the applied ledger.
-  SELECT count(*) INTO v_count FROM supabase_migrations.schema_migrations
-  WHERE version IN ('20261112185212','20261112185655','20261112185730',
-    '20261112185902','20261112190030','20261112190152','20261112190248','20261113120000','20261114190000');
-  IF v_count <> 9 THEN RAISE EXCEPTION 'expected nine applied M2/M3 migrations, found %',v_count; END IF;
+  -- Verify the effective lock-order behavior rather than exact migration version IDs.
+  -- Supabase migration ledgers retain historical versions when a migration is renamed
+  -- after it has already been applied; forward-fix migrations may also supersede bodies.
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.apply_to_employer_job(uuid,text)'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%' THEN
+    RAISE EXCEPTION 'M2 lock-order fix missing from apply_to_employer_job';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.transition_application_status(text,text,text,text)'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%' THEN
+    RAISE EXCEPTION 'M2 lock-order fix missing from transition_application_status';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.set_application_archived(text,boolean)'::regprocedure;
+  IF position('employer_job_applications WHERE id=v_link_id FOR UPDATE' IN v_def)=0
+     OR position('WHERE id=v_app_id AND profile_id=v_uid AND opportunity_id=p_opportunity_id FOR UPDATE' IN v_def)=0
+     OR position('employer_job_applications WHERE id=v_link_id FOR UPDATE' IN v_def)
+        > position('WHERE id=v_app_id AND profile_id=v_uid AND opportunity_id=p_opportunity_id FOR UPDATE' IN v_def) THEN
+    RAISE EXCEPTION 'M2 employer-before-candidate lock order missing from set_application_archived';
+  END IF;
+  SELECT prosrc INTO v_def FROM pg_proc
+  WHERE oid='public.rewind_last_decision()'::regprocedure;
+  IF v_def NOT LIKE '%profiles WHERE id=v_uid FOR NO KEY UPDATE%'
+     OR v_def NOT LIKE '%IF FOUND AND EXISTS (%' THEN
+    RAISE EXCEPTION 'M2 lock-order or concurrent-link guard missing from rewind_last_decision';
+  END IF;
+
+  -- Verify effective legacy replay/reconsideration behavior and payload binding.
+  SELECT pg_get_functiondef('public.transition_employer_application(uuid,uuid,uuid,text,text,text,text)'::regprocedure)
+    INTO v_def;
+  IF v_def NOT LIKE '%v_corrects IS NULL AND NOT (%'
+     OR v_def NOT LIKE '%v_event.previous_state IS DISTINCT FROM p_expected_status%'
+     OR v_def NOT LIKE '%v_event.reason_code IS DISTINCT FROM p_reason_code%'
+     OR v_def NOT LIKE '%EXCEPTION WHEN unique_violation%' THEN
+    RAISE EXCEPTION 'legacy employer application or idempotency correction is missing';
+  END IF;
 END;
 $$;
