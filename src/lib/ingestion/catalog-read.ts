@@ -292,9 +292,21 @@ export async function getActiveOpportunities(
  *  view — only to keep `.slice(0, 3)` of it. This asks the database for just
  *  `limit` rows (default 3), so a page view now transfers a few KB.
  *
- *  Same visibility rules as the full read: RLS limits an anon/public client
- *  to status = 'active', and the multilingual gate (translationSafe) is
- *  applied so an untranslated non-English listing is never surfaced.
+ *  Same visibility rules as the full read: RLS already limits an anon/public
+ *  client to status = 'active' (opportunities_select_active), and the
+ *  multilingual gate (translationSafe) is applied so an untranslated
+ *  non-English listing is never surfaced. status = 'active' is additionally
+ *  stated here, explicitly, even though RLS already enforces it: a
+ *  production timeout (2026-11-15) on this exact query is most plausibly
+ *  explained by the planner not reliably folding an RLS-injected qual
+ *  together with this query's own OR-based translation-safety filters when
+ *  deciding whether the existing partial covering index
+ *  (idx_opportunities_sitemap_visible_cursor_cover, WHERE status='active' AND
+ *  the same translation conditions) applies. Stating the predicate explicitly
+ *  removes that ambiguity for the planner; it does not change the result set,
+ *  since RLS already restricted it to exactly these rows. This is a
+ *  plan-reliability change, not a measured performance fix -- no live EXPLAIN
+ *  was run against production or an isolated project.
  *  Deliberately unordered, like the read it replaces: an ORDER BY would make
  *  the database sort the whole active set to pick 3 rows. */
 export async function getRelatedActiveOpportunities(
@@ -306,6 +318,7 @@ export async function getRelatedActiveOpportunities(
   const { data, error } = await supabase
     .from('opportunities')
     .select(OPPORTUNITY_COLUMNS)
+    .eq('status', 'active')
     .or(TRANSLATION_SAFE_OR)
     .or(TRANSLATION_NOT_ERROR_OR)
     .neq('source_id', excludeSourceId)
