@@ -33,7 +33,6 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
   const remoteScope = opportunity.remoteType === 'Worldwide' ? 'Worldwide' : opportunity.remoteType || 'Eligible';
   const salary = formatSalary(opportunity);
   const postedAge = formatPostedAge(opportunity.postedAt);
-  const scopeLine = ['Remote', remoteScope, opportunity.employmentType].filter(Boolean).join(' · ');
   const matchTone = fitScore !== null && fitScore >= 80
     ? 'text-emerald-800 bg-emerald-50 border-emerald-100'
     : 'text-amber-800 bg-amber-50 border-amber-100';
@@ -52,7 +51,6 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
                 <span className="truncate text-sm font-bold tracking-tight text-slate-900">{opportunity.company}</span>
                 <span className="rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Opportunity</span>
               </div>
-              <p className="mt-1 text-xs text-slate-500">{scopeLine}</p>
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
