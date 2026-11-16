@@ -295,7 +295,7 @@ export function Navbar() {
           omitted on auth pages, on public content routes where it overlaps
           in-page category nav/content, and on onboarding wizard. */}
       {!hideMobileBottomNav && (
-      <nav className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
+      <nav aria-label="Primary navigation" className="mobile-bottom-nav fixed inset-x-4 z-40 flex items-center justify-around rounded-2xl border border-[var(--line)] bg-[color-mix(in_srgb,var(--surface)_95%,transparent)] p-1.5 pb-[max(6px,env(safe-area-inset-bottom))] shadow-[0_12px_35px_rgba(76,44,30,0.10)] backdrop-blur-md md:hidden">
         <Link
           href="/feed"
           className={`flex-1 flex flex-col items-center justify-center min-h-[48px] rounded-xl py-1 text-[11px] font-medium transition-colors ${
