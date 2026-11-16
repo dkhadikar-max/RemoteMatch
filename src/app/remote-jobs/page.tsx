@@ -270,6 +270,20 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
               </Link>
             </div>
           </div>
+        ) : hub?.hubTimedOut ? (
+          <div className="soft-card p-8 text-center space-y-3" role="status" aria-live="polite">
+            <p className="text-sm font-semibold text-[var(--ink)]">
+              The job directory is temporarily taking too long to respond.
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              The listings could not be loaded right now. The catalog is unchanged; retry in a moment.
+            </p>
+            <div className="pt-2">
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
+                Retry loading jobs
+              </Link>
+            </div>
+          </div>
         ) : jobs.length === 0 ? (
           <div className="soft-card p-8 text-center space-y-3">
             <p className="text-sm font-semibold text-[var(--ink)]">

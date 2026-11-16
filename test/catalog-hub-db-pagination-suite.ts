@@ -105,6 +105,22 @@ async function main() {
   console.log('\nCATALOG HUB PAGINATION (PGlite): migration, RLS, trigger, category parity');
   const directorySource = read('src/lib/seo/directory.ts');
   const sitemapReaderSource = read('src/lib/ingestion/catalog-read.ts');
+  const rootPageSource = read('src/app/remote-jobs/page.tsx');
+  const categoryPageSource = read('src/app/remote-jobs/[slug]/page.tsx');
+  assert(directorySource.includes('hubTimedOut?: boolean') &&
+    directorySource.includes('if (!(err instanceof CatalogHubTimeoutError)) throw err;') &&
+    directorySource.includes('hubTimedOut: true') &&
+    directorySource.includes('Do not cache'),
+    'directory RPC statement timeouts become explicit retryable results and are never cached');
+  assert(rootPageSource.includes('hub?.searchTimedOut ? (') &&
+    rootPageSource.includes(') : hub?.hubTimedOut ? (') &&
+    rootPageSource.includes('Retry loading jobs') &&
+    rootPageSource.includes('Your search took too long to complete.'),
+    'root directory preserves search-timeout UX and renders a distinct retry state on hub timeout');
+  assert(categoryPageSource.includes('hub?.hubTimedOut ? (') &&
+    categoryPageSource.includes('Listings are temporarily unavailable.'),
+    'category hubs distinguish a query timeout from a genuine empty category');
+
   assert(directorySource.includes('MAX_DIRECTORY_REQUEST_PAGE = 100') &&
     directorySource.includes('if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();'),
     'directory and search reject crawler pages above 100 before querying Postgres');
