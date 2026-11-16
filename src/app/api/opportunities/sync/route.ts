@@ -8,6 +8,7 @@ import {
 import { translatePendingOpportunities } from '@/lib/translation/translate-pending';
 import { invalidateCatalogCaches } from '@/lib/ingestion/catalog-caches';
 import { logCatalogSyncResult } from '@/lib/ingestion/lifecycle-log';
+import { newSyncRunId, describeSyncFailure } from '@/lib/ingestion/sync-failure-report';
 
 /**
  * Authenticated internal ingestion actions. The catalog write, translation,
@@ -29,23 +30,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Observability only (see sync-failure-report.ts): a short id to correlate a
+  // run's log lines with the JSON error body, and the step currently running so
+  // a failure says WHERE it happened. Neither changes what the sync does.
+  const runId = newSyncRunId();
+  let stage = 'request';
+
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
+    console.log(`[sync ${runId}] start action=${action ?? 'sync'}`);
 
     if (action === 'revalidate') {
+      stage = 'revalidate';
       const result = await revalidateStaleLinks();
       try { invalidateCatalogCaches(); } catch { /* cache invalidation is best effort */ }
       return NextResponse.json({ success: true, action: 'revalidate', ...result });
     }
 
     if (action === 'translate') {
+      stage = 'translation';
       const translation = await translatePendingOpportunities();
       try { invalidateCatalogCaches(); } catch { /* cache invalidation is best effort */ }
       return NextResponse.json({ success: true, action: 'translate', translation });
     }
 
     if (action === 'reconcile') {
+      stage = 'reconciliation';
       const reconciliation = await reconcileCrossProviderDuplicates();
       try { invalidateCatalogCaches(); } catch { /* cache invalidation is best effort */ }
       return NextResponse.json({ success: true, action: 'reconcile', reconciliation });
@@ -57,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     // This is the only route that authorizes a real provider fetch. It is
     // protected by the internal secret check above.
+    stage = 'catalog_sync';
     const result = await syncOpportunitiesToCatalog(undefined, { allowLiveProviderFetch: true });
     logCatalogSyncResult(result);
 
@@ -65,8 +77,17 @@ export async function POST(req: NextRequest) {
     // and are invoked sequentially by the scheduled worker.
     try { invalidateCatalogCaches(); } catch { /* cache invalidation is best effort */ }
 
+    stage = 'finish';
+    console.log(
+      `[sync ${runId}] done providers=${result.providerOutcomes.filter((o) => o.success).length}/${result.providerOutcomes.length}`
+    );
     return NextResponse.json({ success: true, action: 'sync', ...result });
   } catch (err) {
-    return NextResponse.json({ success: false, error: (err as Error).message }, { status: 500 });
+    // The cron discards the response body (curl -f) and this used to log nothing, so a failing
+    // run left no trace of WHY. Log one redacted line (no secrets, no headers) and put the same
+    // run id + stage in the body. The HTTP status is unchanged: still 500.
+    const failure = describeSyncFailure(err, runId, stage);
+    console.error(failure.logLine);
+    return NextResponse.json(failure.body, { status: 500 });
   }
 }
