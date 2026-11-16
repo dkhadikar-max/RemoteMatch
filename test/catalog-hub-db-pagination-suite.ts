@@ -112,9 +112,11 @@ async function main() {
     directorySource.includes('hubTimedOut: true') &&
     directorySource.includes('Do not cache'),
     'directory RPC statement timeouts become explicit retryable results and are never cached');
-  assert(rootPageSource.includes('hub?.searchTimedOut || hub?.hubTimedOut') &&
-    rootPageSource.includes('Retry loading jobs'),
-    'root directory renders a retry state instead of a Server Component error on hub timeout');
+  assert(rootPageSource.includes('hub?.searchTimedOut ? (') &&
+    rootPageSource.includes(') : hub?.hubTimedOut ? (') &&
+    rootPageSource.includes('Retry loading jobs') &&
+    rootPageSource.includes('Your search took too long to complete.'),
+    'root directory preserves search-timeout UX and renders a distinct retry state on hub timeout');
   assert(categoryPageSource.includes('hub?.hubTimedOut ? (') &&
     categoryPageSource.includes('Listings are temporarily unavailable.'),
     'category hubs distinguish a query timeout from a genuine empty category');
