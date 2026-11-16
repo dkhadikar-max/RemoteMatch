@@ -132,7 +132,7 @@ export function SwipeDeck({
 
   if (!currentOpp) {
     return (
-      <div className="soft-card flex flex-col items-center justify-center min-h-[520px] w-full max-w-[840px] p-8 text-center space-y-4 rounded-3xl border border-[var(--line)]">
+      <div className="soft-card flex flex-col items-center justify-center min-h-[520px] w-full max-w-[820px] p-8 text-center space-y-4 rounded-3xl border border-[var(--line)]">
         <div className="grid size-12 place-items-center rounded-2xl bg-[#ecfdf5] text-[#04714f] border border-[#a7f3d0]">
           <CheckCircle2 size={24} />
         </div>
@@ -165,7 +165,7 @@ export function SwipeDeck({
   }
 
   return (
-    <div className="relative flex flex-col items-center justify-center w-full max-w-[840px]">
+    <div className="relative flex flex-col items-center justify-center w-full max-w-[820px]">
       {/* Toast Notification upon Right-Swipe */}
       <AnimatePresence>
         {showToast && lastInterestedOpp && (
@@ -196,7 +196,7 @@ export function SwipeDeck({
       <div className="relative min-h-[760px] lg:min-h-[700px] w-full flex items-center justify-center">
         {/* Background Card Peek */}
         {nextOpp && (
-          <div className="absolute top-2.5 scale-[0.97] opacity-60 pointer-events-none w-full max-w-[840px]">
+          <div className="absolute top-2.5 scale-[0.97] opacity-60 pointer-events-none w-full max-w-[820px]">
             <JobCard opportunity={nextOpp} isFrontCard={false} />
           </div>
         )}
@@ -215,7 +215,7 @@ export function SwipeDeck({
               handleSwipe('passed');
             }
           }}
-          className="absolute cursor-grab active:cursor-grabbing w-full max-w-[840px] touch-none"
+          className="absolute cursor-grab active:cursor-grabbing w-full max-w-[820px] touch-none"
         >
           {/* Visual Stamp: INTERESTED */}
           <motion.div
