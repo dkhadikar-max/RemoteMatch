@@ -347,7 +347,7 @@ export default function FeedPage() {
       </div>
 
       {/* Feed workspace: swipe deck plus profile context on wide screens. */}
-      <div className="grid w-full grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,840px)_300px] xl:justify-center 2xl:gap-8">
+      <div className="grid w-full grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,820px)_300px] xl:justify-center 2xl:gap-8">
         <div className="flex min-w-0 flex-col items-center">
           {emptyKind ? (
             <FeedEmptyState kind={emptyKind} onRetry={handleRetryLoad} onClearFilters={() => setActiveFilters({})} />
