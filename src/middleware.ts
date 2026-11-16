@@ -42,6 +42,22 @@ function matchesAny(pathname: string, prefixes: string[]): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const onAdminHost = isAdminHost(request.headers.get('host'));
+  // Isolated static preview only. This flag must remain unset in production.
+  if (process.env.PREVIEW_DEMO_ENABLED === 'true' && !onAdminHost) {
+    let previewPath: string | null = null;
+
+    if (pathname === '/employer' || pathname.startsWith('/employer/')) {
+      previewPath = `/preview-demo${pathname}`;
+    } else if (pathname === '/feed') {
+      previewPath = '/preview-demo/complete';
+    }
+
+    if (previewPath) {
+      const previewUrl = request.nextUrl.clone();
+      previewUrl.pathname = previewPath;
+      return NextResponse.rewrite(previewUrl);
+    }
+  }
   const inAdmin = matchesAny(pathname, ADMIN_PREFIXES);
 
   // --- Host separation (checked first, before any other routing) ---
