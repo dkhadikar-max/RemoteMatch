@@ -179,7 +179,24 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
           </Link>
         </div>
 
-        {jobs.length === 0 ? (
+        {hub?.hubTimedOut ? (
+          <div className="soft-card p-8 text-center space-y-3" role="status" aria-live="polite">
+            <p className="text-sm font-semibold text-[var(--ink)]">
+              Listings are temporarily unavailable.
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              The directory query timed out. No jobs or category filters have been changed. Please retry.
+            </p>
+            <div className="pt-2 flex items-center justify-center gap-2">
+              <Link href={`/remote-jobs/${category.slug}${currentPage > 1 ? `?page=${currentPage}` : ''}`} className="soft-button primary text-sm">
+                Retry loading jobs
+              </Link>
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
+                Browse all remote jobs
+              </Link>
+            </div>
+          </div>
+        ) : jobs.length === 0 ? (
           <div className="soft-card p-8 text-center space-y-3">
             <p className="text-sm font-semibold text-[var(--ink)]">
               No active listings in this category right now.

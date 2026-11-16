@@ -256,17 +256,17 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
           </Link>
         </div>
 
-        {hub?.searchTimedOut ? (
+        {hub?.searchTimedOut || hub?.hubTimedOut ? (
           <div className="soft-card p-8 text-center space-y-3">
             <p className="text-sm font-semibold text-[var(--ink)]">
-              Your search took too long to complete.
+              The job directory is temporarily taking too long to respond.
             </p>
             <p className="text-sm text-[var(--muted)]">
-              Try fewer or more specific words — broad searches across a large catalog can time out.
+              The listings could not be loaded right now. Your filters and the job catalog are unchanged; retry in a moment.
             </p>
             <div className="pt-2">
-              <Link href="/remote-jobs" className="soft-button secondary text-sm">
-                View all active jobs
+              <Link href={searchQuery ? `/remote-jobs?q=${encodeURIComponent(searchQuery)}` : "/remote-jobs"} className="soft-button secondary text-sm">
+                Retry loading jobs
               </Link>
             </div>
           </div>

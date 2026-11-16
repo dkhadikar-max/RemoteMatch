@@ -71,6 +71,8 @@ export interface DirectoryPage {
   /** True only when the search could not complete (DB statement timeout) — jobs/total are
    *  empty/zero but this is NOT a genuine "no results" answer. Never set on the hub/browse path. */
   searchTimedOut?: boolean;
+  /** Directory/category RPC timed out. This is a retryable infrastructure state, not an empty catalog. */
+  hubTimedOut?: boolean;
 }
 
 /** `?page=` → a safe positive integer (default 1). */
@@ -218,19 +220,31 @@ export async function loadHubPage(slug: string | null, rawPage: unknown): Promis
       DIRECTORY_PAGE_SIZE
     ));
   } catch (err) {
-    if (err instanceof CatalogHubTimeoutError) {
-      try {
-        console.error(JSON.stringify({
-          event: 'hub_page_timeout',
-          at: new Date().toISOString(),
-          category: cat?.slug ?? '*',
-          page: requestedPage,
-        }));
-      } catch {
-        // Best-effort telemetry must not replace the original timeout.
-      }
+    if (!(err instanceof CatalogHubTimeoutError)) throw err;
+
+    try {
+      console.error(JSON.stringify({
+        event: 'hub_page_timeout',
+        at: new Date().toISOString(),
+        category: cat?.slug ?? '*',
+        page: requestedPage,
+      }));
+    } catch {
+      // Best-effort telemetry must never replace the retryable fallback.
     }
-    throw err;
+
+    // A database statement timeout is transient. Keep the route renderable and
+    // distinguish this state from a genuine zero-results response. Do not cache
+    // the fallback: the next request must be able to retry the database read.
+    return {
+      jobs: [],
+      total: 0,
+      page: requestedPage,
+      totalPages: 1,
+      pageSize: DIRECTORY_PAGE_SIZE,
+      outOfRange: false,
+      hubTimedOut: true,
+    };
   }
   const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
   const outOfRange = total > 0 && requestedPage > totalPages;
