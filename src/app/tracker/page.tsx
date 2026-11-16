@@ -17,7 +17,8 @@ import {
 
 // Shape returned by GET /api/applications — the server-authoritative
 // lifecycle state, joined with the fit-score-at-decision-time snapshot
-// recorded by finalize_interested_swipe(). Deliberately does not carry the
+// recorded by reserve_and_record_right_swipe()/attach_right_swipe_decision()
+// (migration 046; formerly finalize_interested_swipe()). Deliberately does not carry the
 // full `opportunity`/`match` objects ApplicationRecord allows for — those
 // are resolved separately, in bulk, via GET /api/applications/opportunities
 // (Tracker Opportunity Resolution) below. This USED to say the opportunity
@@ -33,7 +34,11 @@ interface ServerApplication {
   createdAt: string;
   updatedAt: string;
   decisionSnapshot: { fitScore?: number } | null;
+  archivedAt: string | null;
+  applicationChannel: string;
 }
+
+type TrackedApplication = ApplicationRecord & { archivedAt: string | null; applicationChannel: string };
 
 // Shape returned by GET /api/applications/opportunities — a deliberately
 // minimal projection of the real, live catalog (active or expired; a
@@ -57,7 +62,7 @@ interface ResolvedOpportunity {
 }
 
 export default function TrackerPage() {
-  const [applications, setApplications] = useState<ApplicationRecord[]>([]);
+  const [applications, setApplications] = useState<TrackedApplication[]>([]);
   const [opportunitiesById, setOpportunitiesById] = useState<Record<string, ResolvedOpportunity>>({});
   const [activeTab, setActiveTab] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,11 +74,13 @@ export default function TrackerPage() {
     const res = await fetch('/api/applications');
     if (!res.ok) return;
     const data = await res.json();
-    const apps: ApplicationRecord[] = (data.applications as ServerApplication[]).map((a) => ({
+    const apps: TrackedApplication[] = (data.applications as ServerApplication[]).map((a) => ({
       id: a.id,
       profileId: '',
       opportunityId: a.opportunityId,
       status: a.status,
+      archivedAt: a.archivedAt,
+      applicationChannel: a.applicationChannel,
       appliedAt: a.appliedAt ?? undefined,
       notes: a.notes,
       // Only `fitScore` is populated server-side today (see ServerApplication
@@ -125,6 +132,30 @@ export default function TrackerPage() {
     await loadApplications();
   };
 
+  // Archive is a visibility preference, independent of lifecycle state.
+  // Keep it as a separate request so a failed status transition can never
+  // leave an application partially unarchived.
+  const handleArchivePreference = async (app: TrackedApplication, archived: boolean) => {
+    const response = await fetch('/api/applications/archive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opportunityId: app.opportunityId, archived }),
+    });
+    if (!response.ok) return;
+    await loadApplications();
+  };
+
+  const handleTrackerStatusChange = async (app: TrackedApplication, newStatus: ApplicationStatus) => {
+    // For direct applications, archive is not a lifecycle status. The
+    // dedicated Archive / Restore control owns archived_at; status changes
+    // never chain a second write or silently alter that preference.
+    if (app.applicationChannel === 'remotematch_direct' && newStatus === 'archived') {
+      await handleArchivePreference(app, true);
+      return;
+    }
+    await handleStatusChange(app.opportunityId, app.status, newStatus);
+  };
+
   const handleNotesChange = async (opportunityId: string, notes: string) => {
     const res = await fetch('/api/applications/notes', {
       method: 'PATCH',
@@ -140,28 +171,28 @@ export default function TrackerPage() {
     setIsInterviewModalOpen(true);
   };
 
-  const activeCount = applications.filter((a) => a.status === 'applied' || a.status === 'interested').length || 12;
-  const interviewCount = applications.filter((a) => a.status === 'interview').length || 4;
-  const offerCount = applications.filter((a) => a.status === 'offer').length || 1;
+  const activeCount = applications.filter((a) => !a.archivedAt && (a.status === 'applied' || a.status === 'interested')).length;
+  const interviewCount = applications.filter((a) => !a.archivedAt && a.status === 'interview').length;
+  const offerCount = applications.filter((a) => !a.archivedAt && (a.status === 'offer' || a.status === 'hired')).length;
   // "withdrawn" joins the existing "Not selected" bucket for display — a
   // genuine, distinct outcome underneath (see get_application_outcome() in
   // 006_outcome_lifecycle.sql), just grouped with rejected/archived here so
   // the tracker's existing 4-tab UX doesn't need a 5th tab for it.
   const notSelectedCount =
-    applications.filter((a) => a.status === 'rejected' || a.status === 'withdrawn' || a.status === 'archived').length || 3;
-  const totalCount = activeCount + interviewCount + offerCount + notSelectedCount;
+    applications.filter((a) => a.archivedAt || a.status === 'rejected' || a.status === 'withdrawn' || a.status === 'offer_declined' || a.status === 'archived').length;
+  const totalCount = applications.length;
 
   const filtered = applications.filter((app) => {
     const matchesTab =
       activeTab === 'all'
         ? true
         : activeTab === 'active'
-        ? app.status === 'applied' || app.status === 'interested'
+        ? !app.archivedAt && (app.status === 'applied' || app.status === 'interested')
         : activeTab === 'interview'
-        ? app.status === 'interview'
+        ? !app.archivedAt && app.status === 'interview'
         : activeTab === 'offer'
-        ? app.status === 'offer'
-        : app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'archived';
+        ? !app.archivedAt && (app.status === 'offer' || app.status === 'hired')
+        : Boolean(app.archivedAt) || app.status === 'rejected' || app.status === 'withdrawn' || app.status === 'offer_declined' || app.status === 'archived';
 
     const opp = opportunitiesById[app.opportunityId];
     const titleMatch = opp?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
@@ -296,6 +327,8 @@ export default function TrackerPage() {
               const fitScore: number | null =
                 typeof snapshotScore === 'number' ? snapshotScore : typeof opp.fitScore === 'number' ? opp.fitScore : null;
               const status = app.status;
+              const isDirectApplication = app.applicationChannel === 'remotematch_direct';
+              const isTerminalOutcome = ['hired', 'offer_declined', 'rejected', 'withdrawn'].includes(status);
 
               // Step indicator active status
               const isApplied = status === 'applied' || status === 'interview' || status === 'offer';
@@ -332,19 +365,19 @@ export default function TrackerPage() {
                     {/* Status Dropdown */}
                     <div className="flex items-center gap-2 self-start sm:self-auto">
                       <select
+                        aria-label="Application status"
                         value={app.status}
-                        onChange={(e) =>
-                          handleStatusChange(opp.id, app.status, e.target.value as ApplicationStatus)
-                        }
-                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[36px]"
+                        onChange={(e) => handleTrackerStatusChange(app, e.target.value as ApplicationStatus)}
+                        className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-sm cursor-pointer outline-none focus:border-[var(--red)] min-h-[44px]"
+                        disabled={isDirectApplication && isTerminalOutcome}
                       >
-                        <option value="interested">Interested</option>
-                        <option value="applied">Applied</option>
-                        <option value="interview">Interview</option>
-                        <option value="offer">Offer</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="withdrawn">Withdrawn</option>
-                        <option value="archived">Archived</option>
+                        <option value={app.status}>{app.status.replace(/_/g, ' ')}</option>
+                        {(isDirectApplication
+                          ? (status === 'offer' ? ['withdrawn', 'offer_declined'] : (isTerminalOutcome ? [] : ['withdrawn']))
+                          : ['interested', 'applied', 'interview', 'offer', 'rejected', 'withdrawn', 'archived']
+                        ).filter((nextStatus) => nextStatus !== app.status).map((nextStatus) => (
+                          <option key={nextStatus} value={nextStatus}>{nextStatus.replace(/_/g, ' ')}</option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -431,6 +464,18 @@ export default function TrackerPage() {
                             <strong className="text-[#04714f]">Offer Extended:</strong> Review compensation and terms.
                           </span>
                         </>
+                      ) : isTerminalOutcome ? (
+                        <div>
+                          <p className="font-semibold text-xs text-[var(--ink)]">
+                            {status === 'hired' ? 'Hired' : status === 'offer_declined' ? 'Offer declined' : status === 'withdrawn' ? 'Application withdrawn' : 'Application closed'}
+                          </p>
+                          <p className="text-[var(--muted)] text-[11px] mt-0.5">This application is no longer awaiting a decision.</p>
+                        </div>
+                      ) : app.archivedAt ? (
+                        <div>
+                          <p className="font-semibold text-xs text-[var(--ink)]">Archived application</p>
+                          <p className="text-[var(--muted)] text-[11px] mt-0.5">Restore it to return it to your active tracker.</p>
+                        </div>
                       ) : (
                         <div>
                           <p className="font-semibold text-xs text-[var(--ink)]">Ready when you are</p>
@@ -443,7 +488,11 @@ export default function TrackerPage() {
 
                     {/* Action button corresponding to stage */}
                     <div>
-                      {status === 'interview' ? (
+                      {isTerminalOutcome || app.archivedAt ? (
+                        <span className="text-xs text-[var(--muted)]" aria-live="polite">
+                          {isTerminalOutcome ? 'No further candidate action' : 'Archived'}
+                        </span>
+                      ) : status === 'interview' ? (
                         <button
                           type="button"
                           onClick={() => openInterviewModal(app)}
@@ -492,13 +541,26 @@ export default function TrackerPage() {
                       <span>{app.notes ? 'Edit notes' : 'Add notes'}</span>
                     </button>
 
-                    <Link
-                      href={matchHref(opp.id)}
-                      className="inline-flex items-center gap-1 font-semibold text-[var(--red)] hover:text-[var(--red-dark)] transition-colors min-h-[32px]"
-                    >
-                      <span>View match details</span>
-                      <ArrowRight size={14} />
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      {isDirectApplication && (
+                        <button
+                          type="button"
+                          onClick={() => handleArchivePreference(app, !app.archivedAt)}
+                          className="inline-flex min-h-[44px] items-center rounded-lg px-3 font-semibold text-[var(--muted)] hover:text-[var(--ink)]"
+                        >
+                          {app.archivedAt ? 'Restore from archive' : 'Archive'}
+                        </button>
+                      )}
+                      {!isTerminalOutcome && !app.archivedAt && (
+                        <Link
+                          href={matchHref(opp.id)}
+                          className="inline-flex min-h-[44px] items-center gap-1 px-2 font-semibold text-[var(--red)] hover:text-[var(--red-dark)] transition-colors"
+                        >
+                          <span>View match details</span>
+                          <ArrowRight size={14} />
+                        </Link>
+                      )}
+                    </div>
                   </div>
 
                   {/* Notes Drawer */}

@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, Clock, Calendar, BookOpen, Filter } from 'lucide-react';
 import { SEO_GUIDE_ARTICLES, SEO_CATEGORIES, buildBreadcrumbSchema } from '@/lib/seo/data';
+import { SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
   // `absolute` bypasses the root layout's '%s | RemoteMatch' title template
@@ -13,21 +14,21 @@ export const metadata: Metadata = {
   description:
     'Tactical guides on remote job matching, evaluating requirements, crafting tailored proposals, navigating timezones, and negotiating remote salaries.',
   alternates: {
-    canonical: 'https://remotematch.com/guide',
+    canonical: `${SITE_URL}/guide`,
   },
   openGraph: {
     title: 'Remote Job Search Guides | RemoteMatch',
     description:
       'Learn how to find remote jobs worth applying to, understand fit, and apply with confidence.',
-    url: 'https://remotematch.com/guide',
+    url: `${SITE_URL}/guide`,
     type: 'website',
   },
 };
 
 export default function GuideHubPage() {
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Guides', url: 'https://remotematch.com/guide' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Guides', url: `${SITE_URL}/guide` },
   ]);
 
   const jsonLdCollection = {
@@ -35,7 +36,7 @@ export default function GuideHubPage() {
     '@type': 'CollectionPage',
     name: 'Remote Job Search Guides',
     description: 'Expert editorial guides for landing high-fit remote positions.',
-    url: 'https://remotematch.com/guide',
+    url: `${SITE_URL}/guide`,
     hasPart: SEO_GUIDE_ARTICLES.map((article) => ({
       '@type': 'Article',
       headline: article.title,
@@ -45,7 +46,7 @@ export default function GuideHubPage() {
         '@type': 'Organization',
         name: article.author,
       },
-      url: `https://remotematch.com/guide/${article.slug}`,
+      url: `${SITE_URL}/guide/${article.slug}`,
     })),
   };
 

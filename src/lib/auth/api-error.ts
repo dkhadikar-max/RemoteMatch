@@ -5,6 +5,7 @@ import {
   ServiceUnavailableError,
 } from '@/lib/auth/get-authenticated-user';
 import { AdminForbiddenError } from '@/lib/auth/get-authenticated-admin';
+import { EmployerForbiddenError } from '@/lib/auth/get-authenticated-employer';
 
 /**
  * Central mapping from auth/service failures to HTTP responses, so every
@@ -24,6 +25,11 @@ export function authErrorResponse(err: unknown): NextResponse | null {
       { error: 'Forbidden: this account is not authorized for admin access.' },
       { status: 403 }
     );
+  }
+  if (err instanceof EmployerForbiddenError) {
+    // Deliberately 404, not 403 (Phase 1 plan Q7): never confirms to a
+    // non-member caller that a given company id exists at all.
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 });
   }
   if (err instanceof UnverifiedAccountError) {
     // A real session exists but doesn't meet the account invariant

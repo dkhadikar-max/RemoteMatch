@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  cancelSubscriptionAtCycleEnd,
   createSubscription,
+  decideSubscriptionReuse,
   fetchSubscription,
-  hasLiveMandate,
   isProPlanSubscription,
   isPurchaseAllowed,
   isRazorpayConfigured,
@@ -21,6 +22,14 @@ import { getAuthenticatedUser } from '@/lib/auth/get-authenticated-user';
 import { authErrorResponse } from '@/lib/auth/api-error';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 import { hasActivePurchaseGrant } from '@/lib/billing/purchase-access';
+import {
+  currencyForCountry,
+  currencyForPlanId,
+  DEFAULT_CURRENCY,
+  MissingDisplayPriceError,
+  planDescription,
+  resolvePlan,
+} from '@/lib/billing/currency-config';
 
 /** How long a request waits for a concurrent request's claim to finish before giving up. */
 const CLAIM_WAIT_MS = 6_000;
@@ -91,8 +100,60 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, isMock: true });
   }
 
-  const checkoutFor = (subscriptionId: string) =>
-    NextResponse.json({ success: true, subscriptionId, keyId: razorpayKeyId, email: user.email ?? null });
+  // Billing currency is derived exclusively from the account's saved country.
+  // Never trust a browser selector, request body, locale, or ChatGPT location.
+  // Unknown/missing country uses the documented INR fallback; a failed DB
+  // lookup fails closed rather than risking a currency chosen from client input.
+  const { data: location, error: locationError } = await admin
+    .from('profile_locations')
+    .select('current_country')
+    .eq('profile_id', user.id)
+    .maybeSingle();
+  if (locationError) {
+    console.error('[razorpay] could not resolve account country', locationError.message);
+    return NextResponse.json({ error: 'Could not verify your billing country. Please try again.' }, { status: 503 });
+  }
+  const requestedCurrency = currencyForCountry(location?.current_country);
+  const { planId: resolvedPlanId, currency: resolvedCurrency } = resolvePlan(requestedCurrency);
+  // Never silently downgrade a non-Indian account to an INR plan. If the USD
+  // plan is not configured, stop checkout rather than charging the wrong currency.
+  if (requestedCurrency === 'USD' && resolvedCurrency !== 'USD') {
+    console.error('[razorpay] USD plan is not configured for a non-Indian account');
+    return NextResponse.json({ error: "USD checkout isn't available right now. Please try again later." }, { status: 503 });
+  }
+
+  // F1 (2026-11-05 audit): `currency` here MUST reflect the currency of
+  // whatever subscription is actually being checked out — never just the
+  // latest request's hint. A reused stored subscription (below) may be on a
+  // different plan than what THIS request asked for (e.g. it was created
+  // under a different currency selection on an earlier, abandoned attempt);
+  // callers reusing one must pass ITS real currency, derived from its own
+  // plan_id via currencyForPlanId, not `resolvedCurrency`.
+  // Requirement #6 (2026-11-06 review): an active-but-incompletely-configured
+  // currency (a Plan id is set, but its display price is not) must fail
+  // explicitly rather than complete a checkout with no price shown — see
+  // MissingDisplayPriceError. Same 503 shape as every other config gate above.
+  const checkoutFor = (subscriptionId: string, currency: string) => {
+    let description: string;
+    try {
+      description = planDescription(currency);
+    } catch (err) {
+      if (!(err instanceof MissingDisplayPriceError)) throw err;
+      console.error('[razorpay] currency is active but has no display price configured', currency);
+      return NextResponse.json(
+        { error: "Pro upgrades aren't available right now. Please check back soon." },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({
+      success: true,
+      subscriptionId,
+      keyId: razorpayKeyId,
+      email: user.email ?? null,
+      currency,
+      description,
+    });
+  };
   const alreadyStarting = () =>
     NextResponse.json({ error: 'Checkout is already starting. Please try again in a moment.' }, { status: 409 });
 
@@ -148,14 +209,43 @@ export async function POST(req: NextRequest) {
         }
       }
       if (existing && isProPlanSubscription(existing) && subscriptionUserId(existing) === user.id) {
-        if (existing.status === 'created') return checkoutFor(existing.id);
-        if (hasLiveMandate(existing.status)) {
-          return NextResponse.json(
-            { error: 'Your payment is being confirmed. Please refresh in a minute.' },
-            { status: 409 }
-          );
+        const decision = decideSubscriptionReuse(existing, resolvedPlanId);
+        // Exhaustive switch (2026-11-06 fresh-review fix): a future 4th
+        // SubscriptionReuseAction value is now a compile error here instead
+        // of silently falling through to 'replace' (create a new
+        // subscription) with no warning.
+        switch (decision) {
+          case 'reuse_unpaid':
+            // F1 fix: report THIS subscription's real currency, derived from
+            // its own plan_id — never the current request's currency hint
+            // (which is guaranteed to match here anyway, since decision ===
+            // 'reuse_unpaid' only when existing.plan_id === resolvedPlanId).
+            return checkoutFor(existing.id, currencyForPlanId(existing.plan_id) ?? DEFAULT_CURRENCY);
+          case 'blocked_live_mandate':
+            return NextResponse.json(
+              { error: 'Your payment is being confirmed. Please refresh in a minute.' },
+              { status: 409 }
+            );
+          case 'replace':
+            // Either a halted/cancelled/completed/expired/paused
+            // subscription, OR an unpaid ('created') one in a DIFFERENT
+            // currency than this request asked for (requirement #1) — either
+            // way, fall through and create a fresh one in the currency just
+            // resolved. Best-effort, non-blocking cancel of the stale one
+            // first (2026-11-06 fresh-review fix) — it would otherwise be
+            // silently orphaned at Razorpay forever; a failure here (e.g. it
+            // already has no cycle to cancel) never blocks checkout.
+            try {
+              await cancelSubscriptionAtCycleEnd(existing.id);
+            } catch (err) {
+              console.error('[razorpay] could not cancel stale replaced subscription (non-fatal)', existing.id, (err as Error).message);
+            }
+            break;
+          default: {
+            const _exhaustive: never = decision;
+            throw new Error(`decideSubscriptionReuse: unhandled decision ${_exhaustive}`);
+          }
         }
-        // halted / cancelled / completed / expired / paused: replace below.
       }
     }
 
@@ -167,7 +257,7 @@ export async function POST(req: NextRequest) {
 
     let subscription;
     try {
-      subscription = await createSubscription({ userId: user.id });
+      subscription = await createSubscription({ userId: user.id, planId: resolvedPlanId });
     } catch (err) {
       // Recoverable: hand the claim back so the next click can try again.
       await releaseSubscriptionSlot(admin, user.id, marker, profile.razorpay_subscription_status);
@@ -179,7 +269,7 @@ export async function POST(req: NextRequest) {
     // Store the binding before the browser ever sees the id: /verify and the
     // webhook both resolve the user from this column.
     if (await commitSubscriptionSlot(admin, user.id, marker, subscription)) {
-      return checkoutFor(subscription.id);
+      return checkoutFor(subscription.id, resolvedCurrency);
     }
     // Our claim expired and was taken over before we stored. The subscription
     // we created was never shown to the browser, so it cannot be paid; it

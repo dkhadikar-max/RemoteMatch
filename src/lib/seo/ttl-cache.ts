@@ -3,30 +3,26 @@
  * stale-if-error — used so sitemap.xml stops re-reading the catalog from
  * Supabase on every crawler hit.
  *
- * Why not Next's `unstable_cache`: it throws outside the Next runtime (the
- * SEO audit suite calls `sitemap()` straight from tsx), and its on-disk
- * entries have a size ceiling the ~6 MB sitemap payload would sit uncomfortably
+ * Why not Next's unstable_cache: it throws outside the Next runtime (the
+ * SEO audit suite calls the route helpers straight from tsx), and its on-disk
+ * entries have a size ceiling the sitemap payload would sit uncomfortably
  * close to. A module-level cache is deterministic, runs anywhere, and is unit
  * testable with an injected clock. The cost is that each server process keeps
- * its own copy — correct for the single Railway service this app runs as; N
- * replicas would mean N refreshes per TTL, still bounded.
+ * its own copy — correct for the single Railway service this app runs as.
  *
  * Semantics:
- *  - value younger than `ttlMs`            -> returned with no load
- *  - older (or none)                       -> ONE load runs; concurrent callers
- *                                             await the same promise
- *  - load throws, value younger than
- *    `maxStaleMs`                          -> serve the stale value, keep
- *                                             retrying on the next call
- *  - load throws, no/too-old value         -> the error propagates (never
- *                                             cached; a half-failed read must
- *                                             not become "the sitemap")
+ *  - value younger than ttlMs and not invalidated -> returned with no load
+ *  - older, invalidated, or absent -> ONE load runs; concurrent callers await it
+ *  - load throws, retained value younger than maxStaleMs -> serve stale value
+ *    and keep retrying on the next call
+ *  - load throws, no/too-old value -> error propagates (never cache a partial read)
+ *  - invalidate marks the value stale but RETAINS it as the last-known-good
+ *    fallback; it must not erase the only snapshot that stale-if-error can serve
  */
 /**
  * Bounded key → value cache with a TTL per entry and least-recently-used
- * eviction (Map insertion order). Used for the few-dozen-KB "page slices" of
- * the directory/category hubs, where an unbounded map would be a memory leak
- * (the key space includes user-controlled page numbers).
+ * eviction (Map insertion order). Used for the few-dozen-KB page slices of
+ * the directory/category hubs, where an unbounded map would be a memory leak.
  */
 export interface LruTtlMap<V> {
   get(key: string): V | undefined;
@@ -48,7 +44,6 @@ export function createLruTtlMap<V>(options: { max: number; ttlMs: number; now?: 
         map.delete(key);
         return undefined;
       }
-      // refresh recency
       map.delete(key);
       map.set(key, hit);
       return hit.v;
@@ -76,7 +71,7 @@ export function createLruTtlMap<V>(options: { max: number; ttlMs: number; now?: 
 
 export interface TtlCache<T> {
   get(): Promise<T>;
-  /** Drop the cached value (tests / manual refresh). */
+  /** Force a refresh while retaining the last successful value as stale fallback. */
   invalidate(): void;
 }
 
@@ -87,11 +82,24 @@ export function createAsyncTtlCache<T>(
   const now = options.now ?? Date.now;
   let value: { v: T; at: number } | null = null;
   let inflight: Promise<T> | null = null;
+  let invalidated = false;
+  let invalidationVersion = 0;
 
   async function refresh(): Promise<T> {
+    const versionAtStart = invalidationVersion;
     try {
       const v = await load();
-      value = { v, at: now() };
+      if (versionAtStart === invalidationVersion) {
+        value = { v, at: now() };
+        invalidated = false;
+      } else {
+        // A write invalidated the cache while this read was in flight. Its
+        // snapshot may predate that write, so don't mark it fresh. Retain an
+        // existing last-good value; if none exists, keep this result only as
+        // a bounded-age fallback while the next caller retries.
+        if (!value) value = { v, at: now() };
+        invalidated = true;
+      }
       return v;
     } catch (err) {
       if (value && now() - value.at < options.maxStaleMs) {
@@ -104,7 +112,7 @@ export function createAsyncTtlCache<T>(
 
   return {
     async get() {
-      if (value && now() - value.at < options.ttlMs) return value.v;
+      if (value && !invalidated && now() - value.at < options.ttlMs) return value.v;
       if (!inflight) {
         inflight = refresh().finally(() => {
           inflight = null;
@@ -113,7 +121,10 @@ export function createAsyncTtlCache<T>(
       return inflight;
     },
     invalidate() {
-      value = null;
+      // Do not discard the last-known-good value. Mark it stale so the next
+      // caller refreshes, but preserve it for stale-if-error if that read fails.
+      invalidated = true;
+      invalidationVersion += 1;
     },
   };
 }

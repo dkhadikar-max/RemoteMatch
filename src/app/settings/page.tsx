@@ -10,7 +10,7 @@ import { computeProfileCompleteness } from '@/lib/profile/completeness';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { normalizeProfileUrl } from '@/lib/profile-links/validate';
 import { signOutCurrentSession } from '@/lib/auth/auth-flow';
-import { startProUpgrade, cancelProSubscription } from '@/lib/razorpay-checkout';
+import { startProUpgrade, cancelProSubscription, PRO_CURRENCY_PRICES, type ProCurrency } from '@/lib/razorpay-checkout';
 import { GrowYourMatches } from '@/components/settings/grow-your-matches';
 import { SearchProfile } from '@/components/settings/search-profile';
 import {
@@ -309,6 +309,8 @@ function SettingsContent() {
   };
 
   // ---- derived, server-only display values (no fixture, no fabrication) ----
+  const billingCountry = srv?.currentCountry?.trim().toUpperCase();
+  const billingCurrency: ProCurrency = !billingCountry || billingCountry === 'IN' || billingCountry === 'INDIA' ? 'INR' : 'USD';
   const planTier = ent?.planTier ?? 'free';
   const rightSwipes = ent?.dailyRightSwipesCount ?? 0;
   const proposals = ent?.dailyProposalsCount ?? 0;
@@ -688,6 +690,10 @@ function SettingsContent() {
                 </div>
               )}
 
+              {planTier === 'free' && (
+                <p className="text-xs text-[var(--muted)]">Billing currency is based on your saved country: India ₹499/month; all other countries $9/month.</p>
+              )}
+
               <div className="soft-card p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-[var(--line)]">
                 <div className="space-y-1">
                   <span className="status good text-xs">Current subscription</span>
@@ -713,7 +719,7 @@ function SettingsContent() {
                     disabled={isUpgrading}
                     className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] text-white text-xs font-semibold px-4 py-2.5 transition-colors shadow-sm flex items-center gap-1.5"
                   >
-                    <span>{isUpgrading ? 'Connecting…' : 'Upgrade to Pro (₹499/mo)'}</span>
+                    <span>{isUpgrading ? 'Connecting…' : `Upgrade to Pro (${PRO_CURRENCY_PRICES[billingCurrency]})`}</span>
                     <ArrowUpRight size={13} />
                   </button>
                 )}
@@ -749,7 +755,7 @@ function SettingsContent() {
                   <div className="space-y-1 border-b border-[var(--line)] pb-4">
                     <span className="text-xs font-semibold text-[var(--red)] uppercase tracking-wider">RemoteMatch Pro</span>
                     <div className="text-3xl font-bold text-[var(--ink)] mono">
-                      ₹499 <span className="text-xs font-normal text-[var(--muted)]">/month</span>
+                      {billingCurrency === 'INR' ? '₹499' : '$9'} <span className="text-xs font-normal text-[var(--muted)]">/month</span>
                     </div>
                     <p className="text-xs text-[var(--muted)]">More ways to find the right job.</p>
                   </div>

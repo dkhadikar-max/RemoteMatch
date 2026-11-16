@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Clock, Calendar, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { SEO_GUIDE_ARTICLES, SEO_CATEGORIES, buildBreadcrumbSchema } from '@/lib/seo/data';
+import { SITE_URL } from '@/lib/site';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: { absolute: `${article.title} — Remote Job Guide | RemoteMatch` },
     description: article.description,
     alternates: {
-      canonical: `https://remotematch.com/guide/${article.slug}`,
+      canonical: `${SITE_URL}/guide/${article.slug}`,
     },
     openGraph: {
       title: article.title,
@@ -36,7 +37,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       type: 'article',
       publishedTime: article.publishedDate,
       authors: [article.author],
-      url: `https://remotematch.com/guide/${article.slug}`,
+      url: `${SITE_URL}/guide/${article.slug}`,
     },
   };
 }
@@ -50,9 +51,9 @@ export default async function GuideArticlePage({ params }: Props) {
     SEO_GUIDE_ARTICLES.find((a) => a.slug !== article.slug) || SEO_GUIDE_ARTICLES[0];
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Guides', url: 'https://remotematch.com/guide' },
-    { name: article.title, url: `https://remotematch.com/guide/${article.slug}` },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Guides', url: `${SITE_URL}/guide` },
+    { name: article.title, url: `${SITE_URL}/guide/${article.slug}` },
   ]);
 
   const jsonLdArticle = {
@@ -70,12 +71,12 @@ export default async function GuideArticlePage({ params }: Props) {
       name: 'RemoteMatch',
       logo: {
         '@type': 'ImageObject',
-        url: 'https://remotematch.com/logo.png',
+        url: `${SITE_URL}/logo.png`,
       },
     },
     mainEntityOfPage: {
       '@type': 'WebPage',
-      '@id': `https://remotematch.com/guide/${article.slug}`,
+      '@id': `${SITE_URL}/guide/${article.slug}`,
     },
   };
 

@@ -125,7 +125,7 @@ export function Navbar() {
   // present in the initial server-rendered HTML and briefly visible until
   // the post-mount effect flips `isAdmin` — never occurring on the consumer
   // host (isAdmin stays false there for the page's whole lifetime).
-  if (isAdmin) {
+  if (isAdmin || pathname?.startsWith('/employer')) {
     return null;
   }
 

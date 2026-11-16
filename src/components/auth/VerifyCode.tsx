@@ -22,9 +22,11 @@ function maskEmail(email: string): string {
  */
 export function VerifyCode({
   email,
+  redirect = '/feed',
   onChangeEmail,
 }: {
   email: string;
+  redirect?: string;
   onChangeEmail: () => void;
 }) {
   const [code, setCode] = useState('');
@@ -56,7 +58,7 @@ export function VerifyCode({
       // client-side push can out-run cookie propagation to the middleware
       // RSC fetch and briefly bounce the just-verified user through /login.
       // `replace` so Back doesn't return to this now-spent code screen.
-      window.location.replace('/feed');
+      window.location.replace(redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : '/feed');
       return;
     }
     setPending(false);

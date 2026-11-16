@@ -64,8 +64,9 @@ const LOOKUP_MAX_KEYS = 150;
 const LOOKUP_MAX_ENCODED_CHARS = 3_500; // keep request URLs well under gateway limits
 const ID_CHUNK = 100; // uuid list in a URL: 100 x ~37 chars
 const INSERT_CHUNK = 100;
-const DB_CONCURRENCY = 4;
-const UPDATE_CONCURRENCY = 6;
+const DB_CONCURRENCY = 2;
+const UPDATE_CONCURRENCY = 2;
+const UPDATE_ID_CHUNK = 25;
 const VERIFY_CONCURRENCY = 8;
 
 const EXISTING_COLUMNS = ['id', 'source', 'source_id', 'status', 'consecutive_absences', 'posted_at', ...CONTENT_FIELD_NAMES, ...TRANSLATION_STATE_COLUMNS].join(', ');
@@ -568,11 +569,12 @@ export interface InsertOutcome {
 }
 
 /**
- * Race-safe bulk insert. One upsert(ignoreDuplicates) per chunk: a row that
- * already exists is skipped (and counted as a conflict, never as an insert)
- * instead of failing the whole chunk. If a chunk fails outright (e.g. one row
- * violates a constraint), it is retried row by row so the bad row is isolated
- * and reported while the good ones still land.
+ * Race-safe bulk insert. A failed chunk is bisected recursively rather than
+ * retried serially row-by-row. This isolates constraint failures while keeping
+ * the common "one bad row in a large batch" case logarithmic in extra requests.
+ * The split depth is bounded by the initial chunk size (100 rows => at most
+ * 199 attempts for an entirely failing chunk); successful siblings are retained.
+ * A failed singleton is recorded and never reported as inserted.
  */
 export async function insertRowsIgnoringDuplicates(
   admin: Admin,
@@ -587,29 +589,64 @@ export async function insertRowsIgnoringDuplicates(
       .upsert(batch as Record<string, unknown>[], { onConflict: 'source,source_id', ignoreDuplicates: true })
       .select('id, source, source_id');
   };
-
-  for (const batch of chunk(rows, INSERT_CHUNK)) {
+  const apply = async (batch: readonly Record<string, unknown>[]): Promise<void> => {
+    if (batch.length === 0) return;
     const res = await attempt(batch);
     if (!res.error) {
       const got = (res.data ?? []) as { id: string; source: string; source_id: string }[];
       out.inserted.push(...got);
       out.conflicts += batch.length - got.length;
-      continue;
+      return;
     }
-    for (const row of batch) {
-      const one = await attempt([row]);
-      if (one.error) out.failed.push({ count: 1, message: one.error.message, code: one.error.code });
-      else {
-        const got = (one.data ?? []) as { id: string; source: string; source_id: string }[];
-        out.inserted.push(...got);
-        out.conflicts += 1 - got.length;
-      }
+    if (batch.length === 1) {
+      out.failed.push({ count: 1, message: res.error.message, code: res.error.code });
+      return;
     }
-  }
+    const midpoint = Math.ceil(batch.length / 2);
+    await apply(batch.slice(0, midpoint));
+    await apply(batch.slice(midpoint));
+  };
+
+  for (const batch of chunk(rows, INSERT_CHUNK)) await apply(batch);
   return out;
 }
 
-async function bulkUpdateByIds(
+/**
+ * Apply an idempotent update batch. PostgREST/Postgres can cancel a 25-row
+ * touch UPDATE under transient write pressure (SQLSTATE 57014). Retry only
+ * that failure by bisecting the batch, keeping concurrency at one and
+ * bounding retries to three split levels (at most 15 requests for 25 ids).
+ * A timeout aborts the SQL statement atomically, so retrying the same patch
+ * against smaller id sets cannot double-apply a partial update.
+ */
+async function updateBatchWithTimeoutFallback(
+  admin: Admin,
+  ctx: RunContext,
+  op: string,
+  batch: readonly string[],
+  patch: Record<string, unknown>,
+  splitDepth = 0
+): Promise<number> {
+  ctx.requests++;
+  const res = await admin.from('opportunities').update(patch).in('id', [...batch]).select('id');
+  if (res.error) {
+    const isStatementTimeout = res.error.code === '57014' || /statement timeout/i.test(res.error.message ?? '');
+    if (isStatementTimeout && batch.length > 1 && splitDepth < 3) {
+      const midpoint = Math.ceil(batch.length / 2);
+      const left = await updateBatchWithTimeoutFallback(admin, ctx, op, batch.slice(0, midpoint), patch, splitDepth + 1);
+      const right = await updateBatchWithTimeoutFallback(admin, ctx, op, batch.slice(midpoint), patch, splitDepth + 1);
+      return left + right;
+    }
+    ctx.recordError(op, res.error, batch.length);
+    return 0;
+  }
+
+  const n = (res.data ?? []).length;
+  if (n !== batch.length) ctx.recordError(`${op}:rowcount`, `expected ${batch.length} rows, database changed ${n}`, batch.length - n);
+  return n;
+}
+
+export async function bulkUpdateByIds(
   admin: Admin,
   ctx: RunContext,
   op: string,
@@ -617,16 +654,8 @@ async function bulkUpdateByIds(
   patch: Record<string, unknown>
 ): Promise<number> {
   let written = 0;
-  await runPool(chunk(ids, ID_CHUNK), DB_CONCURRENCY, async (batch) => {
-    ctx.requests++;
-    const res = await admin.from('opportunities').update(patch).in('id', batch).select('id');
-    if (res.error) {
-      ctx.recordError(op, res.error, batch.length);
-      return;
-    }
-    const n = (res.data ?? []).length;
-    written += n;
-    if (n !== batch.length) ctx.recordError(`${op}:rowcount`, `expected ${batch.length} rows, database changed ${n}`, batch.length - n);
+  await runPool(chunk(ids, UPDATE_ID_CHUNK), 1, async (batch) => {
+    written += await updateBatchWithTimeoutFallback(admin, ctx, op, batch, patch);
   });
   return written;
 }

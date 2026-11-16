@@ -57,7 +57,7 @@ async function main() {
   assert(direct + viaHelper >= 6, `every gated read applies BOTH clauses (${direct} direct + ${viaHelper} via applyTranslationSafe)`);
   const onlyOldGate = (catalog.match(/\.or\(TRANSLATION_SAFE_OR\)(?!\s*\.or\(TRANSLATION_NOT_ERROR_OR\))/g) || []).length;
   assert(onlyOldGate === 0, 'no read applies the old clause on its own');
-  const others = ['src/lib/seo/directory.ts', 'src/lib/feed/catalog-cache.ts', 'src/app/sitemap.ts'].map((f) => noComments(read(f)));
+  const others = ['src/lib/seo/directory.ts', 'src/lib/feed/catalog-cache.ts', 'src/lib/seo/sitemap-data.ts'].map((f) => noComments(read(f)));
   assert(others.every((s) => !/source_language\.is\.null/.test(s)), 'directory, feed cache and sitemap carry no private copy of the gate (they go through catalog-read)');
   assert(/translationSafe/.test(catalog) && /applyTranslationSafe\(query\)/.test(catalog), 'getActiveOpportunities({ translationSafe }) uses the shared helper');
 
@@ -120,7 +120,7 @@ async function main() {
     check('feed cache          getFeedCatalog()', ids((await getFeedCatalog()) ?? []));
     const hub = await loadHubPage(null, '1');
     check('directory hub       loadHubPage(null, 1)', ids(hub?.jobs ?? []));
-    const { default: sitemap } = await import('../src/app/sitemap');
+    const { getSitemapEntries: sitemap } = await import('../src/lib/seo/sitemap-data');
     const sm = await sitemap();
     const smIds = new Set(sm.map((e) => e.url).filter((u) => u.includes(`/view/${PREFIX}`)).map((u) => u.split('/view/')[1]));
     check('sitemap route       sitemap()', smIds);

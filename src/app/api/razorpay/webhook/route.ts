@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchSubscription, isRazorpayWebhookConfigured, verifyWebhookSignature } from '@/lib/razorpay';
 import { processWebhookEvent } from '@/lib/razorpay-webhook-apply';
+import { parseWebhookEvent, subscriptionFetchFailureOutcome } from '@/lib/razorpay-webhook-parse';
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from '@/lib/supabase/admin';
 
 /**
@@ -51,14 +52,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Webhook signature verification failed' }, { status: 400 });
   }
 
-  let event: { event?: string; payload?: { subscription?: { entity?: { id?: string } } } };
+  // Parsing — including the G1 fix (2026-11-05): resolving the subscription
+  // id from EITHER `payload.subscription.entity.id` (subscription.* events)
+  // OR `payload.payment.entity.subscription_id` (payment.failed,
+  // payment.captured, refund.created, etc. — separate top-level event types
+  // that carry a payment but no subscription entity of their own), never
+  // gated on the event type string, consistent with this route's own stated
+  // principle above ("never from the event type") — lives in
+  // razorpay-webhook-parse.ts, pure and independently unit-tested, so this
+  // exact fix is regression-tested without needing a live server or a real
+  // Razorpay subscription (test/razorpay-webhook-parse-suite.ts). Before this
+  // fix, only the subscription-entity source was read, so a failed renewal
+  // charge or a refund never resolved a subscription at all — entitlement
+  // was unaffected (Razorpay's own subscription.pending/halted events, which
+  // DO carry a subscription entity, still drove that correctly) but
+  // billing_transactions could never record a 'failed' or 'refunded' row,
+  // despite the schema explicitly supporting both.
+  let parsed: ReturnType<typeof parseWebhookEvent>;
   try {
-    event = JSON.parse(rawBody);
+    parsed = parseWebhookEvent(rawBody);
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-
-  const eventType = typeof event.event === 'string' ? event.event : '';
+  const { eventType, subscriptionId, payment, refund } = parsed;
   const eventId = req.headers.get('x-razorpay-event-id');
 
   if (eventId) {
@@ -70,20 +86,51 @@ export async function POST(req: NextRequest) {
     if (seen) return NextResponse.json({ received: true, duplicate: true });
   }
 
+  // 2026-11-06 review fix (requirement #2): only subscription.* events are
+  // entitlement-critical — a failed fetch for one of those must force a
+  // retry, since applying the wrong/stale state would be worse than being
+  // slow. A payment.*/refund.* event only needs the fetch for billing_
+  // transactions ledger attribution (itself best-effort — see
+  // razorpay-webhook-apply.ts).
+  //
+  // 2026-11-07 round-3 review fix (P2 item 4): "best-effort" stops being
+  // true the moment the event actually carries a payment or refund entity —
+  // if the fetch fails AND we never attribute that financial event, it
+  // still gets recorded as "handled" below (idempotency), permanently
+  // losing that ledger record with no reconciliation path. Such an event
+  // must retry too; only an event with no financial payload at all (nothing
+  // to lose) may be acknowledged despite a failed fetch. See
+  // subscriptionFetchFailureOutcome (razorpay-webhook-parse.ts) for the pure,
+  // independently-tested decision.
+  const isSubscriptionLifecycleEvent = eventType.startsWith('subscription.');
   let subscription = null;
-  const subscriptionId = event.payload?.subscription?.entity?.id;
-  if (eventType.startsWith('subscription.') && typeof subscriptionId === 'string') {
+  if (typeof subscriptionId === 'string') {
     try {
       subscription = await fetchSubscription(subscriptionId);
-    } catch {
-      // Let Razorpay retry rather than recording an event we couldn't apply.
-      return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
+    } catch (err) {
+      const outcome = subscriptionFetchFailureOutcome({
+        isLifecycleEvent: isSubscriptionLifecycleEvent,
+        hasPayment: payment !== null,
+        hasRefund: refund !== null,
+      });
+      if (outcome === 'retry') {
+        // Let Razorpay retry rather than recording an event we couldn't
+        // apply, or whose financial record we couldn't attribute.
+        return NextResponse.json({ error: 'Could not read subscription' }, { status: 502 });
+      }
+      console.error(
+        '[razorpay][webhook] could not fetch subscription for ledger context (non-fatal, no financial payload on this event)',
+        eventType,
+        subscriptionId,
+        err
+      );
     }
   }
-  // Any other event type carries no subscription: acknowledged and recorded.
+  // An event with no subscription id from either source carries no
+  // subscription: acknowledged and recorded.
 
   // Apply, then record the event only if the apply succeeded; any non-2xx
   // leaves it unrecorded so Razorpay redelivers.
-  const result = await processWebhookEvent(admin, { eventId, eventType, subscription });
+  const result = await processWebhookEvent(admin, { eventId, eventType, subscription, payment, refund });
   return NextResponse.json(result.body, { status: result.status });
 }

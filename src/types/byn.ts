@@ -23,7 +23,9 @@ export type ApplicationStatus =
   | 'rejected'
   | 'offer'
   | 'withdrawn'
-  | 'archived';
+  | 'archived'
+  | 'offer_declined'
+  | 'hired';
 
 export type FeedbackOutcome =
   | 'applied'
@@ -65,6 +67,8 @@ export interface PersonProfile {
   dailyEvaluationsCount: number;
   lastEvaluationResetAt: string;
   dailyRightSwipesCount?: number;
+  /** Rolling-24h total (right + left) swipe count. No independent left cap — only right and total gate anything. */
+  totalSwipesCount?: number;
   dailyProposalsCount?: number;
   usageDate?: string; // YYYY-MM-DD (UTC)
   stripeCustomerId?: string;

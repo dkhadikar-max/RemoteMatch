@@ -78,14 +78,24 @@ async function verify(body: Record<string, unknown>): Promise<UpgradeResult> {
   };
 }
 
+export type ProCurrency = 'INR' | 'USD';
+
+export const PRO_CURRENCY_PRICES: Record<ProCurrency, string> = {
+  INR: '₹499/month',
+  USD: '$9/month',
+};
+
 export async function startProUpgrade(): Promise<UpgradeResult> {
   try {
-    const res = await fetch('/api/razorpay/subscription', { method: 'POST' });
+    const res = await fetch('/api/razorpay/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.success) {
       return { status: 'error', message: data.error ?? 'Could not start checkout. Please try again.' };
     }
-
     if (data.isMock) return verify({ mock: true });
 
     await loadCheckoutScript();
@@ -109,7 +119,11 @@ export async function startProUpgrade(): Promise<UpgradeResult> {
         key: data.keyId,
         subscription_id: data.subscriptionId,
         name: 'RemoteMatch',
-        description: 'RemoteMatch Pro — ₹499/month',
+        // F2 (2026-11-05 audit): server computes this from the subscription's
+        // actual currency (never hardcoded here) — see planDescription() in
+        // billing/currency-config.ts. Falls back only if an older/unexpected
+        // response shape omits it.
+        description: data.description ?? 'RemoteMatch Pro — monthly subscription',
         prefill: data.email ? { email: data.email } : undefined,
         theme: brandColor ? { color: brandColor } : undefined,
         handler: (resp: RazorpayHandlerResult) => {

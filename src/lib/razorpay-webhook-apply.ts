@@ -6,6 +6,8 @@ import {
   planTierForSubscription,
   RazorpayApiError,
   subscriptionUserId,
+  type RazorpayPaymentEntity,
+  type RazorpayRefundEntity,
   type RazorpaySubscription,
 } from '@/lib/razorpay';
 import { isActiveClaim, writeProfileIfUnchanged } from '@/lib/razorpay-claim';
@@ -37,6 +39,55 @@ export type ApplyOutcome =
   | { kind: 'error' };
 
 type LedgerRow = { event_id: string; event_type: string };
+/** Sentinel for "this row is a payment snapshot, not a refund record" — see
+ *  BillingTransactionRow's doc comment. Never a real Razorpay refund id
+ *  (those are always `rfnd_...`). */
+const NOT_A_REFUND = '';
+
+/**
+ * The row's idempotency key (migration 043) is the composite
+ * (razorpay_payment_id, status, razorpay_refund_id) — 2026-11-07 round-3
+ * review fix (P1 items 1+2), correcting the prior round's
+ * (razorpay_payment_id, status)-keyed design.
+ *
+ * History of this key, each fix correcting the previous one's new bug:
+ *  1. razorpay_payment_id alone → a later event (e.g. a refund) overwrote
+ *     its capture row in place, losing the capture from history.
+ *  2. razorpay_event_id alone → fixed #1, but the SAME real capture is
+ *     reported on TWO separate deliveries (`subscription.charged` AND
+ *     `payment.captured`), each with its own event id — wrote the same
+ *     capture twice (double-counted revenue).
+ *  3. (razorpay_payment_id, status) → fixed #2 (both deliveries share the
+ *     same status, so they collapse), but a payment can have MULTIPLE
+ *     PARTIAL REFUNDS, and Razorpay's refund-event payment snapshot often
+ *     still reports status 'captured' (not 'refunded') for a partial
+ *     refund — so a second partial refund on an already-refunded-once
+ *     payment would silently overwrite the FIRST refund's row, because both
+ *     shared the same (payment_id, status) pair. Multiple distinct refunds
+ *     must never collapse into one.
+ *
+ * The fix: a refund is recorded under its OWN refund id (`rfnd_...`, always
+ * globally unique and distinct per refund), not the parent payment's status.
+ * `razorpay_refund_id` is `NOT_A_REFUND` ('') for an ordinary payment
+ * snapshot row (capture/failure — unique per (payment_id, status), as
+ * before) and the refund's own id for a refund row (effectively unique on
+ * its own, since refund ids never collide across payments) — a single flat,
+ * non-partial 3-column UNIQUE constraint handles both cases without needing
+ * Postgres partial-index `ON CONFLICT` support (which `.upsert()`'s
+ * `onConflict` column-list form cannot express). Redelivery of the SAME
+ * refund event (same refund id) still upserts idempotently onto its own row;
+ * a DIFFERENT refund on the same payment gets its own distinct row.
+ */
+type BillingTransactionRow = {
+  profile_id: string;
+  razorpay_payment_id: string;
+  razorpay_refund_id: string;
+  razorpay_subscription_id: string;
+  amount_minor: number;
+  currency: string;
+  status: string;
+  razorpay_event_id: string | null;
+};
 
 export interface ApplyDeps {
   fetchSubscription?: (id: string) => Promise<RazorpaySubscription>;
@@ -44,6 +95,12 @@ export interface ApplyDeps {
   beforeWrite?: (path: 'holder' | 'orphan', attempt: number) => Promise<void>;
   /** Writes a ledger row idempotently (existing row = success). Overridable so tests can force a failure. */
   recordLedgerRow?: (row: LedgerRow) => Promise<{ error: unknown }>;
+  /** Writes/updates a billing_transactions row (migration 043), keyed on the
+   *  payment id so redelivery updates status rather than duplicating. Never
+   *  blocks the primary entitlement flow — a failure here is logged, not
+   *  surfaced as a webhook failure (Razorpay must not be made to redeliver
+   *  just because the secondary ledger write failed). Overridable for tests. */
+  recordBillingTransaction?: (row: BillingTransactionRow) => Promise<{ error: unknown }>;
 }
 
 function defaultLedgerWriter(admin: SupabaseClient) {
@@ -51,6 +108,17 @@ function defaultLedgerWriter(admin: SupabaseClient) {
     const { error } = await admin
       .from('razorpay_webhook_events')
       .upsert(row, { onConflict: 'event_id', ignoreDuplicates: true });
+    return { error };
+  };
+}
+
+function defaultBillingTransactionWriter(admin: SupabaseClient) {
+  return async (row: BillingTransactionRow) => {
+    // onConflict is the composite (razorpay_payment_id, status,
+    // razorpay_refund_id) — see BillingTransactionRow's doc comment above.
+    const { error } = await admin
+      .from('billing_transactions')
+      .upsert(row, { onConflict: 'razorpay_payment_id,status,razorpay_refund_id' });
     return { error };
   };
 }
@@ -167,25 +235,112 @@ export async function applySubscriptionToProfiles(
  */
 export async function processWebhookEvent(
   admin: SupabaseClient,
-  event: { eventId: string | null; eventType: string; subscription: RazorpaySubscription | null },
+  event: {
+    eventId: string | null;
+    eventType: string;
+    subscription: RazorpaySubscription | null;
+    /** payload.payment.entity, when the event carries one. Independent of
+     *  `subscription` being applicable — a payment can arrive on an event
+     *  whose subscription apply was 'ignored' (not ours), in which case the
+     *  ownership check below skips the ledger write too. */
+    payment?: RazorpayPaymentEntity | null;
+    /** payload.refund.entity, when the event carries one (2026-11-07
+     *  round-3 review fix, P1 items 1+2) — a DISTINCT entity from `payment`,
+     *  with its own id/amount. When present, takes priority over `payment`
+     *  for the ledger write: a refund event's own refund-specific row is
+     *  written, not an extra payment-snapshot row for the unchanged parent
+     *  payment. */
+    refund?: RazorpayRefundEntity | null;
+  },
   deps: ApplyDeps = {}
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const recordLedgerRow = deps.recordLedgerRow ?? defaultLedgerWriter(admin);
+  const recordBillingTransaction = deps.recordBillingTransaction ?? defaultBillingTransactionWriter(admin);
   let reconcile = false;
 
-  if (event.subscription) {
+  // Only subscription LIFECYCLE events (subscription.*) drive the entitlement
+  // apply/reconcile state machine. 2026-11-06 review fix (requirement #2):
+  // the G1 fix resolves a subscription id for payment.*/refund.* events too
+  // (needed below, for ledger attribution), but those events are NOT
+  // subscription state changes — every renewal already fires BOTH
+  // subscription.charged (which must apply) and payment.captured (which must
+  // not re-apply the same thing a second time). Re-running the full apply
+  // pipeline for the payment-level event as well doubled DB writes per cycle
+  // and turned a transient fetch failure on an otherwise-inconsequential
+  // payment.failed/refund.created into a 502 that forces Razorpay into a
+  // redelivery loop for what should be a trivial acknowledgement.
+  const isSubscriptionLifecycleEvent = event.eventType.startsWith('subscription.');
+  if (event.subscription && isSubscriptionLifecycleEvent) {
     const outcome = await applySubscriptionToProfiles(admin, event.subscription, deps);
     if (outcome.kind === 'error') return { status: 500, body: { error: 'Could not apply event' } };
     if (outcome.kind === 'retry_later') return { status: outcome.status, body: { error: outcome.reason } };
     reconcile = outcome.kind === 'reconcile';
   }
 
+  // Only write a billing row when the payment/refund belongs to one of our
+  // Pro plans and can be attributed to the profile in the server-created notes.
+  // Never fabricate ownership from an unverified payment or refund payload.
+  let ledgerRow: BillingTransactionRow | null = null;
+  if (event.subscription) {
+    const profileId = subscriptionUserId(event.subscription);
+    if (profileId && isProPlanSubscription(event.subscription)) {
+      if (event.refund) {
+        ledgerRow = {
+          profile_id: profileId,
+          razorpay_payment_id: event.refund.payment_id,
+          razorpay_refund_id: event.refund.id,
+          razorpay_subscription_id: event.subscription.id,
+          amount_minor: event.refund.amount,
+          currency: event.refund.currency,
+          status: 'refunded',
+          razorpay_event_id: event.eventId,
+        };
+      } else if (event.payment) {
+        ledgerRow = {
+          profile_id: profileId,
+          razorpay_payment_id: event.payment.id,
+          razorpay_refund_id: NOT_A_REFUND,
+          razorpay_subscription_id: event.subscription.id,
+          amount_minor: event.payment.amount,
+          currency: event.payment.currency,
+          status: event.payment.status,
+          razorpay_event_id: event.eventId,
+        };
+      }
+    }
+  }
+
+  // Persist the billing row before marking the webhook event handled. If this
+  // write fails, leaving the event unrecorded lets Razorpay retry; otherwise a
+  // successful event record would make the next delivery short-circuit and
+  // permanently lose the financial row. Entitlement application above is idempotent.
+  if (ledgerRow) {
+    const billingTxResult = await recordBillingTransaction(ledgerRow);
+    if (billingTxResult.error) {
+      console.error('[razorpay][ledger] FAILED to record billing_transactions row; event left unhandled for retry', {
+        razorpay_payment_id: ledgerRow.razorpay_payment_id,
+        razorpay_refund_id: ledgerRow.razorpay_refund_id || null,
+        razorpay_subscription_id: ledgerRow.razorpay_subscription_id,
+        profile_id: ledgerRow.profile_id,
+        amount_minor: ledgerRow.amount_minor,
+        currency: ledgerRow.currency,
+        status: ledgerRow.status,
+        razorpay_event_id: ledgerRow.razorpay_event_id,
+        error: billingTxResult.error,
+      });
+      return { status: 503, body: { error: 'Could not record billing transaction; retry later' } };
+    }
+  }
+
+  // Mark the event handled only after the financial row is durable.
   if (event.eventId) {
-    // A concurrent duplicate may have inserted first — the apply above is
-    // idempotent, so an existing row is fine. A real failure to record is
-    // retryable rather than acknowledged.
-    const { error } = await recordLedgerRow({ event_id: event.eventId, event_type: event.eventType || 'unknown' });
-    if (error) return { status: 503, body: { error: 'Could not record event; retry later' } };
+    const eventRecordResult = await recordLedgerRow({
+      event_id: event.eventId,
+      event_type: event.eventType || 'unknown',
+    });
+    if (eventRecordResult.error) {
+      return { status: 503, body: { error: 'Could not record event; retry later' } };
+    }
   }
 
   return { status: 200, body: reconcile ? { received: true, reconcile: true } : { received: true } };

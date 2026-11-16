@@ -202,17 +202,20 @@ async function run() {
     mocks.sync = async () => okSummary; mocks.translate = async () => ({ translated: 2 }); mocks.reconcile = async () => ({ clusters: 0 });
     const r = await call();
     assert(r.status === 200, 'HTTP 200');
-    assert(JSON.stringify(r.body) === JSON.stringify({ success: true, action: 'sync', ...okSummary, translation: { translated: 2 }, reconciliation: { clusters: 0 } }), 'the success body is EXACTLY what it was (no runId/stage added)');
-    assert(JSON.stringify(r.calls) === JSON.stringify(['sync', 'translate', 'reconcile', 'invalidate']), `the steps still run in the same order (got ${JSON.stringify(r.calls)})`);
+    assert(JSON.stringify(r.body) === JSON.stringify({ success: true, action: 'sync', ...okSummary }), 'the success body is EXACTLY what main returns (no runId/stage added)');
+    assert(JSON.stringify(r.calls) === JSON.stringify(['sync', 'invalidate']), `a sync request still only syncs (translation and reconciliation are separate actions on main) (got ${JSON.stringify(r.calls)})`);
     const runId = ((r.logs[0] ?? '').match(/^\[sync ([0-9a-f]{8})\] start action=sync$/) || [])[1];
     assert(!!runId, 'a start line is logged with a run id');
     // main also logs a `[catalog-sync] summary` line between start and done (logCatalogSyncResult), so find the done line by its run id.
     const doneLine = r.logs.find((l: string) => l.startsWith(`[sync ${runId}] done`));
     assert(doneLine === `[sync ${runId}] done providers=1/2`, `a done line with the same run id and provider counts (got "${doneLine}")`);
     assert(r.errors.length === 0, 'nothing is logged as an error on success');
-    mocks.sync = async () => ({ providerOutcomes: [{ sourceKey: 'a', success: false, jobCount: 0 }] });
-    const none = await call();
-    assert(none.calls.includes('sync') && !none.calls.includes('reconcile'), 'when no provider succeeded, reconciliation is still skipped (unchanged)');
+    const tr = await call({ action: 'translate' });
+    assert(tr.status === 200 && JSON.stringify(tr.body) === JSON.stringify({ success: true, action: 'translate', translation: { translated: 2 } }) && JSON.stringify(tr.calls) === JSON.stringify(['translate', 'invalidate']), '?action=translate is unchanged (body and steps)');
+    const rc = await call({ action: 'reconcile' });
+    assert(rc.status === 200 && JSON.stringify(rc.body) === JSON.stringify({ success: true, action: 'reconcile', reconciliation: { clusters: 0 } }) && JSON.stringify(rc.calls) === JSON.stringify(['reconcile', 'invalidate']), '?action=reconcile is unchanged (body and steps)');
+    const bad = await call({ action: 'bogus' });
+    assert(bad.status === 400 && bad.body.success === false && bad.body.error === 'Unsupported sync action: bogus' && !('runId' in bad.body) && bad.calls.length === 0, 'an unsupported action is still a 400 with the original body and runs nothing');
     mocks.sync = async () => okSummary;
     mocks.revalidate = async () => ({ checked: 5 });
     const rv = await call({ action: 'revalidate' });
@@ -221,21 +224,22 @@ async function run() {
 
   console.log('\nB3. The real route: every failure stage is reported, status stays 500');
   {
-    const stages: Array<[string, () => void]> = [
-      ['catalog_sync', () => { mocks.sync = async () => { throw new Error('sync exploded'); }; }],
-      ['translation', () => { mocks.sync = async () => okSummary; mocks.translate = async () => { throw new TypeError("Cannot read properties of undefined (reading 'trim')"); }; }],
-      ['reconciliation', () => { mocks.sync = async () => okSummary; mocks.translate = async () => ({}); mocks.reconcile = async () => { throw new Error('reconcile exploded'); }; }],
+    // main runs each step as its own request (?action=...), so each stage is reached through its own action.
+    const stages: Array<[string, string | undefined, () => void]> = [
+      ['catalog_sync', undefined, () => { mocks.sync = async () => { throw new Error('sync exploded'); }; }],
+      ['translation', 'translate', () => { mocks.translate = async () => { throw new TypeError("Cannot read properties of undefined (reading 'trim')"); }; }],
+      ['reconciliation', 'reconcile', () => { mocks.reconcile = async () => { throw new Error('reconcile exploded'); }; }],
     ];
-    for (const [stage, arm] of stages) {
+    for (const [stage, action, arm] of stages) {
       mocks.sync = async () => okSummary; mocks.translate = async () => ({}); mocks.reconcile = async () => ({});
       arm();
-      const r = await call();
+      const r = await call(action ? { action } : undefined);
       const runId = r.body.runId as string;
       assert(r.status === 500, `${stage}: HTTP status is still 500`);
       assert(r.body.success === false && /^[0-9a-f]{8}$/.test(runId) && r.body.stage === stage, `${stage}: the body carries success:false, a run id and stage "${stage}" (got stage "${r.body.stage}")`);
       assert(typeof r.body.error === 'string' && r.body.error.length > 0, `${stage}: the body keeps its \`error\` message`);
       assert(r.errors.length === 1 && r.errors[0].startsWith(`[sync ${runId}] FAILED `) && r.errors[0].includes(`"stage":"${stage}"`), `${stage}: exactly one error line, tagged with the same run id and stage`);
-      assert(r.logs[0] === `[sync ${runId}] start action=sync`, `${stage}: the start line carries the same run id, so the two correlate`);
+      assert(r.logs[0] === `[sync ${runId}] start action=${action ?? 'sync'}`, `${stage}: the start line carries the same run id, so the two correlate`);
     }
     mocks.sync = async () => okSummary; mocks.translate = async () => ({}); mocks.reconcile = async () => ({});
     mocks.revalidate = async () => { throw new Error('revalidate exploded'); };
@@ -243,9 +247,9 @@ async function run() {
     assert(rv.status === 500 && rv.body.stage === 'revalidate', 'revalidate: failure is reported with stage "revalidate"');
     mocks.revalidate = async () => ({});
 
-    const noReconcileAfterTranslate = stages[1]; mocks.sync = async () => okSummary; noReconcileAfterTranslate[1]();
-    const t = await call();
-    assert(!t.calls.includes('reconcile'), 'a translation failure still stops the run before reconciliation (control flow unchanged)');
+    mocks.sync = async () => okSummary; mocks.reconcile = async () => ({}); stages[1][2]();
+    const t = await call({ action: 'translate' });
+    assert(JSON.stringify(t.calls) === JSON.stringify(['translate']) && !t.calls.includes('reconcile') && !t.calls.includes('invalidate'), 'a translation failure runs only the translation step (no reconcile, no cache invalidation: control flow unchanged)');
   }
 
   console.log('\nB4. Odd thrown values and secrets in failures');

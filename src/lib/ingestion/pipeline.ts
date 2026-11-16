@@ -338,6 +338,54 @@ export function resolveSalaryPeriod(raw: RawJobPayload): 'hourly' | 'monthly' | 
   return 'unknown';
 }
 
+/** Normalize only explicit experience evidence; never fabricate a default tier. */
+export function resolveExperienceRequirement(raw: RawJobPayload): string | undefined {
+  const explicit = (raw.experienceLevel || '').trim();
+  const text = (raw.description || '').slice(0, 1800);
+  let candidate = explicit;
+  if (!candidate) {
+    const patterns = [
+      /(?:experience|exp)\s*(?:required|of|:|-)?\s*(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*(?:years?|yrs?)/i,
+      /\b(\d{1,2})\s*(?:-|to)\s*(\d{1,2})\s*(?:years?|yrs?)\s+of experience/i,
+      /\b(\d{1,2})\+\s*(?:years?|yrs?)\s+(?:of )?experience/i,
+      /\b(?:at least|minimum of)\s*(\d{1,2})\s*(?:years?|yrs?)/i,
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) { candidate = match[2] ? match[1] + '-' + match[2] : match[1] + '+'; break; }
+    }
+  }
+  if (!candidate || /^(any|open|not specified|unspecified)$/i.test(candidate)) return undefined;
+  const value = candidate.toLowerCase().trim();
+  const range = value.match(/^(\d{1,2})\s*(?:-|to)\s*(\d{1,2})$/);
+  const plus = value.match(/^(\d{1,2})\+$/);
+  const single = value.match(/^(\d{1,2})\s*(?:years?|yrs?)?$/);
+  if (range || plus || single) {
+    const high = Number(range?.[2] ?? plus?.[1] ?? single?.[1]);
+    if (high <= 1) return '0-1';
+    if (high <= 3) return '2-3';
+    if (high <= 6) return '4-6';
+    if (high <= 10) return '7-10';
+    return '10+';
+  }
+  return explicit || undefined;
+}
+
+/** Currency must be sourced from a disclosed salary, not a default. */
+function resolveSalaryCurrency(raw: RawJobPayload): string | undefined {
+  if (raw.salaryMin == null && raw.salaryMax == null) return undefined;
+  const code = raw.salaryCurrency?.trim().toUpperCase();
+  if (code && /^[A-Z]{3}$/.test(code)) return code;
+  const salary = raw.salaryString || '';
+  const codeMatch = salary.match(/\b(USD|INR|EUR|GBP|CAD|AUD|SGD|NZD|CHF|JPY)\b/i);
+  if (codeMatch) return codeMatch[1].toUpperCase();
+  const symbol = salary.match(/[₹€£]/)?.[0];
+  if (symbol === '₹') return 'INR';
+  if (symbol === '€') return 'EUR';
+  if (symbol === '£') return 'GBP';
+  return undefined;
+}
+
 // Normalize RawJobPayload to CanonicalOpportunity
 export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
   const cleanUrl = cleanOfficialUrl(raw.officialUrl || raw.sourceUrl || '');
@@ -383,11 +431,11 @@ export function normalizeOpportunity(raw: RawJobPayload): CanonicalOpportunity {
     timezoneRequirements: [],
     salaryMin: raw.salaryMin,
     salaryMax: raw.salaryMax,
-    salaryCurrency: raw.salaryCurrency || 'USD',
+    salaryCurrency: resolveSalaryCurrency(raw),
     salaryPeriod: resolveSalaryPeriod(raw),
     requiredSkills: raw.tags || [],
     preferredSkills: [],
-    experienceRequirement: raw.experienceLevel || '2-3',
+    experienceRequirement: resolveExperienceRequirement(raw),
     qualityScore: computeQualityScore(raw),
     // Provenance hint for the 4 built-in sources; `undefined` for any source
     // the discovery registry adds later — we make no quality claim about a

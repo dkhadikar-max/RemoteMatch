@@ -93,7 +93,7 @@ interface OpportunityRow {
   timezone_requirements: string[];
   salary_min: number | null;
   salary_max: number | null;
-  salary_currency: string;
+  salary_currency: string | null;
   salary_period: string | null;
   required_skills: string[];
   preferred_skills: string[];
@@ -140,7 +140,7 @@ export function rowToCanonicalOpportunity(row: OpportunityRow): CanonicalOpportu
     timezoneRequirements: row.timezone_requirements ?? [],
     salaryMin: row.salary_min ?? undefined,
     salaryMax: row.salary_max ?? undefined,
-    salaryCurrency: row.salary_currency,
+    salaryCurrency: row.salary_currency ?? undefined,
     salaryPeriod: (row.salary_period as CanonicalOpportunity['salaryPeriod']) ?? undefined,
     requiredSkills: row.required_skills ?? [],
     preferredSkills: row.preferred_skills ?? [],
@@ -202,25 +202,91 @@ export async function getActiveOpportunities(
   options?: { freshOnly?: boolean; translationSafe?: boolean }
 ): Promise<CanonicalOpportunity[]> {
   const allRows: OpportunityRow[] = [];
-  const pageSize = 1000;
-  let from = 0;
+  // Full-record batches are sensitive to description size. Production anonymous-role
+  // probes: 1,000 rows timed out; 500 rows took ~1.71s; a later 250-row cursor timed
+  // out; the same cursor completed in ~0.53s at 100 rows. Start at 100 and fall back
+  // to 50/25 on SQLSTATE 57014 so one unusually large page cannot fail the feed.
+  const initialPageSize = 100;
+  let pageSize = initialPageSize;
+  let afterSource: string | null = null;
+  let afterSourceId: string | null = null;
+  let pageIndex = 0;
+
+  // Cursor pagination seeks from the last unique (source, source_id) pair.
+  // Unlike OFFSET, later pages do not rescan or skip all preceding rows.
+  // The RPC is SECURITY INVOKER, so the caller's active-row RLS policy remains
+  // in force; the optional gates match the previous PostgREST implementation.
+  const freshness = options?.freshOnly ? getFreshnessWindowBounds() : null;
+  // The feed always enables BOTH gates. Give it a dedicated RPC whose first-page
+  // query has no nullable-cursor OR predicate, allowing the planner to use the
+  // posted_at range index even when the 48-hour window contains very few rows.
+  // Other catalog consumers retain the general-purpose RPC and its old semantics.
+  const useFreshFeedRpc = options?.freshOnly === true && options?.translationSafe === true;
+  const readPage = () => useFreshFeedRpc
+    ? supabase.rpc('get_fresh_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness!.from,
+        p_fresh_to: freshness!.to,
+      })
+    : supabase.rpc('get_active_opportunities_keyset_page', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+        p_fresh_from: freshness?.from ?? null,
+        p_fresh_to: freshness?.to ?? null,
+        p_translation_safe: options?.translationSafe ?? false,
+      });
 
   while (true) {
-    let query = supabase.from('opportunities').select(OPPORTUNITY_COLUMNS);
-    if (options?.freshOnly) {
-      const { from: windowFrom, to: windowTo } = getFreshnessWindowBounds();
-      query = query.gte('posted_at', windowFrom).lte('posted_at', windowTo);
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
+    let pageStartedAt = performance.now();
+    let response = await readPage();
+    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    for (let retry = 0; response.error?.code === '57014' && pageSize > 25 && retry < 2; retry++) {
+      const failedPageSize = pageSize;
+      pageSize = Math.max(25, Math.floor(pageSize / 2));
+      console.warn('[catalog-read] keyset-page-retry', JSON.stringify({
+        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize,
+        durationMs, code: response.error.code,
+      }));
+      pageStartedAt = performance.now();
+      response = await readPage();
+      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
     }
-    if (options?.translationSafe) {
-      query = applyTranslationSafe(query);
+    const { data, error } = response;
+    if (error) {
+      console.error('[catalog-read] keyset-page-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read active opportunities: ${error.message}`);
     }
-    query = query.range(from, from + pageSize - 1);
-    const { data, error } = await query;
-    if (error) throw new Error(`Could not read active opportunities: ${error.message}`);
-    if (!data || data.length === 0) break;
-    allRows.push(...(data as unknown as OpportunityRow[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (!Array.isArray(data)) {
+      throw new Error('Active opportunities keyset RPC returned an invalid payload');
+    }
+    console.info('[catalog-read] keyset-page', JSON.stringify({
+      page: pageIndex,
+      rows: data.length,
+      pageSize,
+      durationMs,
+      cursor,
+      translationSafe: options?.translationSafe ?? false,
+      freshOnly: options?.freshOnly ?? false,
+    }));
+    pageIndex += 1;
+    if (data.length === 0) break;
+
+    const rows = data as unknown as OpportunityRow[];
+    allRows.push(...rows);
+    const last = rows[rows.length - 1];
+    if (!last.source || !last.source_id) {
+      throw new Error('Active opportunities keyset RPC returned a row without its cursor key');
+    }
+    afterSource = last.source;
+    afterSourceId = last.source_id;
+    if (rows.length < pageSize) break;
   }
 
   return allRows.map(rowToCanonicalOpportunity);
@@ -266,40 +332,74 @@ export interface SitemapJobEntry {
 }
 
 /** Every active, translation-safe listing, reduced to the four fields the
- *  sitemap uses. Replaces getActiveJobs() (the whole catalog, descriptions
- *  and all) for sitemap.xml — same visibility rules, a fraction of the bytes.
- *
- *  Same gates as getActiveJobs(): RLS limits an anon/public client to
- *  status = 'active', and the multilingual gate (translationSafe) is applied
- *  so an untranslated non-English listing is never indexed.
- *
- *  Unlike the full read, this pages over a DETERMINISTIC order
- *  (source, source_id — the table's natural key). `.range()` without an
- *  ORDER BY gives no guarantee that pages don't overlap or skip rows while the
- *  catalog is being written to, which for a sitemap means missing or repeated
- *  URLs; the sort is on ~23k narrow keys, cheap next to the bytes it saves. */
+ *  sitemap uses. Uses a stable composite cursor over (source, source_id) so
+ *  later pages seek from the last key instead of rescanning every prior row
+ *  with OFFSET. The database RPC runs under the caller's RLS policies. */
 export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<SitemapJobEntry[]> {
   const entries: SitemapJobEntry[] = [];
-  const pageSize = 1000;
-  let from = 0;
+  // Start at 1,000 rows: the exact production 3,000-row cursor timed out,
+  // while representative 1,000-row batches completed under the anon 3s limit.
+  // Adapt downward on SQLSTATE 57014 and retain the reduced size for later pages.
+  const initialPageSize = 1000;
+  const minimumPageSize = 25;
+  const maximumTimeoutRetries = 6; // 1000 -> 500 -> 250 -> 125 -> 62 -> 31 -> 25
+  let pageSize = initialPageSize;
+  let afterSource: string | null = null;
+  let afterSourceId: string | null = null;
+  let pageIndex = 0;
 
   while (true) {
-    const { data, error } = await supabase
-      .from('opportunities')
-      .select(SITEMAP_COLUMNS)
-      .or(TRANSLATION_SAFE_OR)
-      .or(TRANSLATION_NOT_ERROR_OR)
-      .order('source', { ascending: true })
-      .order('source_id', { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) throw new Error(`Could not read sitemap job entries: ${error.message}`);
-    if (!data || data.length === 0) break;
-    for (const row of data as unknown as Array<{
+    const cursor = afterSource === null ? null : { source: afterSource, sourceId: afterSourceId };
+    let pageStartedAt = performance.now();
+    let response = await supabase.rpc('get_remote_job_sitemap_page_json', {
+      p_after_source: afterSource,
+      p_after_source_id: afterSourceId,
+      p_page_size: pageSize,
+    });
+    let durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+
+    for (let retry = 0; response.error?.code === '57014' && pageSize > minimumPageSize && retry < maximumTimeoutRetries; retry++) {
+      const failedPageSize = pageSize;
+      pageSize = Math.max(minimumPageSize, Math.floor(pageSize / 2));
+      console.warn('[sitemap] batch-retry', JSON.stringify({
+        page: pageIndex, cursor, failedPageSize, retryPageSize: pageSize,
+        durationMs, code: response.error.code,
+      }));
+      pageStartedAt = performance.now();
+      response = await supabase.rpc('get_remote_job_sitemap_page_json', {
+        p_after_source: afterSource,
+        p_after_source_id: afterSourceId,
+        p_page_size: pageSize,
+      });
+      durationMs = Math.round((performance.now() - pageStartedAt) * 100) / 100;
+    }
+
+    const { data, error } = response;
+    if (error) {
+      console.error('[sitemap] batch-failed', JSON.stringify({
+        page: pageIndex, pageSize, durationMs, cursor,
+        code: error.code ?? null, message: error.message,
+      }));
+      throw new Error(`Could not read sitemap job entries: ${error.message}`);
+    }
+    if (!Array.isArray(data)) {
+      throw new Error('Sitemap batch RPC returned an invalid payload');
+    }
+    console.info('[sitemap] batch', JSON.stringify({
+      page: pageIndex, pageSize, rows: data.length, durationMs, cursor,
+    }));
+    pageIndex += 1;
+    if (data.length === 0) break;
+
+    const rows = data as Array<{
+      source: string;
       source_id: string;
       title: string;
       posted_at: string;
       required_skills: string[] | null;
-    }>) {
+    }>;
+
+    for (const row of rows) {
       entries.push({
         sourceId: row.source_id,
         title: row.title,
@@ -307,8 +407,11 @@ export async function getSitemapJobEntries(supabase: SupabaseClient): Promise<Si
         requiredSkills: row.required_skills ?? [],
       });
     }
-    if (data.length < pageSize) break;
-    from += pageSize;
+
+    const last = rows[rows.length - 1];
+    afterSource = last.source;
+    afterSourceId = last.source_id;
+    if (rows.length < pageSize) break;
   }
 
   return entries;
@@ -332,11 +435,10 @@ export interface CatalogIndexEntry {
 }
 
 /**
- * The slim catalog index behind the paginated directory and category hubs:
- * every active, translation-safe listing's membership fields (~7 narrow
- * columns, no description/company/URLs), newest first. Callers keep it behind
- * a long TTL cache (src/lib/seo/directory.ts) so a page view costs a 24-row
- * slice fetch, not a catalog read.
+ * Legacy slim-index reader retained for audit/integration comparisons.
+ * Production directory and category-hub requests now use getCatalogHubPage(),
+ * backed by the transactionally maintained opportunity_catalog_index and the
+ * SECURITY INVOKER page RPC; they no longer call this whole-index reader.
  *
  * Same visibility rules as getActiveJobs(): RLS (active only) via whichever
  * client is passed, plus the multilingual translationSafe gate. Pages over a
@@ -387,6 +489,53 @@ export async function getCatalogIndexEntries(supabase: SupabaseClient): Promise<
 }
 
 /**
+ * One database-paginated page for the public directory or a category hub.
+ * The database-side projection performs membership, exact counting, ordering,
+ * and pagination; only the requested full rows cross the API boundary.
+ *
+ * The RPC is SECURITY INVOKER and reads both the projection and opportunities
+ * under the caller's RLS policies. Its SQL predicate is kept in sync with
+ * matchesCategory() by the catalog-hub integration suite.
+ */
+export class CatalogHubTimeoutError extends Error {
+  constructor() {
+    super('Directory page query took too long and was canceled by the database.');
+    this.name = 'CatalogHubTimeoutError';
+  }
+}
+
+export async function getCatalogHubPage(
+  supabase: SupabaseClient,
+  categorySlug: string | null,
+  page: number,
+  pageSize = 24
+): Promise<{ jobs: CanonicalOpportunity[]; total: number }> {
+  const { data, error } = await supabase.rpc('get_remote_job_hub_page', {
+    p_category_slug: categorySlug,
+    p_page: page,
+    p_page_size: pageSize,
+  });
+  if (error) {
+    if (isStatementTimeout(error)) throw new CatalogHubTimeoutError();
+    throw new Error(`Could not read directory page: ${error.message}`);
+  }
+
+  const payload = data as { total?: number; jobs?: OpportunityRow[] } | null;
+  if (
+    !payload ||
+    !Number.isFinite(Number(payload.total)) ||
+    !Array.isArray(payload.jobs)
+  ) {
+    throw new Error('Directory page RPC returned an invalid payload');
+  }
+
+  return {
+    total: Number(payload.total),
+    jobs: payload.jobs.map((row) => rowToCanonicalOpportunity(row)),
+  };
+}
+
+/**
  * Full CanonicalOpportunity rows for a short list of source ids (one page of a
  * hub — tens of rows), returned in the order of `sourceIds`. Same gates as the
  * full read (RLS active-only + translationSafe). Ids that no longer resolve
@@ -426,6 +575,20 @@ export async function getOpportunitiesBySourceIds(supabase: SupabaseClient, sour
  *
  * Never loads the catalog: cost is one page of rows however large it grows.
  */
+export class SearchTimeoutError extends Error {
+  constructor() {
+    super('Search took too long and was canceled by the database.');
+    this.name = 'SearchTimeoutError';
+  }
+}
+
+/** Postgres SQLSTATE 57014 = query_canceled (statement_timeout). Checked by code first, same
+ *  convention as isMissingRelation() in src/lib/supabase/query-helpers.ts; the message-text
+ *  fallback is defensive only, in case a future PostgREST/Postgres version omits code. */
+function isStatementTimeout(error: { code?: string | null; message?: string } | null | undefined): boolean {
+  return !!error && (error.code === '57014' || /statement timeout/i.test(error.message ?? ''));
+}
+
 export async function searchActiveOpportunitiesPage(
   supabase: SupabaseClient,
   terms: string[],
@@ -453,7 +616,10 @@ export async function searchActiveOpportunitiesPage(
     .order('posted_at', { ascending: false, nullsFirst: false })
     .order('source_id', { ascending: true })
     .range(range.from, range.to);
-  if (error) throw new Error(`Could not search opportunities: ${error.message}`);
+  if (error) {
+    if (isStatementTimeout(error)) throw new SearchTimeoutError();
+    throw new Error(`Could not search opportunities: ${error.message}`);
+  }
   return { rows: ((data ?? []) as unknown as OpportunityRow[]).map(rowToCanonicalOpportunity), total: count ?? 0 };
 }
 

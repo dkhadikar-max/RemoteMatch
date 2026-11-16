@@ -1,0 +1,203 @@
+name: CI
+
+# The live integration job uses one isolated Supabase project; serialize runs per PR
+# so overlapping pushes cannot race over the same synthetic test rows.
+concurrency:
+  # Serialize retries within one PR, but never let an unrelated PR cancel this run.
+  group: remotematch-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# This repo has no existing CI (confirmed during the PR #51 review: the only
+# check on open PRs was "Supabase Preview", which reports SKIPPED and runs no
+# tests). This workflow is intentionally narrow and generic, so it's safe to
+# land on main or the M2/M3 integration branch independently of product
+# The same branch filters are installed on the target branch so this PR is triggered.
+# migration rollout. It does not hardcode assumptions about merge order.
+#
+#   - Typecheck and self-contained suites run without external credentials.
+#   - The isolated live tier runs only when CI_ISOLATED_PROJECT_CONFIGURED is
+#     enabled and verifies the isolated Supabase project ref before probing it.
+#   - Production credentials are never used by this workflow.
+
+on:
+  pull_request:
+    branches: [main, integration/m2-m3-corrections]
+  push:
+    branches: [main, integration/m2-m3-corrections]
+
+jobs:
+  typecheck-and-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build (Next.js route-module validation)
+        run: npm run build
+
+      - name: Self-contained suites (PGlite, no external credentials) -- only those present in this checkout
+        run: |
+          shopt -s nullglob
+          suites=(
+            test/swipe-limits-rolling-24h-suite.ts
+            test/catalog-hub-db-pagination-suite.ts
+            test/catalog-touch-update-retry-suite.ts
+            test/job-filter-data-quality-suite.ts
+            test/ttl-cache-stale-invalidation-suite.ts
+            test/sitemap-read-retry-suite.ts
+            test/v2-m4-event-writer-suite.ts
+          )
+          ran_any=false
+          for f in "${suites[@]}"; do
+            if [ -f "$f" ]; then
+              echo "::group::$f"
+              npx tsx "$f"
+              echo "::endgroup::"
+              ran_any=true
+            else
+              echo "Skipping $f -- not present in this checkout (expected before its introducing PR merges)."
+            fi
+          done
+          if [ "$ran_any" = false ]; then
+            echo "No known self-contained suite files present yet -- nothing to run, not a failure."
+          fi
+
+      - name: Main feed matcher characterization golden suite
+        run: npx tsx test/main-feed-characterization-suite.ts
+
+      - name: Main feed 25k/50k/100k matcher benchmark
+        run: npx tsx test/main-feed-benchmark.ts
+
+      - name: Employer company accounts suite -- static/unit section (always runs; live section requires the job below)
+        if: hashFiles('test/employer-company-accounts-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+      - name: Employer job publishing regression suite
+        if: hashFiles('test/employer-job-publishing-suite.ts') != ''
+        run: npx tsx test/employer-job-publishing-suite.ts
+
+      - name: V2 P0 M2/M3 API contract regression suite
+        if: hashFiles('test/v2-m2-m3-api-contract-suite.ts') != ''
+        run: npm run test:v2:m2-m3:contracts
+
+      - name: V2 M2 lock-order static regression suite
+        if: hashFiles('test/v2-m2-lock-order-suite.ts') != ''
+        run: npx tsx test/v2-m2-lock-order-suite.ts
+
+      - name: V2 M3 legacy employer applications static regression suite
+        if: hashFiles('test/v2-m3-legacy-suite.ts') != ''
+        run: npx tsx test/v2-m3-legacy-suite.ts
+
+  # ----------------------------------------------------------------------------
+  # Direct Employer Supply and lifecycle -- LIVE integration tier.
+  # This job can only target the explicitly isolated Supabase project.
+  employer-live-integration:
+    concurrency:
+      group: remotematch-shared-supabase-live-integration
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    # Use a repository variable as a non-secret gate; never reference secrets
+    # in a job-level if expression (GitHub rejects that context there).
+    if: ${{ vars.CI_ISOLATED_PROJECT_CONFIGURED == 'true' }}
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.CI_ISOLATED_NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CI_ISOLATED_SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3100
+      ADMIN_HOST_OVERRIDE: admin.ci.local:3100
+      TEST_BASE_URL: http://localhost:3100
+      TEST_ADMIN_HOST: admin.ci.local:3100
+      # Direct Postgres connection string for the isolated project only.
+      CI_ISOLATED_DATABASE_URL: ${{ secrets.CI_ISOLATED_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start dev server against the isolated test project
+        run: |
+          npx next dev -p 3100 > /tmp/ci-dev-server.log 2>&1 &
+          echo $! > /tmp/ci-dev-server.pid
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3100/api/health > /dev/null; then
+              echo "Server ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not become healthy in time:"
+          cat /tmp/ci-dev-server.log
+          exit 1
+
+      - name: Verify the approved isolated Supabase target
+        run: |
+          node - <<'NODE'
+          const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
+          const expected = 'xyahktsgdigutxartafb';
+          const actual = url.hostname.split('.')[0];
+          if (actual !== expected) {
+            throw new Error(`Refusing live directory tests against unexpected Supabase project: ${actual}`);
+          }
+          console.log(`Verified isolated test project: ${actual}`);
+          NODE
+
+      - name: V2 M2/M3 database regression contract (live, isolated project only)
+        if: hashFiles('test/v2-m2-m3-database-regression.sql') != ''
+        run: |
+          if [ -z "$CI_ISOLATED_DATABASE_URL" ]; then
+            echo "CI_ISOLATED_DATABASE_URL is not set -- skipping test/v2-m2-m3-database-regression.sql."
+            echo "Add the isolated project's direct Postgres connection string as a repository secret to enable this contract."
+            exit 0
+          fi
+          node - <<'NODE'
+          const u = new URL(process.env.CI_ISOLATED_DATABASE_URL);
+          const expected = 'xyahktsgdigutxartafb';
+          if (!u.hostname.includes(expected)) {
+            throw new Error(`Refusing database regression contract against unexpected host: ${u.hostname}`);
+          }
+          console.log(`Verified isolated database target: ${u.hostname}`);
+          NODE
+          psql "$CI_ISOLATED_DATABASE_URL" -v ON_ERROR_STOP=1 -f test/v2-m2-m3-database-regression.sql
+
+      - name: Live integration -- employer publication/suspension race regression
+        run: npx tsx test/employer-publish-suspension-race-isolated-suite.ts
+
+      - name: Live integration -- candidate event writers after the policy drop (M4)
+        run: npx tsx test/v2-m4-event-writers-live-suite.ts
+
+      - name: ChatGPT public job search and details API integration
+        run: npx tsx test/chatgpt-public-api-suite.ts
+
+      - name: Surface ChatGPT integration server errors
+        if: failure()
+        run: grep -E 'chatgpt-jobs|PostgrestError|database search failed' /tmp/ci-dev-server.log | tail -n 80 || true
+
+      - name: Live integration -- employer-company-accounts-suite.ts (full, including live section)
+        run: npx tsx test/employer-company-accounts-suite.ts
+
+      - name: Live integration -- concurrency/atomicity suite
+        if: hashFiles('test/employer-company-accounts-concurrency-isolated-suite.ts') != ''
+        run: npx tsx test/employer-company-accounts-concurrency-isolated-suite.ts
+
+      - name: Live directory egress + HTTP integration
+        run: npx tsx test/directory-egress-suite.ts
+
+      - name: Stop dev server
+        if: always()
+        run: kill "$(cat /tmp/ci-dev-server.pid)" 2>/dev/null || true

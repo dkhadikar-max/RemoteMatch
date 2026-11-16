@@ -11,6 +11,8 @@ import {
 } from '@/lib/seo/data';
 import { loadHubPage, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
+import { SITE_URL } from '@/lib/site';
+import { jobHref } from '@/lib/seo/job-href';
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -36,12 +38,12 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
     title: category.metaTitle,
     description: category.metaDescription,
     alternates: {
-      canonical: `https://remotematch.com/remote-jobs/${category.slug}`,
+      canonical: `${SITE_URL}/remote-jobs/${category.slug}`,
     },
     openGraph: {
       title: category.metaTitle,
       description: category.metaDescription,
-      url: `https://remotematch.com/remote-jobs/${category.slug}`,
+      url: `${SITE_URL}/remote-jobs/${category.slug}`,
       type: 'website',
     },
   };
@@ -53,8 +55,9 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
   if (!category) notFound();
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
 
-  // Bounded read: category membership from the cached slim index + one page of
-  // rows — never the whole catalog. See src/lib/seo/directory.ts.
+  // Bounded database read: category membership, exact count, ordering, and
+  // pagination run against the slim projection; only this page's full rows
+  // cross the API boundary. See src/lib/seo/directory.ts.
   const hub = await loadHubPage(category.slug, resolvedParams.page);
   if (hub?.outOfRange) notFound();
   const jobs = hub?.jobs ?? [];
@@ -65,9 +68,9 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
   const otherCategories = SEO_CATEGORIES.filter((c) => c.slug !== category.slug);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
-    { name: category.title, url: `https://remotematch.com/remote-jobs/${category.slug}` },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
+    { name: category.title, url: `${SITE_URL}/remote-jobs/${category.slug}` },
   ]);
 
   const jsonLdCategory = {
@@ -202,7 +205,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
                     <div>
                       <span className="text-sm font-medium text-[var(--muted)]">{job.company}</span>
                       <h3 className="text-base sm:text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
-                        <Link href={`/remote-jobs/view/${job.sourceId}`}>
+                        <Link href={jobHref(job.sourceId)}>
                           {job.title}
                         </Link>
                       </h3>
@@ -232,7 +235,7 @@ export default async function RemoteCategoryPage({ params, searchParams }: Props
 
                 <div className="mt-5 pt-4 border-t border-[var(--line)] flex items-center justify-between gap-3">
                   <Link
-                    href={`/remote-jobs/view/${job.sourceId}`}
+                    href={jobHref(job.sourceId)}
                     className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
                   >
                     <span>View job details</span>

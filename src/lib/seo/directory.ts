@@ -10,12 +10,11 @@
  *
  * Now a page view costs one SMALL read:
  *
- *   index   a slim catalog index (7 narrow columns, no descriptions) shared by
- *           every page, kept behind a 6 h TTL cache with single-flight refresh
- *           and stale-if-error. Category MEMBERSHIP is decided in memory from it
- *           with the same predicate the old path used (matchesCategory()).
- *   slice   only the DIRECTORY_PAGE_SIZE rows on the requested page are fetched
- *           in full (by source_id), and recent slices are cached (LRU + TTL).
+ *   hub     category membership, exact counts, ordering, and pagination run
+ *           against a transactionally maintained slim projection in Postgres.
+ *           The SECURITY INVOKER RPC returns only the requested full rows.
+ *   cache   requested hub pages are cached in-process (LRU + 30 min TTL) and
+ *           invalidated by the existing catalog-sync invalidation path.
  *   search  a `?q=` query is answered by the DATABASE (ilike on title, company,
  *           description, remote type, plus skill tags) with LIMIT/OFFSET and an
  *           exact count — never by loading the catalog.
@@ -30,25 +29,34 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CanonicalOpportunity } from '@/types/byn';
 import {
-  getCatalogIndexEntries,
-  getOpportunitiesBySourceIds,
+  CatalogHubTimeoutError,
+  getCatalogHubPage,
   searchActiveOpportunitiesPage,
+  SearchTimeoutError,
   type CatalogIndexEntry,
 } from '../ingestion/catalog-read';
 import { SEO_CATEGORIES, matchesCategory, type SeoCategory } from './data';
 import { createSupabasePublicClient } from '@/lib/supabase/server';
-import { createAsyncTtlCache, createLruTtlMap, type LruTtlMap, type TtlCache } from './ttl-cache';
+import { createLruTtlMap, type LruTtlMap } from './ttl-cache';
 import { getOrCreateCatalogCache, invalidateCatalogCaches, catalogTtlMs } from '../ingestion/catalog-caches';
 
 export const DIRECTORY_PAGE_SIZE = 24;
 /** Hard ceiling on the page number — the key space of a cache must not be
  *  user-controlled without bound. */
 export const MAX_DIRECTORY_PAGE = 5000;
+/** Public crawler guard: pages beyond 100 add little discovery value but force
+ *  the RPC to materialize and sort the catalogue for a deep OFFSET. */
+export const MAX_DIRECTORY_REQUEST_PAGE = 100;
 
-export const CATALOG_INDEX_TTL_MS = 6 * 60 * 60 * 1000;
-export const CATALOG_INDEX_MAX_STALE_MS = 24 * 60 * 60 * 1000;
-export const PAGE_SLICE_TTL_MS = 30 * 60 * 1000;
-export const PAGE_SLICE_MAX_ENTRIES = 300;
+function rejectedDeepPage(): DirectoryPage {
+  return {
+    jobs: [], total: 0, page: 1, totalPages: 1,
+    pageSize: DIRECTORY_PAGE_SIZE, outOfRange: true,
+  };
+}
+
+export const HUB_PAGE_CACHE_TTL_MS = 30 * 60 * 1000;
+export const HUB_PAGE_CACHE_MAX_ENTRIES = 300;
 
 export interface DirectoryPage {
   jobs: CanonicalOpportunity[];
@@ -60,6 +68,9 @@ export interface DirectoryPage {
   pageSize: number;
   /** The requested page is beyond the last page of a non-empty result. */
   outOfRange: boolean;
+  /** True only when the search could not complete (DB statement timeout) — jobs/total are
+   *  empty/zero but this is NOT a genuine "no results" answer. Never set on the hub/browse path. */
+  searchTimedOut?: boolean;
 }
 
 /** `?page=` → a safe positive integer (default 1). */
@@ -71,7 +82,11 @@ export function parsePageParam(raw: unknown): number {
 
 // ---- search terms ---------------------------------------------------------------
 
-const MAX_TERMS = 6;
+// Lowered from 6: each term adds a fully-ANDed, unindexed ILIKE OR-clause (see
+// searchActiveOpportunitiesPage's header) — fewer terms bounds the worst-case query cost.
+// 5 (not 4) so a realistic technical-skills search ("c++ c# .net ci/cd node.js") still survives
+// in full — dropping a term a visitor actually typed would be its own user-facing regression.
+const MAX_TERMS = 5;
 const MAX_TERM_LENGTH = 40;
 
 /** Free text → safe, lowercase search terms. Anything outside [a-z0-9+#./-] is
@@ -117,7 +132,8 @@ function membersOf(index: CatalogIndexEntry[], cat: SeoCategory | null): string[
   return ids;
 }
 
-/** One page of a category hub (`cat`) or of the whole directory (`cat` = null). */
+/** Reference implementation for unit/equivalence tests. Production loadHubPage()
+ *  uses the database-side projection RPC below, not this in-memory full-index path. */
 export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, requestedPage: number): Promise<DirectoryPage> {
   const index = await deps.getIndex();
   const ids = membersOf(index, cat);
@@ -142,54 +158,101 @@ export async function getHubPage(deps: DirectoryDeps, cat: SeoCategory | null, r
 export async function getSearchPage(supabase: SupabaseClient, q: string, requestedPage: number): Promise<DirectoryPage> {
   const terms = buildSearchTerms(q);
   const from = (Math.max(requestedPage, 1) - 1) * DIRECTORY_PAGE_SIZE;
-  const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });
-  const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
-  const outOfRange = total > 0 && requestedPage > totalPages;
-  return { jobs: rows, total, page: Math.min(Math.max(requestedPage, 1), totalPages), totalPages, pageSize: DIRECTORY_PAGE_SIZE, outOfRange };
+  try {
+    const { rows, total } = await searchActiveOpportunitiesPage(supabase, terms, { from, to: from + DIRECTORY_PAGE_SIZE - 1 });
+    const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
+    const outOfRange = total > 0 && requestedPage > totalPages;
+    return { jobs: rows, total, page: Math.min(Math.max(requestedPage, 1), totalPages), totalPages, pageSize: DIRECTORY_PAGE_SIZE, outOfRange };
+  } catch (err) {
+    if (err instanceof SearchTimeoutError) {
+      logSearchTimeout(terms.length, requestedPage);
+      return { jobs: [], total: 0, page: 1, totalPages: 1, pageSize: DIRECTORY_PAGE_SIZE, outOfRange: false, searchTimedOut: true };
+    }
+    throw err; // a genuine, unexpected error still propagates — never silently hidden
+  }
+}
+
+/** Fires once per caught timeout, after the fix in fix/remote-jobs-search-timeout
+ *  stopped it from throwing an uncaught error (and with it, the only log line that
+ *  previously made a timeout visible in Railway's logs). Stable `event` name so a
+ *  log search can count occurrences; no search terms or request/user identifiers —
+ *  only a term count and the requested page. Never allowed to affect the response:
+ *  a logging failure here must not turn a handled timeout back into a thrown error. */
+function logSearchTimeout(termCount: number, page: number): void {
+  try {
+    console.error(JSON.stringify({ event: 'search_timeout', at: new Date().toISOString(), termCount, page }));
+  } catch {
+    // logging is best-effort only
+  }
 }
 
 // ---- production wiring ------------------------------------------------------------
 
-const indexCache: TtlCache<CatalogIndexEntry[]> = getOrCreateCatalogCache('directory-index', () => createAsyncTtlCache<CatalogIndexEntry[]>(
-  async () => {
-    const supabase = createSupabasePublicClient();
-    if (!supabase) throw new Error('Supabase is not configured');
-    return getCatalogIndexEntries(supabase);
-  },
-  {
-    ttlMs: catalogTtlMs(CATALOG_INDEX_TTL_MS),
-    maxStaleMs: CATALOG_INDEX_MAX_STALE_MS,
-    onStaleServed: (err) =>
-      console.warn('[directory] catalog index refresh failed; serving the last good index:', err instanceof Error ? err.message : err),
-  }
-));
-const sliceCache: LruTtlMap<CanonicalOpportunity[]> = getOrCreateCatalogCache('directory-slices', () =>
-  createLruTtlMap<CanonicalOpportunity[]>({ max: PAGE_SLICE_MAX_ENTRIES, ttlMs: catalogTtlMs(PAGE_SLICE_TTL_MS) })
+const hubPageCache: LruTtlMap<DirectoryPage> = getOrCreateCatalogCache('directory-hub-pages', () =>
+  createLruTtlMap<DirectoryPage>({
+    max: HUB_PAGE_CACHE_MAX_ENTRIES,
+    ttlMs: catalogTtlMs(HUB_PAGE_CACHE_TTL_MS),
+  })
 );
-
-const productionDeps: DirectoryDeps = {
-  getIndex: () => indexCache.get(),
-  getRows: async (ids) => {
-    const supabase = createSupabasePublicClient();
-    if (!supabase) throw new Error('Supabase is not configured');
-    return getOpportunitiesBySourceIds(supabase, ids);
-  },
-  sliceCache,
-};
 
 /** The page of a category hub, or of the whole directory (`slug` = null).
  *  Returns null when Supabase is not configured (the pages render "no jobs"). */
 export async function loadHubPage(slug: string | null, rawPage: unknown): Promise<DirectoryPage | null> {
-  if (!createSupabasePublicClient()) return null;
+  const supabase = createSupabasePublicClient();
+  if (!supabase) return null;
+
   const cat = slug ? SEO_CATEGORIES.find((c) => c.slug === slug) ?? null : null;
-  return getHubPage(productionDeps, cat, parsePageParam(rawPage));
+  const requestedPage = parsePageParam(rawPage);
+  if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();
+  const cacheKey = `${cat?.slug ?? '*'}:${requestedPage}`;
+  const cached = hubPageCache.get(cacheKey);
+  if (cached) return cached;
+
+  let jobs: CanonicalOpportunity[];
+  let total: number;
+  try {
+    ({ jobs, total } = await getCatalogHubPage(
+      supabase,
+      cat?.slug ?? null,
+      requestedPage,
+      DIRECTORY_PAGE_SIZE
+    ));
+  } catch (err) {
+    if (err instanceof CatalogHubTimeoutError) {
+      try {
+        console.error(JSON.stringify({
+          event: 'hub_page_timeout',
+          at: new Date().toISOString(),
+          category: cat?.slug ?? '*',
+          page: requestedPage,
+        }));
+      } catch {
+        // Best-effort telemetry must not replace the original timeout.
+      }
+    }
+    throw err;
+  }
+  const totalPages = Math.max(1, Math.ceil(total / DIRECTORY_PAGE_SIZE));
+  const outOfRange = total > 0 && requestedPage > totalPages;
+  const result: DirectoryPage = {
+    jobs,
+    total,
+    page: Math.min(Math.max(requestedPage, 1), totalPages),
+    totalPages,
+    pageSize: DIRECTORY_PAGE_SIZE,
+    outOfRange,
+  };
+  hubPageCache.set(cacheKey, result);
+  return result;
 }
 
 /** One page of search results for the directory's `?q=`. Null when unconfigured. */
 export async function loadSearchPage(q: string, rawPage: unknown): Promise<DirectoryPage | null> {
   const supabase = createSupabasePublicClient();
   if (!supabase) return null;
-  return getSearchPage(supabase, q, parsePageParam(rawPage));
+  const requestedPage = parsePageParam(rawPage);
+  if (requestedPage > MAX_DIRECTORY_REQUEST_PAGE) return rejectedDeepPage();
+  return getSearchPage(supabase, q, requestedPage);
 }
 
 /** Test hook: drop the module-level caches. */

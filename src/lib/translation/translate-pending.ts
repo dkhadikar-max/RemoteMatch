@@ -72,8 +72,8 @@ const GEMINI_BATCH_SIZE = 10;
 /** One retry on transient failure. */
 const MAX_ATTEMPTS = 2;
 
-/** Backoff between retry attempts, ms. */
-const RETRY_DELAY_MS = 1_200;
+/** Backoff between retry attempts, ms. Keep provider 503/quota recovery from hot-looping. */
+const RETRY_DELAY_MS = 4_000;
 
 export interface TranslationPassSummary {
   /** Total rows examined (active, in freshness window, not yet lang-detected or stale hash). */
@@ -232,7 +232,7 @@ export async function processGeminiBatch(
     } catch (err) {
       console.warn(`[translation] Gemini batch attempt ${attempt} failed:`, (err as Error).message);
       if (attempt < MAX_ATTEMPTS) {
-        await sleep(RETRY_DELAY_MS);
+        await sleep(RETRY_DELAY_MS * attempt);
       }
     }
   }

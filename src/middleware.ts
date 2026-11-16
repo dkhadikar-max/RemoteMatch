@@ -4,6 +4,7 @@ import { getJobById, isJobPermanentlyRemoved } from '@/lib/seo/data';
 import { isAccountVerified } from '@/lib/auth/get-authenticated-user';
 import { isAdminHost } from '@/lib/auth/admin-host';
 import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { jobIdSegmentFromPath, findJobByRouteParam } from '@/lib/seo/job-href';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -19,6 +20,15 @@ const isSupabaseConfigured = Boolean(
 //   PRODUCT_PREFIXES     — verified account AND completed onboarding required.
 const ONBOARDING_PREFIXES = ['/onboarding'];
 const PRODUCT_PREFIXES = ['/feed', '/match', '/tracker', '/settings', '/linkedin-jobs'];
+// VERIFIED_ONLY_PREFIXES — verified account required, like ONBOARDING_PREFIXES,
+// but deliberately kept OUT of the onboarding-completion gate below: that gate's
+// "inOnboarding && onboarded -> redirect to /feed" rule exists so a candidate who
+// already finished onboarding never revisits /onboarding itself, but Direct
+// Employer Supply (docs/direct-employer-supply-phase1-implementation-plan.md)
+// has nothing to do with candidate onboarding status either way — an onboarded
+// candidate registering their company must not get bounced to /feed, and an
+// un-onboarded one must not get force-redirected to /onboarding.
+const VERIFIED_ONLY_PREFIXES = ['/employer'];
 
 // Admin console (admin.remotematch.online) — see src/lib/auth/admin-host.ts.
 // Static assets are covered separately by the matcher below, not listed here.
@@ -47,9 +57,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // --- Frozen SEO behavior: unchanged from the pre-remediation baseline ---
-  if (pathname.startsWith('/remote-jobs/view/')) {
-    const jobId = pathname.replace('/remote-jobs/view/', '').split('/')[0];
-    const job = await getJobById(jobId);
+  const jobIdSegment = jobIdSegmentFromPath(pathname);
+  if (jobIdSegment !== null) {
+    const job = await findJobByRouteParam(jobIdSegment, getJobById);
     if (job && isJobPermanentlyRemoved(job)) {
       return new NextResponse(
         `410 Gone: The job listing "${job.title}" at ${job.company} has been permanently removed.`,
@@ -66,6 +76,7 @@ export async function middleware(request: NextRequest) {
 
   const inOnboarding = matchesAny(pathname, ONBOARDING_PREFIXES);
   const inProduct = matchesAny(pathname, PRODUCT_PREFIXES);
+  const inVerifiedOnly = matchesAny(pathname, VERIFIED_ONLY_PREFIXES);
 
   // --- Refresh the Supabase auth session cookie on every request ---
   let response = NextResponse.next({ request });
@@ -157,9 +168,26 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // --- Pre-auth intent selection ---
+  // Never silently assume that a visitor is a candidate or employer.
+  // Protected employer URLs and direct login/signup visits first pass through
+  // the public role chooser. The chooser then links back with an explicit role.
+  if (!verified) {
+    const role = request.nextUrl.searchParams.get('role');
+    const isAuthEntry = pathname === '/login' || pathname === '/signup';
+    const needsRoleChoice = (inProduct || inOnboarding || inVerifiedOnly || isAuthEntry) &&
+      !(isAuthEntry && (role === 'candidate' || role === 'employer'));
+    if (needsRoleChoice && pathname !== '/choose-role') {
+      const chooser = new URL('/choose-role', request.url);
+      chooser.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(chooser);
+    }
+  }
+
   // --- Private-route boundary (verified) ---
-  if ((inProduct || inOnboarding) && !verified) {
+  if ((inProduct || inOnboarding || inVerifiedOnly) && !verified) {
     const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('role', pathname.startsWith('/employer') ? 'employer' : 'candidate');
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }

@@ -108,7 +108,7 @@ function LoginContent() {
 
           <p className="text-center text-sm text-[var(--muted)]">
             New here?{' '}
-            <Link href="/signup" className="font-semibold text-[var(--red)] hover:underline">
+            <Link href={"/signup?role=" + (searchParams.get("role") === "employer" ? "employer" : "candidate") + "&redirect=" + encodeURIComponent(redirectParam || (searchParams.get("role") === "employer" ? "/employer" : "/onboarding"))} className="font-semibold text-[var(--red)] hover:underline">
               Create an account
             </Link>
           </p>

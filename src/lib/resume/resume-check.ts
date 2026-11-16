@@ -80,3 +80,49 @@ export function checkResumeAgainstSkills(skills: unknown, resumeText: unknown): 
     return { ...EMPTY, status: 'error' };
   }
 }
+
+export const MAX_SUGGESTED_SKILLS = 5;
+
+/**
+ * Skills from a known candidate-facing vocabulary (e.g. onboarding's `popularSkills`) that literally appear in the
+ * resume text and are not already declared. Never suggests anything outside `candidateSkillList` — this cannot
+ * invent a skill, only confirm a text occurrence of one already on a fixed, reviewed list, via the same
+ * `skillAppearsInText` matcher `checkResumeAgainstSkills` uses. Case-insensitive de-dupe against what's already
+ * declared, and against an EXACT repeated entry within `candidateSkillList` (by lowercased string equality) — this
+ * does NOT canonicalize alias spellings (e.g. "C++" vs "cpp" are checked independently and could each produce a
+ * suggestion for the same underlying skill if both were present in the list). The one caller of this function,
+ * onboarding's fixed `popularSkills`, contains no such alias pairs, so this does not occur in practice today; a
+ * real alias-canonicalization pass is out of scope for this feature. Same honesty posture as
+ * `checkResumeAgainstSkills`: too little resume text to judge → no suggestions. Pure; never throws.
+ */
+export function suggestSkillsFromResume(
+  declaredSkills: unknown,
+  resumeText: unknown,
+  candidateSkillList: readonly string[]
+): string[] {
+  try {
+    const text = normalizeResumeText(resumeText).trim();
+    if (!text) return [];
+    const words = text.split(/\s+/).filter(Boolean).length;
+    if (words < MIN_WORDS_FOR_CHECK) return [];
+
+    const declared = new Set(sanitizeSkills(declaredSkills).map((s) => s.toLowerCase()));
+    const suggested: string[] = [];
+    const seen = new Set<string>();
+    for (const candidate of candidateSkillList) {
+      if (typeof candidate !== 'string') continue;
+      const trimmed = candidate.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (declared.has(key) || seen.has(key)) continue;
+      if (skillAppearsInText(trimmed, text)) {
+        seen.add(key);
+        suggested.push(trimmed);
+        if (suggested.length >= MAX_SUGGESTED_SKILLS) break;
+      }
+    }
+    return suggested;
+  } catch {
+    return [];
+  }
+}

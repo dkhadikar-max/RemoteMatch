@@ -1,16 +1,44 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Check, ArrowRight } from 'lucide-react';
 import { startProUpgrade } from '@/lib/razorpay-checkout';
 
-export type UpgradeReason = 'rewind' | 'swipes' | 'proposals' | 'filters' | 'careerTransition' | 'linkedinSearch' | 'linkedinPeopleConnect';
+export type UpgradeReason =
+  | 'rewind'
+  | 'swipes'
+  | 'rightSwipeLimit'
+  | 'totalSwipeLimit'
+  | 'proposals'
+  | 'filters'
+  | 'careerTransition'
+  | 'linkedinSearch'
+  | 'linkedinPeopleConnect';
 
 interface UpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
   reason?: UpgradeReason;
   onUpgraded?: () => void;
+  /**
+   * Server-calculated reset timestamp for `rightSwipeLimit` /
+   * `totalSwipeLimit` — when that specific cap frees up (the oldest counted
+   * swipe aging out of the rolling 24h window). Never computed client-side
+   * as "now + 24h"; the two caps can have different reset times.
+   */
+  resetAt?: string | null;
+}
+
+/** "Xh Ym" (or "Ym" under an hour, or "<1m" in the final minute) until `resetAt`. Null once it has passed. */
+function formatCountdown(resetAt: string | null | undefined): string | null {
+  if (!resetAt) return null;
+  const ms = new Date(resetAt).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const totalMinutes = Math.ceil(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return minutes <= 0 ? '<1m' : `${minutes}m`;
+  return `${hours}h ${minutes}m`;
 }
 
 const REASON_COPY: Record<
@@ -26,6 +54,16 @@ const REASON_COPY: Record<
     title: "You've used your 15 saves today.",
     subtitle: 'Upgrade to Pro for unlimited saves.',
     badge: '15 saves reached',
+  },
+  rightSwipeLimit: {
+    title: 'Found enough interesting opportunities?',
+    subtitle: "You've used all 15 Interested swipes for today. Upgrade to Pro to access any additional swipe benefits included in your membership.",
+    badge: 'Right swipe limit',
+  },
+  totalSwipeLimit: {
+    title: "That's a wrap for today.",
+    subtitle: "You've used all 50 daily swipes. Your next discovery session starts when your allowance resets.",
+    badge: 'Daily limit reached',
   },
   proposals: {
     title: "You've used your 5 proposal generations today.",
@@ -71,14 +109,27 @@ export function UpgradeModal({
   onClose,
   reason = 'rewind',
   onUpgraded,
+  resetAt = null,
 }: UpgradeModalProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeNotice, setUpgradeNotice] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<string | null>(() => formatCountdown(resetAt));
+
+  // Recompute every 30s while open — resetAt itself is always server-
+  // calculated (never derived as "now + 24h" client-side); this just keeps
+  // the displayed string from going stale while the modal is up.
+  useEffect(() => {
+    setCountdown(formatCountdown(resetAt));
+    if (!isOpen || !resetAt) return;
+    const id = setInterval(() => setCountdown(formatCountdown(resetAt)), 30_000);
+    return () => clearInterval(id);
+  }, [isOpen, resetAt]);
 
   if (!isOpen) return null;
 
   const copy = REASON_COPY[reason] || REASON_COPY.rewind;
+  const showCountdown = (reason === 'rightSwipeLimit' || reason === 'totalSwipeLimit') && countdown;
 
   const handleUpgrade = async () => {
     // No session-provisioning step needed here — every page that can show
@@ -134,6 +185,14 @@ export function UpgradeModal({
           </button>
         </div>
 
+        {/* Countdown + right-swipe-specific hint — only for the two swipe-limit reasons */}
+        {showCountdown && (
+          <p className="text-[11px] font-semibold text-[var(--muted)] text-center">
+            {reason === 'rightSwipeLimit' ? 'You can still pass on opportunities with your remaining swipes. ' : null}
+            Next reset in <span className="text-[var(--ink)]">{countdown}</span>
+          </p>
+        )}
+
         {/* Feature List */}
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--bg)] p-4 space-y-2.5">
           <span className="text-[11px] font-bold text-[var(--muted)] uppercase tracking-wider block mb-1">
@@ -149,6 +208,8 @@ export function UpgradeModal({
           ))}
         </div>
 
+        <p className="text-[11px] text-[var(--muted)]">India: ₹499/month · All other countries: $9/month. Currency is based on your saved account country.</p>
+
         {/* CTA Button */}
         <div className="pt-1">
           <button
@@ -157,7 +218,7 @@ export function UpgradeModal({
             disabled={isUpgrading}
             className="w-full soft-button primary text-xs font-semibold py-3.5 min-h-[46px] flex items-center justify-center gap-2 shadow-md"
           >
-            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro — ₹499/month'}</span>
+            <span>{isUpgrading ? 'Connecting to Checkout...' : 'Upgrade to Pro'}</span>
             <ArrowRight size={14} />
           </button>
           {upgradeError && (

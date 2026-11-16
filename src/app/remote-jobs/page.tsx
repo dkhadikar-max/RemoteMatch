@@ -20,6 +20,8 @@ import {
 } from '@/lib/seo/data';
 import { loadHubPage, loadSearchPage, parsePageParam } from '@/lib/seo/directory';
 import Pagination from '@/components/seo/Pagination';
+import { SITE_URL } from '@/lib/site';
+import { jobHref } from '@/lib/seo/job-href';
 
 interface Props {
   searchParams?: Promise<{ q?: string; page?: string }> | { q?: string; page?: string };
@@ -34,13 +36,13 @@ const baseMetadata: Metadata = {
   description:
     'Browse verified remote software engineering, product, design, and data jobs. Transparent salaries, verified remote scope, and match insights before you apply.',
   alternates: {
-    canonical: 'https://remotematch.com/remote-jobs',
+    canonical: `${SITE_URL}/remote-jobs`,
   },
   openGraph: {
     title: 'Remote Jobs Directory | RemoteMatch',
     description:
       'Browse verified remote jobs across engineering, design, product, and marketing. Know your chances before you apply.',
-    url: 'https://remotematch.com/remote-jobs',
+    url: `${SITE_URL}/remote-jobs`,
     type: 'website',
   },
 };
@@ -60,8 +62,9 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const resolvedParams = searchParams ? await Promise.resolve(searchParams) : {};
   const q = resolvedParams.q;
   const searchQuery = (typeof q === 'string' ? q : '')?.trim() || '';
-  // Bounded reads: a cached slim index + one page of rows (or a database-side
-  // search with LIMIT/OFFSET) — never the whole catalog. See src/lib/seo/directory.ts.
+  // Bounded reads: directory/category pages use the database-side slim
+  // projection and return only one page; ?q= search remains database-paginated.
+  // See src/lib/seo/directory.ts.
   const hub = searchQuery
     ? await loadSearchPage(searchQuery, resolvedParams.page)
     : await loadHubPage(null, resolvedParams.page);
@@ -73,8 +76,8 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
   const pageOffset = (currentPage - 1) * (hub?.pageSize ?? jobs.length);
 
   const breadcrumbsSchema = buildBreadcrumbSchema([
-    { name: 'Home', url: 'https://remotematch.com' },
-    { name: 'Remote Jobs', url: 'https://remotematch.com/remote-jobs' },
+    { name: 'Home', url: SITE_URL },
+    { name: 'Remote Jobs', url: `${SITE_URL}/remote-jobs` },
   ]);
 
   const jsonLdItemList = {
@@ -253,7 +256,21 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
           </Link>
         </div>
 
-        {jobs.length === 0 ? (
+        {hub?.searchTimedOut ? (
+          <div className="soft-card p-8 text-center space-y-3">
+            <p className="text-sm font-semibold text-[var(--ink)]">
+              Your search took too long to complete.
+            </p>
+            <p className="text-sm text-[var(--muted)]">
+              Try fewer or more specific words — broad searches across a large catalog can time out.
+            </p>
+            <div className="pt-2">
+              <Link href="/remote-jobs" className="soft-button secondary text-sm">
+                View all active jobs
+              </Link>
+            </div>
+          </div>
+        ) : jobs.length === 0 ? (
           <div className="soft-card p-8 text-center space-y-3">
             <p className="text-sm font-semibold text-[var(--ink)]">
               No remote jobs found matching &ldquo;{searchQuery}&rdquo;.
@@ -279,7 +296,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
                     <div>
                       <span className="text-sm font-medium text-[var(--muted)]">{job.company}</span>
                       <h3 className="text-base sm:text-lg font-semibold text-[var(--ink)] group-hover:text-[var(--red)] transition-colors mt-0.5">
-                        <Link href={`/remote-jobs/view/${job.sourceId}`}>
+                        <Link href={jobHref(job.sourceId)}>
                           {job.title}
                         </Link>
                       </h3>
@@ -322,7 +339,7 @@ export default async function RemoteJobsDirectoryPage({ searchParams }: Props) {
 
                 <div className="mt-5 pt-4 border-t border-[var(--line)] flex items-center justify-between gap-3">
                   <Link
-                    href={`/remote-jobs/view/${job.sourceId}`}
+                    href={jobHref(job.sourceId)}
                     className="text-sm font-semibold text-[var(--red)] hover:underline flex items-center gap-1"
                   >
                     <span>View job details</span>
