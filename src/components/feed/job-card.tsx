@@ -73,7 +73,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
             {opportunity.title}
           </h2>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-slate-500">
-            {salary && <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700"><Wallet size={14} />{salary}</span>}
+            <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700"><Wallet size={14} />{salary || 'Salary not disclosed'}</span>
             <span className="inline-flex items-center gap-1.5"><Globe2 size={14} />{remoteScope}</span>
             <span className="inline-flex items-center gap-1.5"><BriefcaseBusiness size={14} />{opportunity.employmentType}</span>
             {opportunity.experienceRequirement && <span className="inline-flex items-center gap-1.5"><Clock3 size={14} />{opportunity.experienceRequirement}</span>}
