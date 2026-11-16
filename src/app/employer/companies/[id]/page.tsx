@@ -95,82 +95,78 @@ export default function EmployerCompanyPage() {
     }
   };
 
-  if (error) return <div className="p-8 text-sm font-medium text-[var(--danger)]">{error}</div>;
-  if (!company) return <div className="p-8 text-sm text-[var(--muted)]">Loading…</div>;
+  if (error) return <main className="mx-auto max-w-3xl px-4 py-8"><div role="alert" className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 p-4 text-sm text-[var(--danger)]">{error}</div></main>;
+  if (!company) return <main className="mx-auto max-w-3xl px-4 py-8"><div role="status" className="soft-card rounded-2xl border border-[var(--line)] p-6 text-sm text-[var(--muted)]">Loading company profile…</div></main>;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="text-xl font-bold text-[var(--ink)]">{company.legal_name}</h1>
-        <p className="text-sm text-[var(--muted)]">{company.official_domain}</p></div>
-        <a href={"/employer/jobs/new?companyId=" + id} className="soft-button primary inline-flex">Create job draft</a>
-      </div>
+    <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-10 space-y-6 sm:space-y-8">
+      <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Company profile</p>
+          <h1 className="break-words text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">{company.legal_name}</h1>
+          <p className="text-sm text-[var(--muted)] break-words">{company.official_domain}</p>
+        </div>
+        <a href={"/employer/jobs/new?companyId=" + id} className="soft-button primary inline-flex min-h-11 w-full sm:w-auto items-center justify-center">Create job draft</a>
+      </header>
 
-      <div className="soft-card border border-[var(--line)] p-4">
-        <p className="text-sm font-semibold text-[var(--ink)]">
-          Status: {STATUS_LABEL[company.verification_status] ?? company.verification_status}
-        </p>
-        {company.verification_status === 'pending' && (
-          <p className="mt-1 text-xs text-[var(--muted)]">
-            Your registration is awaiting admin review. You&apos;ll be notified once it&apos;s verified.
-          </p>
-        )}
-        {company.verification_status === 'rejected' && company.verification_reason && (
-          <p className="mt-1 text-xs text-[var(--danger)]">Reason: {company.verification_reason}</p>
-        )}
-        {company.verification_status === 'suspended' && company.verification_reason && (
-          <p className="mt-1 text-xs text-[var(--danger)]">Reason: {company.verification_reason}</p>
-        )}
-      </div>
+      <section className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-5 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-[var(--ink)]">Verification status</h2>
+          <span className="inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-[var(--surface-soft)] px-3 text-xs font-semibold text-[var(--ink)]">
+            {STATUS_LABEL[company.verification_status] ?? company.verification_status}
+          </span>
+        </div>
+        {company.verification_status === 'pending' && <p className="text-sm leading-6 text-[var(--muted)]">Your registration is awaiting admin review. You&apos;ll be notified once it&apos;s verified.</p>}
+        {company.verification_status === 'rejected' && company.verification_reason && <p className="text-sm leading-6 text-[var(--danger)]">Reason: {company.verification_reason}</p>}
+        {company.verification_status === 'suspended' && company.verification_reason && <p className="text-sm leading-6 text-[var(--danger)]">Reason: {company.verification_reason}</p>}
+      </section>
 
-      <div className="soft-card border border-[var(--line)] p-4 space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Registration (read-only)</h2>
-        <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-xs text-[var(--muted)]">Official website</dt><dd className="text-[var(--ink)]">{company.official_website}</dd></div>
-          <div><dt className="text-xs text-[var(--muted)]">Business email</dt><dd className="text-[var(--ink)]">{company.business_email}</dd></div>
-          <div><dt className="text-xs text-[var(--muted)]">Country of registration</dt><dd className="text-[var(--ink)]">{company.country_of_registration}</dd></div>
-          <div><dt className="text-xs text-[var(--muted)]">Registration number</dt><dd className="text-[var(--ink)]">{company.registration_number ?? '—'}</dd></div>
+      <section className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-6 space-y-4">
+        <div><h2 className="text-sm font-semibold text-[var(--ink)]">Registration details</h2><p className="mt-1 text-xs text-[var(--muted)]">Identity information is read-only.</p></div>
+        <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+          <div className="min-w-0"><dt className="text-xs text-[var(--muted)]">Official website</dt><dd className="mt-1 break-words text-[var(--ink)]">{company.official_website}</dd></div>
+          <div className="min-w-0"><dt className="text-xs text-[var(--muted)]">Business email</dt><dd className="mt-1 break-words text-[var(--ink)]">{company.business_email}</dd></div>
+          <div className="min-w-0"><dt className="text-xs text-[var(--muted)]">Country of registration</dt><dd className="mt-1 break-words text-[var(--ink)]">{company.country_of_registration}</dd></div>
+          <div className="min-w-0"><dt className="text-xs text-[var(--muted)]">Registration number</dt><dd className="mt-1 break-words text-[var(--ink)]">{company.registration_number ?? '—'}</dd></div>
         </dl>
-      </div>
+      </section>
 
-      <div className="soft-card border border-[var(--line)] p-4 space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Company profile</h2>
+      <section className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-6 space-y-5">
+        <div><h2 className="text-sm font-semibold text-[var(--ink)]">Company profile</h2><p className="mt-1 text-xs text-[var(--muted)]">Keep your public company information accurate and current.</p></div>
         {EDITABLE_FIELDS.map(({ key, label }) => (
-          <div key={key}>
-            <label className="text-sm font-medium text-[var(--ink)] block mb-1.5">{label}</label>
-            {(key === 'industry' || key === 'company_size') ? (
-              <select
-                disabled={!canEdit}
-                value={edits[key] ?? (company[key] as string) ?? ''}
-                onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-                className="soft-input py-2 px-3 text-sm w-full disabled:opacity-60"
-              >
-                <option value="">Select {key === 'industry' ? 'industry' : 'employee range'}</option>
-                {(key === 'industry' ? EMPLOYER_INDUSTRIES : EMPLOYER_COMPANY_SIZES).map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            ) : (
-              <input
-                disabled={!canEdit}
-                value={edits[key] ?? (company[key] as string) ?? ''}
-                onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
-                className="soft-input py-2 px-3 text-sm w-full disabled:opacity-60"
-              />
-            )}
+          <div key={key} className="space-y-1.5">
+            <label className="block text-sm font-medium text-[var(--ink)]">{label}
+              {(key === 'industry' || key === 'company_size') ? (
+                <select
+                  disabled={!canEdit}
+                  value={edits[key] ?? (company[key] as string) ?? ''}
+                  onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="soft-input mt-1.5 min-h-11 w-full px-3 py-2 text-sm disabled:opacity-60"
+                >
+                  <option value="">Select {key === 'industry' ? 'industry' : 'employee range'}</option>
+                  {(key === 'industry' ? EMPLOYER_INDUSTRIES : EMPLOYER_COMPANY_SIZES).map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              ) : (
+                <input
+                  disabled={!canEdit}
+                  value={edits[key] ?? (company[key] as string) ?? ''}
+                  onChange={(e) => setEdits((prev) => ({ ...prev, [key]: e.target.value }))}
+                  className="soft-input mt-1.5 min-h-11 w-full px-3 py-2 text-sm disabled:opacity-60"
+                />
+              )}
+            </label>
           </div>
         ))}
+        {!canEdit && <p className="text-xs leading-5 text-[var(--muted)]">Only company owners and admins can edit these details.</p>}
         {canEdit && (
-          <>
-            {saveError && <p className="text-xs font-medium text-[var(--danger)]">{saveError}</p>}
-            <button
-              onClick={save}
-              disabled={saving || Object.keys(edits).length === 0}
-              className="rounded-xl bg-[var(--red)] hover:bg-[var(--red-dark)] disabled:opacity-40 text-white text-sm font-semibold px-3.5 py-2 transition-colors"
-            >
+          <div className="border-t border-[var(--line)] pt-4 space-y-3">
+            {saveError && <p role="alert" className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-4 py-3 text-sm text-[var(--danger)]">{saveError}</p>}
+            <button onClick={save} disabled={saving || Object.keys(edits).length === 0} className="soft-button primary min-h-11 w-full sm:w-auto justify-center disabled:cursor-not-allowed disabled:opacity-50">
               {saving ? 'Saving…' : 'Save changes'}
             </button>
-          </>
+          </div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }
