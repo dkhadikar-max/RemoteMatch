@@ -8,10 +8,10 @@
        Same variable names as before so every component that already
        references var(--bg)/var(--red)/etc. picks up the new identity
        automatically; only the values changed. */
-    --bg: #f5ead8;
-    --surface: #ebddc5;
-    --surface-soft: #fff2eb;
-    --line: color-mix(in srgb, #201e1d 16%, transparent);
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
+    --line: #e5e7eb;
     --ink: #201e1d;
     /* WCAG AA (4.5:1) on every surface this text sits on — bg, surface, surface-soft, white. Was #82796a (3.2–3.9:1).
        Contrast is asserted by test/contrast-suite.ts. */
@@ -25,7 +25,7 @@
     --red-soft: #fff2eb;
     --red-soft-border: #ffe1d0;
     --primary: #91522a;
-    --primary-foreground: #f5ead8;
+    --primary-foreground: #ffffff;
 
     /* Semantic Match Indicators — sage green, the design's second accent */
     --green: #7a8a5e;
