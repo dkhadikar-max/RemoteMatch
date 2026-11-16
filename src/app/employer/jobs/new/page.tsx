@@ -36,26 +36,75 @@ export default function NewEmployerJobPage(){
   };
   const field=(label:string,key:keyof typeof initial,placeholder='',type='text')=><label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">{label}</span><input className={inputClass} type={type} value={form[key]} placeholder={placeholder} onChange={e=>set(key,e.target.value)}/></label>;
   if(!companyId)return <div className="p-8 text-sm">Missing company. <Link className="text-[var(--red)]" href="/employer">Return to employer workspace</Link></div>;
-  return <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-10 space-y-6 sm:space-y-8">
-    <header className="space-y-2"><Link href="/employer" className="inline-flex min-h-10 items-center text-sm font-medium text-[var(--red)] hover:underline">← Employer workspace</Link><h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">{jobId?'Edit job draft':'Create a job vacancy'}</h1><p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Provide accurate role details. RemoteMatch reviews each vacancy before publication.</p></header>
-    {companyStatus!=='verified'&&<p className="rounded-xl border border-[var(--line)] p-3 text-sm text-[var(--muted)]">Company verification status: {companyStatus||'loading'}. You can save this vacancy as a draft now; submission is enabled after company verification.</p>}
-    <section className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-6 space-y-5">
-      <div className="space-y-1"><h2 className="text-sm font-semibold text-[var(--ink)]">Role overview</h2><p className="text-xs leading-5 text-[var(--muted)]">Start with the role name and a clear description of the work.</p></div>{field('Job title *','title','Senior Product Designer')}
-      <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Job description *</span><textarea className={inputClass+' min-h-40 resize-y leading-6'} rows={7} value={form.description} onChange={e=>set('description',e.target.value)} placeholder="Describe the role, team and expected outcomes."/></label>
-      <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Responsibilities</span><textarea className={inputClass+' min-h-28 resize-y leading-6'} rows={4} value={form.responsibilities} onChange={e=>set('responsibilities',e.target.value)}/></label>
-      <div className="border-t border-[var(--line)] pt-5 space-y-3"><h2 className="text-sm font-semibold text-[var(--ink)]">Work arrangement</h2><div className="grid gap-4 sm:grid-cols-2">
-        <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Employment type</span><select className={inputClass} value={form.employmentType} onChange={e=>set('employmentType',e.target.value)}>{['Full-time','Part-time','Contract','Temporary','Internship'].map(x=><option key={x}>{x}</option>)}</select></label>
-        <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Work arrangement</span><select className={inputClass} value={form.remoteType} onChange={e=>set('remoteType',e.target.value)}>{['Remote','Hybrid','On-site'].map(x=><option key={x}>{x}</option>)}</select></label>
-      </div>
-      {field('Location / eligible region *','location','Worldwide or city, country')}
-      {field('Eligible countries (comma-separated)','eligibleCountries','India, Singapore, Worldwide')}
-      <div className="grid gap-4 sm:grid-cols-3">{field('Minimum salary','salaryMin','e.g. 60000','number')}{field('Maximum salary','salaryMax','e.g. 90000','number')}{field('Currency (ISO code)','salaryCurrency','USD')}</div>
-      {field('Required skills (comma-separated)','requiredSkills','Product strategy, Figma, UX')}
-      <div className="border-t border-[var(--line)] pt-5 space-y-4"><h2 className="text-sm font-semibold text-[var(--ink)]">Skills and experience</h2>{field('Required skills (comma-separated)','requiredSkills','Product strategy, Figma, UX')}{field('Preferred skills (comma-separated)','preferredSkills','SQL, analytics')}
-      {field('Experience requirement','experienceRequirement','5+ years')}
-      {error&&<p className="text-sm text-[var(--danger)]">{error}</p>}
-      {message&&<p className="text-sm text-[var(--muted)]">{message}</p>}
-      <div className="sticky bottom-0 -mx-4 sm:-mx-6 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-[var(--line)] bg-[var(--surface)]/95 px-4 py-4 backdrop-blur sm:-mb-6 sm:px-6"><Link href="/employer" className="text-sm text-[var(--muted)]">Cancel</Link><button disabled={busy} onClick={save} className="soft-button primary">{busy?'Saving…':companyStatus==='verified'?'Save and submit for review':'Save draft'}</button></div>
-    </div>
-  </div>;
+  return (
+    <main className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-10 space-y-6 sm:space-y-8">
+      <header className="space-y-2">
+        <Link href="/employer" className="inline-flex min-h-10 items-center text-sm font-medium text-[var(--red)] hover:underline">← Employer workspace</Link>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">{jobId ? 'Edit job draft' : 'Create a job vacancy'}</h1>
+        <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Provide accurate role details. RemoteMatch reviews each vacancy before publication.</p>
+      </header>
+      {companyStatus !== 'verified' && (
+        <p className="rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 text-sm leading-6 text-[var(--muted)]">
+          Company verification status: {companyStatus || 'loading'}. You can save this vacancy as a draft now; submission is enabled after company verification.
+        </p>
+      )}
+      <section className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-6 space-y-6">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold text-[var(--ink)]">Role overview</h2>
+          <p className="text-xs leading-5 text-[var(--muted)]">Start with the role name and a clear description of the work.</p>
+        </div>
+        {field('Job title *', 'title', 'Senior Product Designer')}
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-[var(--ink)]">Job description *</span>
+          <textarea className={inputClass + ' min-h-40 resize-y leading-6'} rows={7} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Describe the role, team and expected outcomes." />
+        </label>
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-[var(--ink)]">Responsibilities</span>
+          <textarea className={inputClass + ' min-h-28 resize-y leading-6'} rows={4} value={form.responsibilities} onChange={e => set('responsibilities', e.target.value)} placeholder="List the key responsibilities for this role." />
+        </label>
+
+        <div className="border-t border-[var(--line)] pt-5 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-[var(--ink)]">Work arrangement</h2>
+            <p className="text-xs text-[var(--muted)]">Set the employment type and where the role can be performed.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Employment type</span><select className={inputClass} value={form.employmentType} onChange={e => set('employmentType', e.target.value)}>{['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship'].map(x => <option key={x}>{x}</option>)}</select></label>
+            <label className="block space-y-1.5"><span className="text-sm font-medium text-[var(--ink)]">Work arrangement</span><select className={inputClass} value={form.remoteType} onChange={e => set('remoteType', e.target.value)}>{['Remote', 'Hybrid', 'On-site'].map(x => <option key={x}>{x}</option>)}</select></label>
+          </div>
+          {field('Location / eligible region *', 'location', 'Worldwide or city, country')}
+          {field('Eligible countries (comma-separated)', 'eligibleCountries', 'India, Singapore, Worldwide')}
+        </div>
+
+        <div className="border-t border-[var(--line)] pt-5 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-[var(--ink)]">Compensation</h2>
+            <p className="text-xs text-[var(--muted)]">Add a salary range and its currency where available.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {field('Minimum salary', 'salaryMin', 'e.g. 60000', 'number')}
+            {field('Maximum salary', 'salaryMax', 'e.g. 90000', 'number')}
+            {field('Currency (ISO code)', 'salaryCurrency', 'USD')}
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--line)] pt-5 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-sm font-semibold text-[var(--ink)]">Skills and experience</h2>
+            <p className="text-xs text-[var(--muted)]">Separate multiple skills with commas.</p>
+          </div>
+          {field('Required skills (comma-separated)', 'requiredSkills', 'Product strategy, Figma, UX')}
+          {field('Preferred skills (comma-separated)', 'preferredSkills', 'SQL, analytics')}
+          {field('Experience requirement', 'experienceRequirement', '5+ years')}
+        </div>
+
+        {error && <p role="alert" className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-4 py-3 text-sm text-[var(--danger)]">{error}</p>}
+        {message && <p role="status" className="rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] px-4 py-3 text-sm leading-6 text-[var(--muted)]">{message}</p>}
+        <div className="sticky bottom-0 -mx-4 sm:-mx-6 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-[var(--line)] bg-[var(--surface)]/95 px-4 py-4 backdrop-blur sm:-mb-6 sm:px-6">
+          <Link href="/employer" className="inline-flex min-h-11 items-center justify-center text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">Cancel</Link>
+          <button disabled={busy} onClick={save} className="soft-button primary min-h-11 w-full sm:w-auto justify-center disabled:cursor-not-allowed disabled:opacity-60">{busy ? 'Saving…' : companyStatus === 'verified' ? 'Save and submit for review' : 'Save draft'}</button>
+        </div>
+      </section>
+    </main>
+  );
 }
