@@ -56,6 +56,16 @@ export async function middleware(request: NextRequest) {
     return new NextResponse('Not Found', { status: 404 });
   }
 
+  // Local/hosted preview-only feed inspection. This bypasses the PAGE redirect
+  // for exactly /feed; API routes and every other protected page keep their
+  // normal authentication and authorization checks. Never enable on production.
+  const previewFeedOnly =
+    process.env.REMOTEMATCH_PREVIEW_FEED_ONLY === 'true' &&
+    (process.env.NODE_ENV === 'development' || process.env.VERCEL_ENV === 'preview');
+  if (previewFeedOnly && pathname === '/feed') {
+    return NextResponse.next({ request });
+  }
+
   // --- Frozen SEO behavior: unchanged from the pre-remediation baseline ---
   const jobIdSegment = jobIdSegmentFromPath(pathname);
   if (jobIdSegment !== null) {

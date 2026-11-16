@@ -37,7 +37,7 @@ export function SwipeControls({
   };
 
   return (
-    <div className="flex flex-col items-center gap-3 w-full max-w-[440px] md:max-w-[560px] mt-4">
+    <div className="flex flex-col items-center gap-3 w-full max-w-[820px] mt-5">
       {/* Soft Action Controls (Minimum 44px+ touch targets) */}
       <div className="flex items-center justify-between w-full gap-2.5">
         <button
