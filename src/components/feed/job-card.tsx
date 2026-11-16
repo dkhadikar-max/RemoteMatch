@@ -39,7 +39,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
     : 'text-amber-800 bg-amber-50 border-amber-100';
 
   return (
-    <article className="relative flex min-h-[520px] w-full max-w-[840px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.08)] transition-shadow duration-200 hover:shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+    <article className="relative flex min-h-[520px] w-full max-w-[820px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.08)] transition-shadow duration-200 hover:shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-r from-orange-50 via-white to-violet-50 opacity-90" />
       <div className="relative flex flex-1 flex-col p-5 sm:p-7 lg:p-8">
         <div className="flex items-start justify-between gap-4">
