@@ -569,11 +569,12 @@ export interface InsertOutcome {
 }
 
 /**
- * Race-safe bulk insert. One upsert(ignoreDuplicates) per chunk: a row that
- * already exists is skipped (and counted as a conflict, never as an insert)
- * instead of failing the whole chunk. If a chunk fails outright (e.g. one row
- * violates a constraint), it is retried row by row so the bad row is isolated
- * and reported while the good ones still land.
+ * Race-safe bulk insert. A failed chunk is bisected recursively rather than
+ * retried serially row-by-row. This isolates constraint failures while keeping
+ * the common "one bad row in a large batch" case logarithmic in extra requests.
+ * The split depth is bounded by the initial chunk size (100 rows => at most
+ * 199 attempts for an entirely failing chunk); successful siblings are retained.
+ * A failed singleton is recorded and never reported as inserted.
  */
 export async function insertRowsIgnoringDuplicates(
   admin: Admin,
@@ -588,25 +589,25 @@ export async function insertRowsIgnoringDuplicates(
       .upsert(batch as Record<string, unknown>[], { onConflict: 'source,source_id', ignoreDuplicates: true })
       .select('id, source, source_id');
   };
-
-  for (const batch of chunk(rows, INSERT_CHUNK)) {
+  const apply = async (batch: readonly Record<string, unknown>[]): Promise<void> => {
+    if (batch.length === 0) return;
     const res = await attempt(batch);
     if (!res.error) {
       const got = (res.data ?? []) as { id: string; source: string; source_id: string }[];
       out.inserted.push(...got);
       out.conflicts += batch.length - got.length;
-      continue;
+      return;
     }
-    for (const row of batch) {
-      const one = await attempt([row]);
-      if (one.error) out.failed.push({ count: 1, message: one.error.message, code: one.error.code });
-      else {
-        const got = (one.data ?? []) as { id: string; source: string; source_id: string }[];
-        out.inserted.push(...got);
-        out.conflicts += 1 - got.length;
-      }
+    if (batch.length === 1) {
+      out.failed.push({ count: 1, message: res.error.message, code: res.error.code });
+      return;
     }
-  }
+    const midpoint = Math.ceil(batch.length / 2);
+    await apply(batch.slice(0, midpoint));
+    await apply(batch.slice(midpoint));
+  };
+
+  for (const batch of chunk(rows, INSERT_CHUNK)) await apply(batch);
   return out;
 }
 

@@ -133,6 +133,7 @@ async function section0Static() {
   console.log('\n0. STATIC — dispatch, default, legacy preserved');
   const sync = fs.readFileSync(path.resolve(__dirname, '../src/lib/ingestion/catalog-sync.ts'), 'utf8');
   const apply = fs.readFileSync(path.resolve(__dirname, '../src/lib/ingestion/catalog-sync-apply.ts'), 'utf8');
+  const route = fs.readFileSync(path.resolve(__dirname, '../src/app/api/opportunities/sync/route.ts'), 'utf8');
 
   assert(resolveSyncMode() === 'legacy', 'no CATALOG_SYNC_MODE => legacy (deploying is a no-op until the variable is set)');
   assert(resolveSyncMode('garbage') === 'legacy', 'an unrecognised mode falls back to legacy, never to a write path');
@@ -144,6 +145,10 @@ async function section0Static() {
   const writes = apply.match(/\.(update|upsert)\(/g)?.length ?? 0;
   const checked = apply.match(/\.select\('id(, source, source_id)?'\)/g)?.length ?? 0;
   assert(writes > 0 && checked >= writes, `every write in the applier returns rows for verification (${writes} writes, ${checked} row-returning selects)`);
+  assert(/await apply\(batch\.slice\(0, midpoint\)\)/.test(apply) && /await apply\(batch\.slice\(midpoint\)\)/.test(apply), 'failed insert chunks are recursively bisected instead of retried serially');
+  assert(/action === 'translate'/.test(route) && /action === 'reconcile'/.test(route) && /action === 'revalidate'/.test(route), 'translation, reconciliation and revalidation each have independent authenticated actions');
+  const syncAction = route.slice(route.indexOf('const result = await syncOpportunitiesToCatalog'), route.indexOf('return NextResponse.json({ success: true, action: \'sync\''));
+  assert(!/translatePendingOpportunities|reconcileCrossProviderDuplicates/.test(syncAction), 'the core sync response does not await translation or duplicate reconciliation');
 }
 
 // ===========================================================================
