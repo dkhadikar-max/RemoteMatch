@@ -19,6 +19,41 @@ export const CADENCE_TOLERANCE_HOURS = 1;
 export const HEALTHY_MAX_AGE_HOURS = EXPECTED_INTERVAL_HOURS + 1;
 export const DEGRADED_MAX_AGE_HOURS = EXPECTED_INTERVAL_HOURS * 2 + 1;
 
+/**
+ * One sync run touches its rows' `last_seen_in_feed_at` over a few minutes (a full run is >5 min). Activity older than
+ * this, measured back from the newest timestamp, therefore belongs to an EARLIER run — that is how a "previous run" is
+ * told apart from the tail of the latest one. A run split by this rule can never fake a second run, which is what keeps
+ * a first-ever sync from looking like a recurring schedule.
+ */
+export const RUN_SEPARATION_MINUTES = 90;
+
+/** Upper bound (exclusive) for the "previous run" lookup: activity strictly older than this predates the latest run. */
+export function previousRunCutoffIso(latestIso: string): string {
+  return new Date(new Date(latestIso).getTime() - RUN_SEPARATION_MINUTES * 60 * 1000).toISOString();
+}
+
+const HOUR_MS = 3600 * 1000;
+const roundTenth = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Turns the two observed timestamps (newest activity; newest activity older than previousRunCutoffIso(latest)) into
+ * the two numbers classifyFeedPipeline needs. Zero runs → both null; one run → ageHours only; two or more →
+ * both, the interval being the gap between the last two runs.
+ */
+export function observeFeedRuns(input: {
+  latest: string | null;
+  previous: string | null;
+  nowMs: number;
+}): { ageHours: number | null; observedIntervalHours: number | null } {
+  const { latest, previous, nowMs } = input;
+  if (!latest) return { ageHours: null, observedIntervalHours: null };
+  const latestMs = new Date(latest).getTime();
+  return {
+    ageHours: (nowMs - latestMs) / HOUR_MS,
+    observedIntervalHours: previous ? roundTenth((latestMs - new Date(previous).getTime()) / HOUR_MS) : null,
+  };
+}
+
 export type FeedPipelineStatus = 'healthy' | 'degraded' | 'stale' | 'no_evidence' | 'not_scheduled' | 'recent_activity';
 
 export interface FeedPipelineClassification {
