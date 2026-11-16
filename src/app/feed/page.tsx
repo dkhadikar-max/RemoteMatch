@@ -282,7 +282,7 @@ export default function FeedPage() {
       {!personalized && <IncompleteProfileNotice />}
 
       {/* Desktop Context Rail */}
-      <div className="hidden md:flex items-center justify-between w-full max-w-[760px] mb-4 text-xs text-[var(--muted)] px-1">
+      <div className="hidden md:flex items-center justify-between w-full max-w-[900px] mb-4 text-xs text-[var(--muted)] px-1">
         <div className="flex items-center gap-1.5">
           {personalized && savedRole && (
             <>
@@ -305,7 +305,7 @@ export default function FeedPage() {
       </div>
 
       {/* Top Context & Controls Bar */}
-      <div className="w-full max-w-[760px] flex items-center justify-between pb-4 mb-5 border-b border-[var(--line)]">
+      <div className="w-full max-w-[900px] flex items-center justify-between pb-4 mb-5 border-b border-[var(--line)]">
         <div>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)]" />
@@ -345,22 +345,66 @@ export default function FeedPage() {
         </button>
       </div>
 
-      {/* Primary Swipe Deck Container (Uncompromised Core Experience) */}
-      <div className="w-full flex flex-col items-center">
-        {emptyKind ? (
-          <FeedEmptyState kind={emptyKind} onRetry={handleRetryLoad} onClearFilters={() => setActiveFilters({})} />
-        ) : (
-        <SwipeDeck
-          opportunities={filteredOpportunities}
-          onSwipe={handleSwipe}
-          onRewind={handleRewind}
-          canRewind={swipedCount > 0}
-          planTier={profile.planTier}
-          onRequireUpgrade={handleRequireUpgrade}
-          // Keyboard shortcuts must not swipe/save a job behind an open modal.
-          paused={isFilterModalOpen || isUpgradeModalOpen}
-        />
-        )}
+      {/* Feed workspace: swipe deck plus profile context on wide screens. */}
+      <div className="grid w-full grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:gap-8">
+        <div className="flex min-w-0 flex-col items-center">
+          {emptyKind ? (
+            <FeedEmptyState kind={emptyKind} onRetry={handleRetryLoad} onClearFilters={() => setActiveFilters({})} />
+          ) : (
+            <SwipeDeck
+              opportunities={filteredOpportunities}
+              onSwipe={handleSwipe}
+              onRewind={handleRewind}
+              canRewind={swipedCount > 0}
+              planTier={profile.planTier}
+              onRequireUpgrade={handleRequireUpgrade}
+              paused={isFilterModalOpen || isUpgradeModalOpen}
+            />
+          )}
+        </div>
+
+        <aside className="hidden space-y-4 xl:block">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <span className="grid size-8 place-items-center rounded-xl bg-orange-50 text-orange-700"><Check size={16}/></span>
+              Your matching profile
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              {personalized
+                ? 'Your current profile is being used to assess these opportunities.'
+                : 'Add more profile evidence to unlock personalized job-fit insights.'}
+            </p>
+            <div className="mt-4 space-y-3">
+              {savedRole && (
+                <div className="border-b border-slate-100 pb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Target role</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{savedRole}</p>
+                </div>
+              )}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Profile skills</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{profile.skills.length} skills added</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {profile.skills.slice(0, 6).map((skill) => (
+                    <span key={skill.id} className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">{skill.skillName}</span>
+                  ))}
+                  {profile.skills.length === 0 && <span className="text-xs text-slate-500">No skills added yet</span>}
+                  {profile.skills.length > 6 && <span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">+{profile.skills.length - 6}</span>}
+                </div>
+              </div>
+            </div>
+            <Link href="/settings" className="mt-5 inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50">
+              Improve your profile <SlidersHorizontal size={13} className="ml-2"/>
+            </Link>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-gradient-to-br from-orange-50 to-white p-5">
+            <p className="text-xs font-bold text-slate-900">A better application decision</p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              Review the match explanation and eligibility details before applying. Match scores are screening estimates, not a hiring guarantee.
+            </p>
+          </section>
+        </aside>
       </div>
 
       {/* Bottom Trust Indicators: Remote · Eligible */}
