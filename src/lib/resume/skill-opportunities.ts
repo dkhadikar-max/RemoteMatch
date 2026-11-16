@@ -1,5 +1,6 @@
 import type { CanonicalOpportunity, PersonProfile } from '@/types/byn';
 import { checkHardEligibility } from '@/lib/matching/engine';
+import { canonicalSkillKey } from '@/lib/matching/skill-taxonomy';
 
 /**
  * Resume Match Opportunities — "Grow your matches" (ticket I).
@@ -16,23 +17,9 @@ import { checkHardEligibility } from '@/lib/matching/engine';
  * from their explicit confirmation, not a matcher change.
  */
 
-/**
- * The ENTIRE alias map. Deliberately tiny and literal — three well-known
- * spellings of the SAME skill. This must NOT grow into a semantic taxonomy:
- * `javascript`≠`typescript`, `postgresql`≠`sql`, `react`≠`frontend` are
- * different skills and conflating them would produce false opportunity claims.
- */
-const SKILL_ALIASES: Record<string, string> = {
-  'node.js': 'nodejs',
-  'node js': 'nodejs',
-  k8s: 'kubernetes',
-  golang: 'go',
-};
-
-/** lower + trim + collapse internal whitespace + apply the tiny alias map. */
+/** Canonical key shared by matching and resume skill-opportunity discovery. */
 export function normalizeSkillKey(raw: string): string {
-  const base = raw.toLowerCase().trim().replace(/\s+/g, ' ');
-  return SKILL_ALIASES[base] ?? base;
+  return canonicalSkillKey(raw);
 }
 
 /**
