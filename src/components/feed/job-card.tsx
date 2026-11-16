@@ -61,9 +61,10 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
   // `opportunity.careerTransition` payload, when present, is consumed only by
   // the Pro-gated feed filter, never rendered on the card.
   return (
-    <div className="soft-card relative flex flex-col h-[480px] sm:h-[510px] md:h-[530px] w-full max-w-[440px] md:max-w-[560px] p-5 sm:p-7 select-none justify-between bg-[var(--surface)] text-[var(--ink)] rounded-3xl border border-[var(--line)] shadow-[0_4px_24px_rgba(76,44,30,0.04)] transition-all duration-200">
+    <div className="soft-card relative flex flex-col min-h-[500px] lg:min-h-[520px] w-full max-w-[760px] p-5 sm:p-7 lg:p-8 select-none justify-between bg-[var(--surface)] text-[var(--ink)] rounded-3xl border border-[var(--line)] shadow-[0_4px_24px_rgba(76,44,30,0.04)] transition-all duration-200">
       {/* Top Details */}
-      <div>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(260px,0.85fr)] gap-6 flex-1">
+        <div className="min-w-0">
         {/* Company & External Link */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
@@ -111,6 +112,8 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           )}
         </div>
 
+        </div>
+        <div className="min-w-0 lg:border-l lg:border-[var(--line)] lg:pl-6">
         {/* Why it matches & What may be missing — standard v1 card view */}
         <div className="mt-4 sm:mt-5 space-y-2 text-xs">
           <div>

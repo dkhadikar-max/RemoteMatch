@@ -278,11 +278,11 @@ export default function FeedPage() {
   const savedRole = profile.intent?.targetRoles?.find((r) => typeof r === 'string' && r.trim()) ?? null;
 
   return (
-    <div className="flex-1 flex flex-col items-center px-3 sm:px-4 py-3 sm:py-6 md:py-8 max-w-5xl mx-auto w-full">
+    <div className="flex-1 flex flex-col items-center px-3 sm:px-4 py-3 sm:py-6 md:py-8 max-w-7xl mx-auto w-full">
       {!personalized && <IncompleteProfileNotice />}
 
       {/* Desktop Context Rail */}
-      <div className="hidden md:flex items-center justify-between w-full max-w-[560px] mb-3 text-xs text-[var(--muted)] px-1">
+      <div className="hidden md:flex items-center justify-between w-full max-w-[760px] mb-4 text-xs text-[var(--muted)] px-1">
         <div className="flex items-center gap-1.5">
           {personalized && savedRole && (
             <>
@@ -305,7 +305,7 @@ export default function FeedPage() {
       </div>
 
       {/* Top Context & Controls Bar */}
-      <div className="w-full max-w-[440px] md:max-w-[560px] flex items-center justify-between pb-3 mb-4 border-b border-[var(--line)]">
+      <div className="w-full max-w-[760px] flex items-center justify-between pb-4 mb-5 border-b border-[var(--line)]">
         <div>
           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[var(--red-soft)] text-[var(--red)] border border-[var(--red-soft-border)]">
             <span className="w-1.5 h-1.5 rounded-full bg-[var(--red)]" />
