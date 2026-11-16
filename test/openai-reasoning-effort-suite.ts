@@ -37,10 +37,13 @@ function assert(condition: boolean, message: string) {
 
 // src/lib/ai/resume.ts (the unused resume parser) was deleted in the resume P1 clean-up: it had zero importers, so its one
 // chat.completions.create() call site is gone. resume-intelligence.ts's unreachable analyzeResumeWithAI, together with its call
-// site, was removed in resume PR A. Every REMAINING call site is still checked below; the new server-side Resume
-// Intelligence service (PR B) must be added to this list when it lands.
+// site, was removed in resume PR A. resume-intelligence-service.ts's call site (resume PR B) moved to
+// src/lib/ai/providers/openai-adapter.ts in Workstream 1's provider-architecture refactor (2026-10-30,
+// docs/resume-pr-b-workstream1-provider-architecture-plan-2026-10-30.md) — resume-intelligence-service.ts no longer
+// calls chat.completions.create() itself, it calls through the AiProviderAdapter interface instead.
 const FILES = [
   'src/lib/ai/materials.ts',
+  'src/lib/ai/providers/openai-adapter.ts',
 ];
 
 function countOccurrences(haystack: string, needle: string): number {
@@ -79,16 +82,19 @@ async function main() {
     // Also confirm the import itself is present — a file could otherwise
     // pass the count check by coincidentally having the right number of
     // some OTHER string that happens to match, though that's very unlikely
-    // given the exact string used.
+    // given the exact string used. Matches an `import { ..., OPENAI_REASONING_EFFORT, ... }
+    // from '<any relative depth>/openai-config'` statement regardless of import-list ordering
+    // or how many directories deep the importing file sits (providers/openai-adapter.ts, added
+    // in Workstream 1, imports from '../openai-config' rather than './openai-config').
     assert(
-      source.includes("OPENAI_REASONING_EFFORT } from './openai-config'") || source.includes('OPENAI_REASONING_EFFORT,'),
+      /import\s*\{[^}]*\bOPENAI_REASONING_EFFORT\b[^}]*\}\s*from\s*['"][.\/]*openai-config['"]/.test(source),
       `${relPath}: imports OPENAI_REASONING_EFFORT from openai-config.ts (not a locally-redefined constant)`
     );
 
     totalCallSites += callSiteCount;
   }
 
-  assert(totalCallSites === 1, `exactly 1 total chat.completions.create() call site across the listed files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
+  assert(totalCallSites === 2, `exactly 2 total chat.completions.create() call sites across the listed files (got ${totalCallSites}) — update this suite's expectation if a new call site is intentionally added`);
 
   console.log(`\n=== RESULTS: ${passed} passed, ${failed} failed ===`);
   process.exit(failed > 0 ? 1 : 0);

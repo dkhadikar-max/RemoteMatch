@@ -25,6 +25,7 @@ import {
   Linkedin,
   Github,
   LogOut,
+  FileSearch,
 } from 'lucide-react';
 
 /**
@@ -466,6 +467,28 @@ function SettingsContent() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Resume Intelligence (PR B) — links to the dedicated panel; never
+                  edits anything here, never changes matching. */}
+              <div className="soft-card p-6 border border-[var(--line)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-[var(--red-soft)] p-2.5 shrink-0">
+                    <FileSearch size={18} className="text-[var(--red)]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[var(--ink)]">Resume Intelligence</p>
+                    <p className="text-[11px] text-[var(--muted)] mt-0.5 max-w-sm">
+                      A writing checklist for your resume, grounded in what it actually says — a general review, or tailored to a specific job.
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/resume-intelligence"
+                  className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] hover:bg-[var(--surface)] text-[var(--ink)] text-xs font-semibold px-4 py-2.5 min-h-[44px] transition-colors"
+                >
+                  Open
+                </Link>
               </div>
 
               {/* Grow your matches — skills requested across the user's relevant
