@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { CanonicalOpportunity, PersonProfile, OpportunityFilters } from '@/types/byn';
 import { localStore } from '@/lib/db/mock-seed';
 import { fetchServerEntitlement, notifyEntitlementChanged } from '@/lib/entitlement/client';
