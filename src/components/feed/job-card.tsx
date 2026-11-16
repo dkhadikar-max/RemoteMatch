@@ -4,7 +4,7 @@ import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
 import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import Link from 'next/link';
-import { ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, Clock3, Globe2, Layers3, Sparkles } from 'lucide-react';
+import { ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, Clock3, Globe2, Layers3, Sparkles, Wallet } from 'lucide-react';
 import { matchHref } from '@/lib/match/match-href';
 import { trackApplyClick } from '@/lib/funnel/client';
 
@@ -39,7 +39,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
     : 'text-amber-800 bg-amber-50 border-amber-100';
 
   return (
-    <article className="relative flex min-h-[520px] w-full max-w-[900px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.08)] transition-shadow duration-200 hover:shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
+    <article className="relative flex min-h-[520px] w-full max-w-[840px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white text-slate-950 shadow-[0_16px_50px_rgba(15,23,42,0.08)] transition-shadow duration-200 hover:shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-r from-orange-50 via-white to-violet-50 opacity-90" />
       <div className="relative flex flex-1 flex-col p-5 sm:p-7 lg:p-8">
         <div className="flex items-start justify-between gap-4">
@@ -73,6 +73,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
             {opportunity.title}
           </h2>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-medium text-slate-500">
+            {salary && <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700"><Wallet size={14} />{salary}</span>}
             <span className="inline-flex items-center gap-1.5"><Globe2 size={14} />{remoteScope}</span>
             <span className="inline-flex items-center gap-1.5"><BriefcaseBusiness size={14} />{opportunity.employmentType}</span>
             {opportunity.experienceRequirement && <span className="inline-flex items-center gap-1.5"><Clock3 size={14} />{opportunity.experienceRequirement}</span>}
@@ -80,12 +81,8 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-2 rounded-2xl border border-slate-100 bg-slate-50/90 p-4 sm:grid-cols-[1.15fr_1fr]">
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/90 p-4">
           <div className="min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Compensation</span>
-            <p className="mt-1 text-base font-extrabold tracking-tight text-slate-900">{salary || 'Salary not disclosed'}</p>
-          </div>
-          <div className="min-w-0 border-t border-slate-200 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
             <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><Layers3 size={12}/> Key requirements</span>
             <div className="mt-1 flex flex-wrap gap-1.5">
               {displayTags.length > 0 ? displayTags.map((tag) => (
@@ -96,7 +93,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <section className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
             <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
               <span className="grid size-7 place-items-center rounded-lg bg-white text-emerald-700 shadow-sm"><Sparkles size={15}/></span>
@@ -140,7 +137,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </section>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-slate-100 bg-white px-4 py-3">
+        <div className="mt-4 rounded-2xl border border-slate-100 bg-white px-4 py-3">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Why consider this role</p>
           <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">
             {opportunity.description?.trim() || 'Review the complete job description and eligibility requirements on the employer’s application page.'}
