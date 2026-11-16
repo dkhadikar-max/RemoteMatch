@@ -193,7 +193,7 @@ export function SwipeDeck({
       </AnimatePresence>
 
       {/* Card Stack Area */}
-      <div className="relative min-h-[540px] w-full flex items-center justify-center">
+      <div className="relative min-h-[760px] lg:min-h-[700px] w-full flex items-center justify-center">
         {/* Background Card Peek */}
         {nextOpp && (
           <div className="absolute top-2.5 scale-[0.97] opacity-60 pointer-events-none w-full max-w-[900px]">
