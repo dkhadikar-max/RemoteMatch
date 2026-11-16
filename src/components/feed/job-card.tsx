@@ -4,7 +4,7 @@ import React from 'react';
 import { CanonicalOpportunity } from '@/types/byn';
 import { formatPostedAge, formatSalary } from '@/lib/feed/job-card-format';
 import Link from 'next/link';
-import { ArrowUpRight, Bookmark, BriefcaseBusiness, CalendarDays, Check, Clock3, Globe2, Layers3, Sparkles, X } from 'lucide-react';
+import { ArrowUpRight, BriefcaseBusiness, CalendarDays, Check, Clock3, Globe2, Layers3, Sparkles } from 'lucide-react';
 import { matchHref } from '@/lib/match/match-href';
 import { trackApplyClick } from '@/lib/funnel/client';
 
