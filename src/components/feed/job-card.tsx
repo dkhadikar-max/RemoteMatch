@@ -150,6 +150,7 @@ export function JobCard({ opportunity, onOpenDetails, isFrontCard = true }: JobC
           </div>
           )}
         </div>
+        </div>
       </div>
 
       {/* Action Footer: [ See why it matches ]  [ Apply → ] */}
