@@ -34,21 +34,23 @@ function toRow(b: Record<string, unknown>) {
   };
 }
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  try { await getAuthenticatedEmployer(req, params.id); }
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  try { await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
     const jobs = must(await db.from('employer_job_submissions').select(COLUMNS)
-      .eq('company_id', params.id).order('updated_at', { ascending: false }), 'employer_job_submissions').data ?? [];
+      .eq('company_id', id).order('updated_at', { ascending: false }), 'employer_job_submissions').data ?? [];
     return NextResponse.json({ jobs });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   let employer;
-  try { employer = await getAuthenticatedEmployer(req, params.id); }
+  try { employer = await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 }); }
   if (employer.role === 'member') return NextResponse.json({ error: 'Only company owners and admins can create vacancies.' }, { status: 403 });
   let body: unknown;
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
   try {
     const row = must(await db.from('employer_job_submissions').insert({
-      company_id: params.id, created_by: employer.user.id, ...toRow(body),
+      company_id: id, created_by: employer.user.id, ...toRow(body),
     }).select(COLUMNS).single(), 'employer_job_submissions').data;
     return NextResponse.json({ job: row }, { status: 201 });
   } catch (err) { return queryErrorResponse(err) ?? NextResponse.json({ error: 'Could not save job draft.' }, { status: 500 }); }

@@ -10,7 +10,7 @@ import { queryErrorResponse } from '@/lib/admin/sections';
 /** POST /api/admin/discovery/[id]/reject — requires a real reason, same
  *  "explicit confirmation server-side, not just client-hidden" requirement
  *  as every other destructive/state-changing admin action. */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let admin;
   try {
     admin = await getAuthenticatedAdmin(req);
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'A reason is required to reject a discovery candidate.' }, { status: 400 });
   }
 
+  const { id } = await params;
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   let before: { pipeline_stage: string } | null;
   try {
     before = must(
-      await db.from('supply_discovered_companies').select('pipeline_stage').eq('id', params.id).maybeSingle(),
+      await db.from('supply_discovered_companies').select('pipeline_stage').eq('id', id).maybeSingle(),
       'supply_discovered_companies'
     ).data;
   } catch (err) {
@@ -49,14 +50,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Discovered company not found.' }, { status: 404 });
   }
 
-  const result = await rejectDiscoveredCompany(params.id, reason);
+  const result = await rejectDiscoveredCompany(id, reason);
 
   await recordAdminAction({
     adminId: admin.user.id,
     adminEmail: admin.adminEmail,
     action: 'c6_reject',
     targetType: 'discovered_company',
-    targetId: params.id,
+    targetId: id,
     beforeState: { pipeline_stage: before.pipeline_stage },
     afterState: result.rejected ? { pipeline_stage: 'rejected' } : { error: result.error },
     reason,

@@ -7,7 +7,7 @@ import { must } from '@/lib/supabase/query-helpers';
 import { queryErrorResponse } from '@/lib/admin/sections';
 
 /** GET — the full opportunity record, for safe inspection. */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await getAuthenticatedAdmin(req);
   } catch (err) {
@@ -16,13 +16,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   const admin = getSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
   // 404 only when the lookup SUCCEEDED and matched nothing — a failed query
   // is a 500, not "not found".
   try {
-    const res = must(await admin.from('opportunities').select('*').eq('id', params.id).maybeSingle(), 'opportunities');
+    const res = must(await admin.from('opportunities').select('*').eq('id', id).maybeSingle(), 'opportunities');
     if (!res.data) return NextResponse.json({ error: 'Opportunity not found.' }, { status: 404 });
     return NextResponse.json({ opportunity: res.data });
   } catch (err) {
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
  * rather than trusting the client's confirmation dialog alone, and
  * audit-logs the real before/after `status`.
  */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let admin;
   try {
     admin = await getAuthenticatedAdmin(req);
@@ -47,6 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   let body: { action?: string; reason?: string };
   try {
     body = await req.json();
@@ -68,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let before: { status: string; is_permanently_removed: boolean | null } | null;
   try {
     before = must(
-      await db.from('opportunities').select('status, is_permanently_removed').eq('id', params.id).maybeSingle(),
+      await db.from('opportunities').select('status, is_permanently_removed').eq('id', id).maybeSingle(),
       'opportunities'
     ).data;
   } catch (err) {
@@ -79,14 +81,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { error: updateErr } = await db
     .from('opportunities')
     .update({ status: 'expired', is_permanently_removed: true })
-    .eq('id', params.id);
+    .eq('id', id);
 
   await recordAdminAction({
     adminId: admin.user.id,
     adminEmail: admin.adminEmail,
     action: 'opportunity_force_expire',
     targetType: 'opportunity',
-    targetId: params.id,
+    targetId: id,
     beforeState: before,
     afterState: updateErr ? { error: updateErr.message } : { status: 'expired', is_permanently_removed: true },
     reason,

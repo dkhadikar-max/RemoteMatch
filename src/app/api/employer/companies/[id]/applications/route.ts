@@ -5,9 +5,10 @@ import { getSupabaseAdminClient } from '@/lib/supabase/admin';
 
 const STATUSES = ['reviewing', 'shortlisted', 'interviewing', 'offered', 'rejected', 'hired'] as const;
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   let employer;
-  try { employer = await getAuthenticatedEmployer(req, params.id); }
+  try { employer = await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
   // PR #120 review remediation: applicant PII (email, full name, LinkedIn, avatar) is only
   // for owners/admins, same boundary PATCH already enforces for status changes. There is no
@@ -20,18 +21,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const { data, error } = await db.from('employer_job_applications')
     .select('id,submission_id,opportunity_id,candidate_application_id,cover_note,status,submitted_at,updated_at,employer_job_submissions!inner(title),profiles!employer_job_applications_candidate_profile_id_fkey(id,email,full_name,headline,avatar_url,linkedin_url)')
-    .eq('employer_job_submissions.company_id', params.id)
+    .eq('employer_job_submissions.company_id', id)
     .order('submitted_at', { ascending: false });
   if (error) {
-    console.error('[employer/applications] list failed', { companyId: params.id, error: error.message });
+    console.error('[employer/applications] list failed', { companyId: id, error: error.message });
     return NextResponse.json({ error: 'Could not load applications.' }, { status: 500 });
   }
   return NextResponse.json({ applications: data ?? [] });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   let employer;
-  try { employer = await getAuthenticatedEmployer(req, params.id); }
+  try { employer = await getAuthenticatedEmployer(req, id); }
   catch (err) { return authErrorResponse(err) ?? NextResponse.json({ error: 'Unauthorized' }, { status: 401 }); }
   if (employer.role === 'member') {
     return NextResponse.json({ error: 'Only company owners and admins can update applicant status.' }, { status: 403 });
@@ -57,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
   const { data, error } = await db.rpc('transition_employer_application', {
-    p_company_id: params.id,
+    p_company_id: id,
     p_application_id: applicationId,
     p_actor_id: employer.user.id,
     p_expected_status: expectedStatus,
