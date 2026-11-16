@@ -40,6 +40,7 @@ async function main() {
   const fn = catalog.slice(catalog.indexOf('export async function getRelatedActiveOpportunities'));
   const body = fn.slice(0, fn.indexOf('\n}\n') + 3);
   assert(/\.limit\(/.test(body), 'getRelatedActiveOpportunities applies a database-side .limit()');
+  assert(/\.eq\('status',\s*'active'\)/.test(body), 'it states status = active explicitly, not relying solely on RLS, so the planner can reliably match the existing partial covering index');
   assert(/\.neq\('source_id'/.test(body), 'it excludes the viewed job in the database (.neq source_id)');
   assert(/\.or\(TRANSLATION_SAFE_OR\)/.test(body) && /\.or\(TRANSLATION_NOT_ERROR_OR\)/.test(body), 'it applies the same multilingual gate as the full read (both shared clauses)');
   assert(!/getActiveOpportunities\(/.test(body) && !/\.range\(/.test(body) && !/while \(true\)/.test(body), 'it never pages or calls the full-catalog read');
