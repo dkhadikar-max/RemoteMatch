@@ -19,7 +19,11 @@ export default function NewEmployerJobPage(){
     if(jobId)fetch('/api/employer/companies/'+companyId+'/jobs/'+jobId).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'Could not load draft');const j=d.job;setForm({title:j.title,description:j.description,responsibilities:j.responsibilities||'',employmentType:j.employment_type,remoteType:j.remote_type,location:j.location,eligibleCountries:(j.eligible_countries||[]).join(', '),salaryMin:j.salary_min==null?'':String(j.salary_min),salaryMax:j.salary_max==null?'':String(j.salary_max),salaryCurrency:j.salary_currency,requiredSkills:(j.required_skills||[]).join(', '),preferredSkills:(j.preferred_skills||[]).join(', '),experienceRequirement:j.experience_requirement||''});}).catch(e=>setError(e.message));
   },[companyId,jobId]);
   const save=async()=>{
-    setBusy(true);setError('');setMessage('');
+    setError('');setMessage('');
+    if(!form.title.trim())return setError('Job title is required.');
+    if(!form.description.trim())return setError('Job description is required.');
+    if(!form.location.trim())return setError('Location / eligible region is required.');
+    setBusy(true);
     try{
       if(!companyId)throw new Error('Select a company before creating a vacancy.');
       const payload={...form,eligibleCountries:form.eligibleCountries.split(',').map(x=>x.trim()).filter(Boolean),salaryMin:form.salaryMin===''?null:Number(form.salaryMin),salaryMax:form.salaryMax===''?null:Number(form.salaryMax),requiredSkills:form.requiredSkills.split(',').map(x=>x.trim()).filter(Boolean),preferredSkills:form.preferredSkills.split(',').map(x=>x.trim()).filter(Boolean)};
