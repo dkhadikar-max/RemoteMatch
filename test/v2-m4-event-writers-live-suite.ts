@@ -1,5 +1,5 @@
 import { adminClient, anonKeyClient, hasRequiredEnv, newVerifiedSession, type TestSession } from './helpers/verified-session';
-const APPROVED_REF='xyahktsgdigutxartafb',BASE_URL=process.env.TEST_BASE_URL??'',OPPORTUNITY='opp-curated-curated-001';
+const APPROVED_REF='dypwvhudvtlvfhglcgmt',BASE_URL=process.env.TEST_BASE_URL??'',OPPORTUNITY='opp-curated-curated-001';
 let passed=0,failed=0;
 function assert(ok:boolean,label:string){if(ok){passed++;console.log('PASS '+label)}else{failed++;console.error('FAIL '+label)}}
 function refuse(reason:string):never{console.error('REFUSING TO RUN: '+reason);process.exit(1)}
