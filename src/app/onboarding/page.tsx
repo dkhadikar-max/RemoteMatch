@@ -352,10 +352,11 @@ export default function OnboardingPage() {
         </div>
 
         {/* 6-step progress bar */}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex gap-2" role="group" aria-label="Profile setup progress">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <span
               key={i}
+              aria-current={i === step ? 'step' : undefined}
               className={`h-1.5 flex-1 rounded-full transition-colors ${
                 i <= step ? 'bg-[var(--red)]' : 'bg-[var(--line)]'
               }`}
@@ -400,6 +401,7 @@ export default function OnboardingPage() {
                       <button
                         type="button"
                         key={type}
+                        aria-pressed={isSelected}
                         onClick={() => toggleEmploymentType(type)}
                         className={`rounded-2xl border p-4 text-left transition-all flex items-center justify-between ${
                           isSelected
@@ -483,6 +485,7 @@ export default function OnboardingPage() {
                         <button
                           key={role}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => {
                             if (isSelected) {
                               setTargetRoles(targetRoles.filter((r) => r !== role));
@@ -569,6 +572,7 @@ export default function OnboardingPage() {
                         <button
                           key={sk}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => {
                             if (isSelected) {
                               setSkills(skills.filter((s) => s !== sk));
@@ -618,6 +622,7 @@ export default function OnboardingPage() {
                       <button
                         type="button"
                         key={tier}
+                        aria-pressed={isSelected}
                         onClick={() => setYearsOfExperience(tier)}
                         className={`w-full rounded-2xl border p-4 text-left transition-all flex items-center justify-between ${
                           isSelected
@@ -663,6 +668,7 @@ export default function OnboardingPage() {
                       <button
                         key={scope.id}
                         type="button"
+                      aria-pressed={workPreference === scope.id}
                         onClick={() => setWorkPreference(scope.id as any)}
                         className={`rounded-2xl border p-3 text-xs font-semibold transition-all text-center ${
                           workPreference === scope.id
@@ -717,6 +723,7 @@ export default function OnboardingPage() {
                         <button
                           key={tz}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => {
                             if (isSelected) {
                               setWillingTimezones(willingTimezones.filter((t) => t !== tz));

@@ -30,6 +30,8 @@ const REASONS = [
   ['other', 'Other recorded reason'],
 ] as const;
 
+type PendingConfirmation = { row: Applicant; status: string; message: string };
+
 export default function EmployerApplicationsPage() {
   const { id } = useParams<{ id: string }>();
   const [rows, setRows] = useState<Applicant[]>([]);
@@ -37,6 +39,7 @@ export default function EmployerApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [confirming, setConfirming] = useState<PendingConfirmation | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -51,7 +54,7 @@ export default function EmployerApplicationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const updateStatus = async (row: Applicant, status: string) => {
+  const requestStatusChange = (row: Applicant, status: string) => {
     const reasonCode = reasons[row.id];
     const reasonRequired =
       status === 'rejected' ||
@@ -61,13 +64,25 @@ export default function EmployerApplicationsPage() {
       setError('Select a decision reason before making this transition.');
       return;
     }
-    const confirmation =
+    const message =
       status === 'hired'
         ? `Mark ${row.profiles?.full_name || 'this candidate'} as hired? This records a final hiring decision.`
         : status === 'rejected'
           ? `Reject ${row.profiles?.full_name || 'this candidate'}? The selected decision reason will be recorded in the audit history.`
           : null;
-    if (confirmation && !window.confirm(confirmation)) return;
+    if (message) {
+      setConfirming({ row, status, message });
+      return;
+    }
+    void performUpdate(row, status);
+  };
+
+  const performUpdate = async (row: Applicant, status: string) => {
+    const reasonCode = reasons[row.id];
+    const reasonRequired =
+      status === 'rejected' ||
+      (row.status === 'interviewing' && status === 'shortlisted') ||
+      (row.status === 'rejected' && status === 'reviewing');
 
     setBusy(row.id); setError('');
     try {
@@ -95,19 +110,19 @@ export default function EmployerApplicationsPage() {
     finally { setBusy(''); }
   };
 
-  return <main className="mx-auto max-w-5xl px-4 py-10 space-y-6">
-    <div><Link href="/employer" className="text-sm text-[var(--red)]">← Employer workspace</Link>
-      <h1 className="mt-3 text-2xl font-bold text-[var(--ink)]">Job applications</h1>
-      <p className="text-sm text-[var(--muted)]">Review candidates who applied directly through RemoteMatch.</p>
+  return <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10 space-y-6 sm:space-y-8">
+    <div className="space-y-2"><Link href="/employer" className="inline-flex min-h-10 items-center text-sm font-medium text-[var(--red)] hover:underline">← Employer workspace</Link>
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[var(--ink)]">Job applications</h1>
+      <p className="max-w-2xl text-sm leading-6 text-[var(--muted)]">Review candidates who applied directly through RemoteMatch. Compare candidate details, read their note and record the next decision.</p>
     </div>
-    {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
+    {error && <p role="alert" className="rounded-xl border border-[var(--danger)]/20 bg-[var(--danger)]/5 px-4 py-3 text-sm text-[var(--danger)]">{error}</p>}
     {loading ? <p className="text-sm text-[var(--muted)]">Loading applications…</p> :
-      rows.length === 0 ? <div className="soft-card border border-[var(--line)] p-6 text-sm text-[var(--muted)]">No applications received yet.</div> :
-      <div className="space-y-3">{rows.map(row => <article key={row.id} className="soft-card border border-[var(--line)] p-5 space-y-3">
+      rows.length === 0 ? <div className="soft-card rounded-2xl border border-[var(--line)] p-8 sm:p-10 text-center"><p className="text-sm font-semibold text-[var(--ink)]">No applications received yet</p><p className="mt-1 text-sm text-[var(--muted)]">New candidate applications will appear here.</p></div> :
+      <div className="space-y-3">{rows.map(row => <article key={row.id} className="soft-card rounded-2xl border border-[var(--line)] p-4 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h2 className="font-semibold text-[var(--ink)]">{row.profiles?.full_name || 'Candidate'}</h2>
+          <div className="min-w-0 flex-1 space-y-1"><h2 className="text-base font-semibold text-[var(--ink)]">{row.profiles?.full_name || 'Candidate'}</h2>
             <p className="text-xs text-[var(--muted)]">{row.profiles?.headline || 'No headline provided'}</p>
-            <p className="text-xs text-[var(--muted)]">{row.profiles?.email || 'Email unavailable'} · {row.employer_job_submissions?.title || 'Job'}</p>
+            <p className="text-sm text-[var(--muted)] break-words">{row.profiles?.email || 'Email unavailable'}</p><p className="text-xs font-medium text-[var(--ink)] break-words">Applied for: {row.employer_job_submissions?.title || 'Job'}</p>
             <p className="text-xs text-[var(--muted)]">Applied {new Date(row.submitted_at).toLocaleString()}</p>
           </div>
           {CLOSED_STATUSES.has(row.status) ? (
@@ -115,8 +130,8 @@ export default function EmployerApplicationsPage() {
               {row.status.replace(/_/g, ' ')}
             </span>
           ) : (
-            <select aria-label="Application status" className="soft-input min-h-11 px-3 py-2 text-sm" value={row.status}
-              disabled={busy === row.id} onChange={e => updateStatus(row, e.target.value)}>
+            <select aria-label="Application status" className="soft-input min-h-11 w-full sm:w-auto px-3 py-2 text-sm font-medium" value={row.status}
+              disabled={busy === row.id} onChange={e => requestStatusChange(row, e.target.value)}>
               {[row.status, ...STATUSES.filter(status => status !== row.status)].map(status => <option key={status} value={status}>{status.replace(/_/g, ' ')}</option>)}
             </select>
           )}
@@ -132,11 +147,34 @@ export default function EmployerApplicationsPage() {
             </select>
           </label>
         )}
-        {row.cover_note && <div className="rounded-lg bg-[var(--surface-soft)] p-3 text-sm whitespace-pre-wrap">{row.cover_note}</div>}
+        {row.cover_note && <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-4 text-sm leading-6 whitespace-pre-wrap break-words">{row.cover_note}</div>}
         <div className="flex flex-wrap gap-4 text-sm">
           {row.profiles?.linkedin_url && <a className="text-[var(--red)] underline" href={row.profiles.linkedin_url} target="_blank" rel="noreferrer">LinkedIn profile</a>}
           {row.profiles?.email && <a className="inline-flex min-h-11 items-center px-2 text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
         </div>
       </article>)}</div>}
+    {confirming && (
+      <div role="dialog" aria-modal="true" aria-labelledby="confirm-status-change-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/40 p-4">
+        <div className="soft-card w-full max-w-sm rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-lg space-y-4">
+          <p id="confirm-status-change-title" className="text-sm leading-6 text-[var(--ink)]">{confirming.message}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirming(null)}
+              className="inline-flex min-h-10 items-center rounded-xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { const next = confirming; setConfirming(null); void performUpdate(next.row, next.status); }}
+              className="inline-flex min-h-10 items-center rounded-xl bg-[var(--red)] px-4 text-sm font-semibold text-white hover:bg-[var(--red-dark)]"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </main>;
 }

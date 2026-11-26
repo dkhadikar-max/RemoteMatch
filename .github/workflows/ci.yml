@@ -149,7 +149,7 @@ jobs:
         run: |
           node - <<'NODE'
           const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
-          const expected = 'xyahktsgdigutxartafb';
+          const expected = 'dypwvhudvtlvfhglcgmt';
           const actual = url.hostname.split('.')[0];
           if (actual !== expected) {
             throw new Error(`Refusing live directory tests against unexpected Supabase project: ${actual}`);
@@ -167,9 +167,13 @@ jobs:
           fi
           node - <<'NODE'
           const u = new URL(process.env.CI_ISOLATED_DATABASE_URL);
-          const expected = 'xyahktsgdigutxartafb';
-          if (!u.hostname.includes(expected)) {
-            throw new Error(`Refusing database regression contract against unexpected host: ${u.hostname}`);
+          const expected = 'dypwvhudvtlvfhglcgmt';
+          // Session-pooler connection strings carry the project ref in the username
+          // (postgres.<ref>@<pooler-host>), not the hostname -- a direct connection
+          // string still carries it in the hostname (db.<ref>.supabase.co), so check
+          // both rather than assuming either URL shape.
+          if (!u.hostname.includes(expected) && !u.username.includes(expected)) {
+            throw new Error(`Refusing database regression contract against unexpected target: host ${u.hostname}, user ${u.username}`);
           }
           console.log(`Verified isolated database target: ${u.hostname}`);
           NODE
