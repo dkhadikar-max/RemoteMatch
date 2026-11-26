@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ArrowRight, ArrowLeft, Info, Check, X } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowRight, ArrowLeft, Info, Check, X, FileSearch } from 'lucide-react';
 import type { ResumeCheck } from '@/lib/resume/resume-check';
 
 /**
@@ -245,6 +246,18 @@ export function ResumeCheckSummary({
           <p className="mt-1 max-w-md text-xs leading-relaxed text-[var(--muted)]">
             Your profile is saved when you continue. You can change your skills, roles and preferences later in Settings.
           </p>
+          {/* Resume Intelligence (PR B) — opens in a new tab so onboarding still finishes without
+              it (design doc §6). Reads the saved resume server-side, so it works best AFTER
+              continuing; accessed from here it offers to paste the text again if needed. */}
+          <Link
+            href="/resume-intelligence"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--red)] hover:underline"
+          >
+            <FileSearch size={13} aria-hidden="true" />
+            <span>See full resume review</span>
+          </Link>
         </div>
 
         <div className="flex flex-col items-stretch gap-2 self-stretch sm:self-auto">

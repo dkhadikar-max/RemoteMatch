@@ -94,6 +94,21 @@ let adminClient: SupabaseClient | null = null;
  *     cost estimate) is computed server-side from static `openai-config.ts`
  *     constants or a real OpenAI response's own `usage` object, never from
  *     anything the calling user supplies.
+ *   - `src/lib/resume/quota-reconciliation.ts` (Resume Intelligence PR B,
+ *     Stage 6 follow-up, migration 042), used only by
+ *     POST /api/resume/reconcile-quota (secret-gated the same way
+ *     /api/opportunities/sync is -- RESUME_QUOTA_RECONCILE_SECRET, never
+ *     product/user traffic). Different shape of justification again: the
+ *     RPC it calls, `reconcile_resume_quota_orphans()`, is itself
+ *     service-role-only by its own internal check (`auth.role() = 'service_role'`)
+ *     and scans/writes across EVERY user's `resume_quota_events`/`profiles`
+ *     rows in one run -- categorically impossible to scope to one
+ *     authenticated caller's own `auth.uid()`, which is exactly why this
+ *     couldn't be the existing client-facing `refund_resume_analysis()` RPC.
+ *     Every value the sweep writes (which exact `(analysis_id,
+ *     attempt_number)` to refund, by how much) is derived entirely from
+ *     `resume_quota_events`/`resume_analyses` rows the sweep itself reads
+ *     server-side -- never from anything a client supplies.
  */
 export function getSupabaseAdminClient(): SupabaseClient | null {
   if (!isSupabaseAdminConfigured) return null;

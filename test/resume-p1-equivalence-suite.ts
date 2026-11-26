@@ -157,7 +157,11 @@ async function main() {
   const prod = [...walk(path.join(root, 'src/app')), ...walk(path.join(root, 'src/components'))].concat(fs.existsSync(path.join(root, 'src/middleware.ts')) ? [path.join(root, 'src/middleware.ts')] : []);
   const reach = prod.filter((p) => /analyzeResumeWithAI|analyzeResumeHeuristically/.test(fs.readFileSync(p, 'utf8'))).map(rel);
   assert(reach.length === 0, 'no page, component, API route or middleware references the deprecated client-side resume analysers', reach.join(', '));
-  const importers = prod.filter((p) => /lib\/ai\/resume-intelligence/.test(fs.readFileSync(p, 'utf8'))).map(rel);
+  // Scoped to resume-intelligence(.ts) itself, not resume-intelligence-service(.ts) (PR B's
+  // own, unrelated module) or doc-comment references like resume-intelligence-design.md --
+  // the unscoped regex matched both as a substring, producing a false positive once PR B's
+  // own /api/resume/* routes (which import resume-intelligence-service) existed.
+  const importers = prod.filter((p) => /lib\/ai\/resume-intelligence['"]/.test(fs.readFileSync(p, 'utf8'))).map(rel);
   assert(importers.length === 1 && importers[0] === 'src/app/match/[jobId]/page.tsx', 'the only production importer of resume-intelligence.ts is the match page (generateJobSpecificResumeAnalysis, unchanged)', importers.join(', '));
   const ri = fs.readFileSync(path.join(root, 'src/lib/ai/resume-intelligence.ts'), 'utf8');
   assert(!/export\s+(async\s+)?function\s+(analyzeResumeHeuristically|analyzeResumeWithAI)\b/.test(ri), 'analyzeResumeHeuristically and analyzeResumeWithAI are REMOVED (resume PR A), not just deprecated');

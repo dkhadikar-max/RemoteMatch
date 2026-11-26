@@ -30,7 +30,7 @@ export type AiCallOutcome =
   | 'other';
 
 export interface AiCallEventInput {
-  provider: 'gemini' | 'openai';
+  provider: 'gemini' | 'openai' | 'vertex' | 'groq';
   model: string;
   feature: string;
   outcome: AiCallOutcome;
