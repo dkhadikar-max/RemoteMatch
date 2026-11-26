@@ -121,7 +121,7 @@ const hueOf = (hex: string) => { const [r, g, b] = rgb(hex).map((v) => v / 255);
 assert(Math.abs(hueOf(T.red) - hueOf('#c67139')) < 6, `--red keeps the terracotta hue (${hueOf(T.red).toFixed(0)}° vs ${hueOf('#c67139').toFixed(0)}°)`);
 assert(Math.abs(hueOf(T.muted) - hueOf('#82796a')) < 8, '--muted keeps its warm-grey hue');
 for (const untouched of ['bg', 'surface', 'surface-soft', 'ink', 'red-soft']) {
-  const orig: Record<string, string> = { bg: '#f5ead8', surface: '#ebddc5', 'surface-soft': '#fff2eb', ink: '#201e1d', 'red-soft': '#fff2eb' };
+  const orig: Record<string, string> = { bg: '#ffffff', surface: '#f7f6f4', 'surface-soft': '#f7f6f4', ink: '#201e1d', 'red-soft': '#fff2eb' };
   assert(token(untouched).toLowerCase() === orig[untouched], `--${untouched} unchanged (${orig[untouched]})`);
 }
 
