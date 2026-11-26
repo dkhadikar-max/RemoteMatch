@@ -13,7 +13,7 @@ import { queryErrorResponse } from '@/lib/admin/sections';
  * admin out of itself by mistake — that specific case would need a direct
  * dashboard action, same as bootstrapping the very first admin row.
  */
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   let revoker;
   try {
     revoker = await getAuthenticatedAdmin(req);
@@ -23,6 +23,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 
+  const { id } = await params;
   const db = getSupabaseAdminClient();
   if (!db) return NextResponse.json({ error: 'Service temporarily unavailable.' }, { status: 503 });
 
@@ -36,7 +37,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
       await db.from('admin_users').select('id', { count: 'exact', head: true }).is('revoked_at', null),
       'admin_users.active'
     );
-    before = must(await db.from('admin_users').select('email, revoked_at').eq('id', params.id).maybeSingle(), 'admin_users').data;
+    before = must(await db.from('admin_users').select('email, revoked_at').eq('id', id).maybeSingle(), 'admin_users').data;
   } catch (err) {
     return queryErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
@@ -45,14 +46,14 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   }
   if (!before) return NextResponse.json({ error: 'Admin not found.' }, { status: 404 });
 
-  const { error } = await db.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', params.id);
+  const { error } = await db.from('admin_users').update({ revoked_at: new Date().toISOString() }).eq('id', id);
 
   await recordAdminAction({
     adminId: revoker.user.id,
     adminEmail: revoker.adminEmail,
     action: 'admin_revoke',
     targetType: 'admin_user',
-    targetId: params.id,
+    targetId: id,
     beforeState: { email: before.email, revoked_at: before.revoked_at },
     afterState: error ? { error: error.message } : { revoked_at: 'now' },
   });

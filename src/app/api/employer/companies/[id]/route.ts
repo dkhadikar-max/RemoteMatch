@@ -15,10 +15,11 @@ const COMPANY_COLUMNS =
  *  company record plus their own membership row. 404s (never 403) for a
  *  company the caller doesn't belong to, or one that doesn't exist at all —
  *  getAuthenticatedEmployer() doesn't distinguish the two (Phase 1 plan Q7). */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   let employer;
   try {
-    employer = await getAuthenticatedEmployer(req, params.id);
+    employer = await getAuthenticatedEmployer(req, id);
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
@@ -76,10 +77,11 @@ function isValidPatchBody(body: unknown): body is PatchBody {
 
 /** PATCH — edit the cosmetic-only profile fields. Requires `owner` or
  *  `admin` membership; a plain `member` may read (GET) but not write. */
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   let employer;
   try {
-    employer = await getAuthenticatedEmployer(req, params.id);
+    employer = await getAuthenticatedEmployer(req, id);
   } catch (err) {
     return authErrorResponse(err) ?? NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }

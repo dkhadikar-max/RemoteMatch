@@ -102,7 +102,7 @@ export async function getAuthenticatedUser(
     return { user, supabase: tokenClient };
   }
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   if (!supabase) {
     throw new ServiceUnavailableError();
   }
