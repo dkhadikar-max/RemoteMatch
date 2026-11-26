@@ -182,12 +182,12 @@ export function Navbar() {
                 >
                   Guides
                 </Link>
-                <a
-                  href="/#pricing"
+                <Link
+                  href="/pricing"
                   className="rounded-xl px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[var(--muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-soft)] transition-colors lg:px-3.5"
                 >
                   Pricing
-                </a>
+                </Link>
               </>
             ) : (
               <>
