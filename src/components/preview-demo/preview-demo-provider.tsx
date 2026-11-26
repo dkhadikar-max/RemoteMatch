@@ -20,6 +20,13 @@ export function PreviewDemoProvider({ children }: { children: React.ReactNode })
   }
 
   useEffect(() => {
+    // React 18 Strict Mode (next.config.mjs reactStrictMode, dev-only) double-
+    // invokes this effect to surface missing cleanup: mount -> cleanup ->
+    // mount. The cleanup below uninstalls the mock; re-installing here, at
+    // the start of the (second) mount, undoes that -- otherwise the mock
+    // would stay uninstalled for the rest of the page's life in local `next
+    // dev`, even though production builds (no double-invoke) never hit this.
+    installPreviewDemoFetchMock();
     return () => uninstallPreviewDemoFetchMock();
   }, []);
 

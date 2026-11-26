@@ -30,6 +30,8 @@ const REASONS = [
   ['other', 'Other recorded reason'],
 ] as const;
 
+type PendingConfirmation = { row: Applicant; status: string; message: string };
+
 export default function EmployerApplicationsPage() {
   const { id } = useParams<{ id: string }>();
   const [rows, setRows] = useState<Applicant[]>([]);
@@ -37,6 +39,7 @@ export default function EmployerApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [confirming, setConfirming] = useState<PendingConfirmation | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -51,7 +54,7 @@ export default function EmployerApplicationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const updateStatus = async (row: Applicant, status: string) => {
+  const requestStatusChange = (row: Applicant, status: string) => {
     const reasonCode = reasons[row.id];
     const reasonRequired =
       status === 'rejected' ||
@@ -61,13 +64,25 @@ export default function EmployerApplicationsPage() {
       setError('Select a decision reason before making this transition.');
       return;
     }
-    const confirmation =
+    const message =
       status === 'hired'
         ? `Mark ${row.profiles?.full_name || 'this candidate'} as hired? This records a final hiring decision.`
         : status === 'rejected'
           ? `Reject ${row.profiles?.full_name || 'this candidate'}? The selected decision reason will be recorded in the audit history.`
           : null;
-    if (confirmation && !window.confirm(confirmation)) return;
+    if (message) {
+      setConfirming({ row, status, message });
+      return;
+    }
+    void performUpdate(row, status);
+  };
+
+  const performUpdate = async (row: Applicant, status: string) => {
+    const reasonCode = reasons[row.id];
+    const reasonRequired =
+      status === 'rejected' ||
+      (row.status === 'interviewing' && status === 'shortlisted') ||
+      (row.status === 'rejected' && status === 'reviewing');
 
     setBusy(row.id); setError('');
     try {
@@ -116,7 +131,7 @@ export default function EmployerApplicationsPage() {
             </span>
           ) : (
             <select aria-label="Application status" className="soft-input min-h-11 w-full sm:w-auto px-3 py-2 text-sm font-medium" value={row.status}
-              disabled={busy === row.id} onChange={e => updateStatus(row, e.target.value)}>
+              disabled={busy === row.id} onChange={e => requestStatusChange(row, e.target.value)}>
               {[row.status, ...STATUSES.filter(status => status !== row.status)].map(status => <option key={status} value={status}>{status.replace(/_/g, ' ')}</option>)}
             </select>
           )}
@@ -138,5 +153,28 @@ export default function EmployerApplicationsPage() {
           {row.profiles?.email && <a className="inline-flex min-h-11 items-center px-2 text-[var(--red)] underline" href={'mailto:' + row.profiles.email}>Email candidate</a>}
         </div>
       </article>)}</div>}
+    {confirming && (
+      <div role="dialog" aria-modal="true" aria-labelledby="confirm-status-change-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--ink)]/40 p-4">
+        <div className="soft-card w-full max-w-sm rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-lg space-y-4">
+          <p id="confirm-status-change-title" className="text-sm leading-6 text-[var(--ink)]">{confirming.message}</p>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setConfirming(null)}
+              className="inline-flex min-h-10 items-center rounded-xl border border-[var(--line)] px-4 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--surface-soft)]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { const next = confirming; setConfirming(null); void performUpdate(next.row, next.status); }}
+              className="inline-flex min-h-10 items-center rounded-xl bg-[var(--red)] px-4 text-sm font-semibold text-white hover:bg-[var(--red-dark)]"
+            >
+              Confirm
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </main>;
 }
